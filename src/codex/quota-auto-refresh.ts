@@ -52,10 +52,46 @@ export interface CodexQuotaAutoRefreshRunDeps {
 
 let inFlight: Promise<void> | null = null;
 
+const LOCAL_BUSY_RETRY_MS = 60_000;
+
+/** The native main profile was claimed locally, so no upstream request was sent. */
+export class NativeMainBusyError extends Error {
+  constructor() {
+    super("native main busy");
+    this.name = "NativeMainBusyError";
+  }
+}
+
+/** The credential a retry record describes: main's quota generation, or the pool record's. */
+function credentialGeneration(accountId: string): string {
+  return accountId === MAIN_CODEX_ACCOUNT_ID
+    ? `main:${getMainQuotaCredentialGeneration()}`
+    : `pool:${readCodexAccountRecord(accountId)?.generation ?? "none"}`;
+}
+
+/** A retry recorded under a replaced credential is spent; drop it rather than hold the new one. */
+function liveRetry(
+  retries: Map<string, CodexQuotaRetry>,
+  accountId: string,
+  generation: string,
+): CodexQuotaRetry | undefined {
+  const retry = retries.get(accountId);
+  if (retry && retry.generation !== generation) {
+    retries.delete(accountId);
+    return undefined;
+  }
+  return retry;
+}
+
 /** Back off unsuccessful discovery/activation without adding another timer. */
-function deferRetry(retries: Map<string, CodexQuotaRetry>, accountId: string, now: number): number {
-  const delay = Math.min((retries.get(accountId)?.delay ?? RETRY_MS / 2) * 2, MAX_RETRY_MS);
-  retries.set(accountId, { after: now + delay, delay });
+function deferRetry(
+  retries: Map<string, CodexQuotaRetry>,
+  accountId: string,
+  now: number,
+  generation: string,
+): number {
+  const delay = Math.min((liveRetry(retries, accountId, generation)?.delay ?? RETRY_MS / 2) * 2, MAX_RETRY_MS);
+  retries.set(accountId, { after: now + delay, delay, generation });
   return delay;
 }
 
@@ -203,7 +239,7 @@ async function warmAccount(config: OcxConfig, accountId: string): Promise<void |
     return;
   }
   const lease = tryAcquireNativeMainProfileClaim();
-  if (!lease) throw new Error("native main busy");
+  if (!lease) throw new NativeMainBusyError();
   try {
     reconcileMainCodexAccountRuntimeState();
     if (mainWarmupRestricted(config)) return false;
@@ -330,14 +366,16 @@ export async function runCodexQuotaAutoRefresh(
         if (hasScheduledWindows(config, accountId)) {
           quotaRefreshAfterByAccount.delete(accountId);
         } else if ((!quota || now - quota.updatedAt >= RETRY_MS)
-          && (quotaRefreshAfterByAccount.get(accountId)?.after ?? 0) <= now) {
-          deferRetry(quotaRefreshAfterByAccount, accountId, now);
+          && (liveRetry(quotaRefreshAfterByAccount, accountId, credentialGeneration(accountId))?.after ?? 0) <= now) {
+          deferRetry(quotaRefreshAfterByAccount, accountId, now, credentialGeneration(accountId));
           try { await refresh(config, accountId); } catch { /* Retry missing metadata with backoff. */ }
         }
         if (!eligible(accountId)) return;
         rememberWindows(config, accountId, quotaFor(accountId));
-        if (hasScheduledWindows(config, accountId)) quotaRefreshAfterByAccount.delete(accountId);
-        if ((retryAfterByAccount.get(accountId)?.after ?? 0) > now) return;
+        // Backoff from a replaced credential is dropped here, so reauthenticating or rotating an
+        // account never waits out the failures of the credential it replaced.
+        const generation = credentialGeneration(accountId);
+        if ((liveRetry(retryAfterByAccount, accountId, generation)?.after ?? 0) > now) return;
         const windows = dueCodexQuotaAutoRefreshWindows(config, accountId, quotaFor(accountId), now);
         if (!windows) return;
         try {
@@ -348,7 +386,19 @@ export async function runCodexQuotaAutoRefresh(
           persist(config, accountId, completed);
           rememberWindows(config, accountId, quotaFor(accountId));
         } catch (error) {
-          const delay = deferRetry(retryAfterByAccount, accountId, now);
+          // A failure that raced a credential replacement describes the old credential; the next
+          // sweep evaluates the replacement on its own evidence.
+          if (credentialGeneration(accountId) !== generation) return;
+          if (error instanceof NativeMainBusyError) {
+            // Local admission refused before any upstream request: retry soon, and keep the
+            // upstream backoff where it was instead of doubling it.
+            const previous = liveRetry(retryAfterByAccount, accountId, generation);
+            retryAfterByAccount.set(accountId, {
+              after: now + LOCAL_BUSY_RETRY_MS, delay: previous?.delay ?? RETRY_MS / 2, generation,
+            });
+            return;
+          }
+          const delay = deferRetry(retryAfterByAccount, accountId, now, generation);
           const account = config.codexAccounts?.find(candidate => candidate.id === accountId);
           const label = account ? codexAccountLogLabel(account) : "main";
           console.warn(`[codex-quota-auto-refresh] ${label}: ${codexWarmupFailureReason(error)}; ${

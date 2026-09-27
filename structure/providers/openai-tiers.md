@@ -215,6 +215,10 @@ Inference 401s quarantine the rejected credential; failures log an opaque label 
 Paused or reauthentication-required
 accounts are skipped, simultaneous 5-hour/weekly resets share one warmup, transient activation failures
 back off from five minutes to an hour, and account deletion removes settings and retry/completion state.
+Retry records name the credential generation they were observed under (main quota generation, pool
+record generation). A record from a replaced or reauthenticated credential is dropped when read, and a
+failure that raced a replacement is not recorded. A local `NativeMainBusyError` admission refusal sends
+nothing upstream, so it retries after one minute and keeps the upstream backoff unchanged.
 Main-account hard-lock also gates these billable warmups. A policy/identity skip changes neither
 completion markers nor retry delay; quota reads remain available. Main refresh completes before
 shared credential ownership, then prepared credentials and restrictions are rechecked. Lifecycle
