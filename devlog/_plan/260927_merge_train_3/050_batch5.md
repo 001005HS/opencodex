@@ -15,3 +15,14 @@ coordinator asked the lane to continue until nothing in scope is landable.
 
 Held: #6030 (draft; launchd PATH adoption drops non-PATH changes, two ratchet breaches, WinSW gap, conflict),
 #4143 (needs the reporter's desktop routing details).
+
+## Audit (Kimi, NEAR-PASS) and folded decisions
+
+- #5180: the predicate is key auth plus the existing `isCanonicalCommandCodeBaseUrl`; a row repointed at a custom
+  relay keeps fail-fast unless `retryOn429` is set.
+- #6027: `snapshotSkillsCatalogInBody` splits into a replace-only lookup before parsing and a store call at the
+  success return. Residuals named in the PR: a snapshot can be pinned by a turn whose upstream request later fails;
+  on a no-auth server bound beyond loopback, snapshots are keyed by conversation id alone, matching that server's
+  trust model.
+- #5953: the gate reads effective effort after combo overrides; transcript shapes that #5465 does not show stay
+  unprotected, which is today's behavior.
