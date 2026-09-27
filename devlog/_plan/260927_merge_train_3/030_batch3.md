@@ -33,3 +33,30 @@ security reviews with no blocker recorded in this unit.
 - #5494: the regex is anchored to the token-plan phrasing,
   `/usage limit (?:has been )?reached|token-plan\s+\S+\s+quota has been exhausted/`, with a negative case for
   "quota exhausted for this minute". The hold is the existing ten-minute exhaustion cap, not the announced reset.
+
+## Build and evidence
+
+| Commit | What |
+|---|---|
+| `c79fe409c6` | #6049 (layout registries unioned) |
+| `33b1920cce` | #6042 |
+| `b697756cdb` | #6037 (`job.ts` import conflict: both imports kept; 1999 lines) |
+| `8e08f26f86` | #6020 |
+| `2a49525f1d` | #6020 review fix: generation-keyed retries, flat one-minute retry on `NativeMainBusyError`, three regression tests in `codex-quota-auto-refresh-generation.test.ts` (all three fail without the fix) |
+| `9fdc0c4582` | #5494: token-plan exhaustion takes the ten-minute hold; positive and per-minute negative tests (the positive fails without the fix) |
+| `cafe6202ad` | #6050 (the dev test pinning the old paused-main 409 on clear is removed; the new file covers the contract) |
+
+Kimi's note that #6050 regressed the `shadow` defaults and the Kiro-only `strategy` note came from diffing against
+an older base; the squash onto current `dev` changes only the account-selection lines in the eight locales.
+
+Security receipts: #6042 dedicated review, BLOCKER no (connect-phase race stays documented, as the PR states). #6037
+review found no blocking defect; the updater launcher now trusts only root-owned absolute paths, and Ingwannu's
+earlier CHANGES_REQUESTED findings (lexical ancestors, synchronous probes) are fixed at the carried head.
+
+Aside: #6037 still shows one CHANGES_REQUESTED review and #6020 two, both from earlier heads; this batch answers
+#6020's findings in `2a49525f1d`. #5494's page shows the reporter's two messages and no maintainer reply; the fix
+covers the part the repository can prove (the 60-second re-offer). Why the official DeepSeek stream ended early needs
+the reporter's logs.
+
+Local proof at `cafe6202ad`: typecheck, structure and privacy exit 0; 13 focused files 619 pass, 3 skip, 0 fail;
+combo failover files 297 pass; layout and ratchet guards 27 pass.
