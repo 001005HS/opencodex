@@ -60,7 +60,7 @@ function baselineOf(row: ModelRow): SettingsBaseline {
 }
 
 function sortedKey(values: readonly string[]): string {
-  return [...values].sort().join(",");
+  return values.toSorted().join(",");
 }
 
 /** undefined when the draft is not a usable window, null when the operator cleared it. */
