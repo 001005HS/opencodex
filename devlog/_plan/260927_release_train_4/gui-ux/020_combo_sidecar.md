@@ -40,3 +40,16 @@ Continuity: phase 010's D (`012_model_settings_done.md`) closed with #6105 merge
 5. **Tests.** `tests/routing/combo-management-api.test.ts` gets each rejection with config unchanged and no save: non-member target, disabled image input, image-capable or audio-only declaration, and native provider. It also covers the success write that preserves sibling fields, the text-only no-op, and the absence of the field under `combos`. `tests/gui/combo-workspace-data.test.ts` gets classification and request shape; a `gui/tests/combo-workspace-*.test.tsx` case covers the rendered hint and the save body.
 
 Deferred: a provenance marker for generated declarations. Rollback keeps operator facts, and the declaration can be cleared per model from phase 010's editor.
+
+### Architect reflection (`01a0e45c-65f8-7023-8894-501c6910b602`, `gpt-6-sol`): GAPS, folded
+
+1. **Precedence.** Server validation reuses the runtime predicates instead of re-deriving precedence. The effective declaration is read in the runtime's order: exact `modelCapabilities`, then the operator's custom row, then `noVisionModels`, then `modelRecordValue` over the legacy record (exact, colon-family, case-fold) (`src/vision/eligibility.ts:136-146,200-218`, `src/reasoning-effort.ts:124`). For each target:
+   - If `modelAcceptsImageInput` says the model already takes images, return 400, because a text-only declaration would hide a real capability.
+   - If the effective declaration exists and lacks `text`, return 400.
+   - If the registry-enriched provider already makes it a consumer (`isModelVisionSidecarConsumer`), do nothing, since the catalog already advertises image.
+   - Otherwise, including a custom row declared `["text"]` (which the catalog's custom-row path does not cover, `src/codex/catalog/routed-gather.ts:730`), write the exact `modelCapabilities[model].inputModalities = ["text"]` and preserve sibling fields.
+
+   The reload test asserts `/api/models` reports `image` for each enrolled member.
+2. **Sidecar status.** `Combos.tsx` loads `GET /api/sidecar-settings` separately from the three workspace requests, so a failure never blocks the workspace. It reads `vision.enabled` (`src/server/management/config-routes.ts:280,815`). A missing or failed read shows no warning and does not guess. The warning appears only when `vision.enabled === false` and `sidecar` members exist.
+
+The integration point is confirmed: create, update and rename share `PUT /api/combos` (`combo-routes.ts:132`), with one save at `:343`, so `commitProviderPatch` can wrap the mutation and that save.
