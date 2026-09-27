@@ -1,6 +1,6 @@
 ---
 title: Entegrasyonlar
-description: Kontrol panelinden OpenCode, Pi, OMP, Hermes, OpenClaw, Kimi Code, gjc, DeepSeek Harness, MiniMax Code, ZCode, Prime Agent, Aside, Raycast, omo, Cline CLI ve Kilo'yu opencodex'e bağlayın — istemci başına tek bir anahtar ve her yazmadan önce alınan bir yedek.
+description: Kontrol panelinden OpenCode, Pi, OMP, Hermes, OpenClaw, Kimi Code, gjc, DeepSeek Harness, MiniMax Code, ZCode, Prime Agent, Aside, Raycast, omo, Cline CLI, Kilo ve Factory Droid'u opencodex'e bağlayın — istemci başına tek bir anahtar ve her yazmadan önce alınan bir yedek.
 ---
 
 **Entegrasyonlar** sekmesi, opencodex'in sağlayıcı bloğunu istemcinin kendi
@@ -336,6 +336,7 @@ Başka bir aday çakışsa veya ayrıştırılamasa bile Devre Dışı Bırak, k
 ```bash
 ocx integration client enable --client kilo
 ```
+
 ## Factory Droid
 
 Factory Droid, `~/.factory/settings.json` dosyasını (Windows'ta `%USERPROFILE%\.factory\settings.json`) kullanır. `ocx integration client enable --client droid` komutuyla açıkça etkinleştirin, ardından `/model` içinde özel bir model seçin. Yönetilen satırlar anahtarsızdır ve yalnızca geri döngü bağlantısında çalışır. Devre dışı bırakma yönetilen satırları kaldırır; Undo kaydedilen baytları geri yükler. Eski `config.json` dosyasında OpenCodex satırları varsa veya `settings.local.json`, `customModels` değerini geçersiz kılıyorsa etkinleştirmeden önce çakışmayı giderin. [Factory BYOK belgelerine](https://docs.factory.ai/model-independence/byok) bakın.

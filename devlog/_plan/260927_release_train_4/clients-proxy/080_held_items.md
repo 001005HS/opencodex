@@ -8,9 +8,11 @@ has merged into `dev`; leave a genuine enhancement open when held.
 
 ## Exact external change map
 
-- COMMENT, then CLOSE replaced source PRs #6051, #5893, #5950, #5272,
+- COMMENT, then CLOSE replaced source PRs #6051, #5893, #5272,
   #5193, #5871, #5983 only if the corresponding carried behavior actually
   landed. Include the lane PR and merge SHA and thank the original author.
+- COMMENT, KEEP OPEN #5950 and linked #5660: Qoder is held because its opt-in
+  config-write, restore and path contracts have not been revalidated on this train.
 - COMMENT, KEEP OPEN #5905: opening Cursor status currently fetches a remote
   installer manifest without a user action. Ask for an explicit discovery
   policy and timeout/status regression. Keep draft and no installer launch.
@@ -28,7 +30,7 @@ has merged into `dev`; leave a genuine enhancement open when held.
   closed unmerged because `managed: true` was unreachable from the production
   inspector. Establish a real provenance predicate and read-only plan before
   considering an apply mutation.
-- CLOSE linked #5853, #5660, and #5982 only when the exact behavior is on
+- CLOSE linked #5853 and #5982 only when the exact behavior is on
   `dev`, with the lane merge link. #5679 remains open while #5905 is held.
 
 ## Acceptance and proof

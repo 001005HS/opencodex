@@ -1,6 +1,6 @@
 ---
 title: 연동
-description: 대시보드에서 OpenCode, Pi, OMP, Hermes, OpenClaw, Kimi Code, gjc, DeepSeek Harness, MiniMax Code, ZCode, Prime Agent, Aside, Raycast, omo, Cline CLI와 Kilo를 opencodex에 연결합니다. 클라이언트마다 스위치가 하나씩 있으며 기록 전마다 백업합니다.
+description: 대시보드에서 OpenCode, Pi, OMP, Hermes, OpenClaw, Kimi Code, gjc, DeepSeek Harness, MiniMax Code, ZCode, Prime Agent, Aside, Raycast, omo, Cline CLI, Kilo와 Factory Droid를 opencodex에 연결합니다. 클라이언트마다 스위치가 하나씩 있으며 기록 전마다 백업합니다.
 ---
 
 **Integrations** 탭은 클라이언트의 설정 파일에 opencodex 프로바이더 블록을 쓰고 다시 제거합니다. 다음 17개 클라이언트는 각각 스위치로 관리합니다.

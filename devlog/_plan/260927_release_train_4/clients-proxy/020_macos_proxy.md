@@ -50,8 +50,9 @@ asserted per transport: Bun's native HTTP(S) fetch reads a non-empty lowercase
 `no_proxy` before `NO_PROXY`, while `resolveProxyRoute` honors an explicitly
 defined uppercase `NO_PROXY`, including an empty value. Tests keep route
 assertions for both transports when the two variables disagree.
-Negative scenarios: unset `config.proxy` never reads system settings or mutates
-egress, inherited HTTP(S) or SOCKS proxy wins without mixed bypass semantics,
+Negative scenarios: unset `config.proxy` never reads macOS system settings or applies
+discovered routes, while the existing inherited-proxy loopback bypass remains;
+inherited HTTP(S) or SOCKS proxy wins without mixed bypass semantics,
 unrepresentable exceptions refuse before any environment write, disabled or
 bad system settings leave egress unchanged, and Windows keeps its prior route. Run
 `bun test tests/server/proxy-env.test.ts`, `bun run test:changed`, `bun run

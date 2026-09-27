@@ -1,6 +1,6 @@
 ---
 title: クライアント統合
-description: ダッシュボードから opencodex を OpenCode、Pi、OMP、Hermes、OpenClaw、Kimi Code、gjc、DeepSeek Harness、MiniMax Code、ZCode、Prime Agent、Aside、Raycast、omo、Cline CLI、Kilo に接続します。クライアントごとにスイッチがあり、書き込み前には必ずバックアップを取ります。
+description: ダッシュボードから opencodex を OpenCode、Pi、OMP、Hermes、OpenClaw、Kimi Code、gjc、DeepSeek Harness、MiniMax Code、ZCode、Prime Agent、Aside、Raycast、omo、Cline CLI、Kilo、Factory Droid に接続します。クライアントごとにスイッチがあり、書き込み前には必ずバックアップを取ります。
 ---
 
 **Integrations** タブは、各クライアントの設定ファイルに opencodex のプロバイダーブロックを書き込み、必要に応じて削除します。次の 17 クライアントは、それぞれのスイッチで管理できます。

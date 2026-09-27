@@ -209,13 +209,13 @@ bun run build:gui      # Vite GUI build
 proxy, as opposed to [`AGENTS_INSTALL.md`](./AGENTS_INSTALL.md) (installing and operating consent)
 or this file (changing the codebase). Its surface map is generated:
 
-For development tests of the management API, use the isolated
-[management API test recipe](./.agents/skills/testing-opencodex-management-api/SKILL.md).
-
 ```bash
 bun run skill:surface        # regenerate after adding a capability
 bun run skill:surface:check  # what CI asserts
 ```
+
+For development tests of the management API, use the isolated
+[management API test recipe](./.agents/skills/testing-opencodex-management-api/SKILL.md).
 
 `tests/ci-workflows/skill-ocx.test.ts` fails if the committed map drifts from `src/cli/capabilities.ts`, and
 also if the hand-written pages name a command the registry does not have. That second check is not

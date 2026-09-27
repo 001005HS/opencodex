@@ -56,7 +56,7 @@ proxy activation (`structure/config-proxy.md:1-20`).
 | --- | --- | --- | --- |
 | #6051 | `987b8097`, open | Carry the disposable-home management-API recipe with a discoverable contributor link; `.agents/skills/` has no existing entry point. | [010](010_recipe.md) |
 | #5893 / #5853 | `3743320a`, draft | Carry only when every macOS exception maps faithfully onto the bypass variables the active transports read, or discovery refuses before any environment write; an inherited SOCKS proxy keeps its existing path. | [020](020_macos_proxy.md) |
-| #5950 / #5660 | `ef03f5ab`, open | Carry Qoder after current-base revalidation of opt-in config writes, restore, and path handling (`src/clients/config-export/qoder.ts`, PR test). | [030](030_qoder.md) |
+| #5950 / #5660 | `ef03f5ab`, open | HOLD Qoder: opt-in config writes, restore, and path handling still need current-base revalidation (`src/clients/config-export/qoder.ts`, PR test). | [030](030_qoder.md) |
 | #5272 | `7dd796d7`, open | Carry Kilo after checking all merged config candidates; first-file-only selection can be overridden by a later legacy file (`src/clients/config-export/kilo.ts:57-63` in PR). | [040](040_kilo.md) |
 | #5193 | `91090f80`, open/conflicting | Reimplement a focused Droid slice on current `dev` only if its client contract and export provenance can be proven. The PR's broad rewrite changes shared loopback export behavior. | [050](050_droid.md) |
 | #5871 | `ba2d2600`, open/conflicting | Carry after conflict repair and an outbound decision-payload regression (`src/combos/jev.ts:588-595` in PR). | [060](060_jev.md) |

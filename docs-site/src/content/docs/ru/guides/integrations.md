@@ -1,6 +1,6 @@
 ---
 title: Интеграции
-description: Подключайте opencodex к OpenCode, Pi, OMP, Hermes, OpenClaw, Kimi Code, gjc, DeepSeek Harness, MiniMax Code, ZCode, Prime Agent, Aside, Raycast, omo, Cline CLI и Kilo из дашборда — отдельный переключатель для каждого клиента и резервная копия перед каждой записью.
+description: Подключайте opencodex к OpenCode, Pi, OMP, Hermes, OpenClaw, Kimi Code, gjc, DeepSeek Harness, MiniMax Code, ZCode, Prime Agent, Aside, Raycast, omo, Cline CLI, Kilo и Factory Droid из дашборда — отдельный переключатель для каждого клиента и резервная копия перед каждой записью.
 ---
 
 Вкладка **Integrations** записывает блок провайдера opencodex в собственный файл

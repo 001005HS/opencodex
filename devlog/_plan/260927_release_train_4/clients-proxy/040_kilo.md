@@ -1,8 +1,9 @@
 # Phase 4: Kilo managed config (#5272)
 
-Depends on `030_qoder.md` to reconcile the shared export-client union and GUI
-roster once per current `dev` head. The PR's 57-file slice includes a JSONC
-writer extension; preserve comments and all unrelated client state.
+`030_qoder.md` remains held; this phase reconciles the shared export-client
+union and GUI roster against current `dev`. The PR's 57-file slice includes a JSONC
+writer extension; preserve unrelated parsed client state during apply and disable,
+and restore original comment-bearing bytes from the snapshot on undo.
 
 ## Exact change map
 
@@ -15,9 +16,9 @@ writer extension; preserve comments and all unrelated client state.
 - MODIFY `src/clients/config-export.ts`, `contracts.ts`,
   `src/integrations/registry.ts`, `target.ts`, `state.ts`, `writer.ts`,
   `mutation-plan.ts`, `config-io.ts`, and `src/lib/jsonc.ts` only as required
-  for source-preserving JSONC and the common ownership contract. The parser
-  must reject non-roundtrippable syntax before mutation and keep unrelated
-  comment-bearing bytes recoverable from the snapshot.
+  for JSONC parsing and the common ownership contract. The parser must reject
+  non-roundtrippable syntax before mutation; the snapshot keeps original
+  comment-bearing bytes recoverable for undo.
 - MODIFY the CLI export/help/registry entries, GUI integration registry and
   affected locale keys, public integration documentation, and
   `structure/clients/integrations.md` for the actual Kilo path.
@@ -30,7 +31,7 @@ writer extension; preserve comments and all unrelated client state.
 ## Acceptance and proof
 
 Activation: explicit apply to an unambiguous Kilo install writes only owned
-fields; disabling and restoring leave foreign JSONC and original bytes intact.
+fields; disabling preserves unrelated parsed values; restoring returns the original bytes.
 Conflict activation: a later candidate file contains the same provider key;
 status and mutation both refuse before snapshot/write. Run
 `bun test tests/clients/kilo-client.test.ts

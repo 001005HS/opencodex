@@ -549,6 +549,7 @@ refresh it explicitly after changing the routed model selection.
 ocx integration client enable --client kilo
 ocx export --client kilo --out ./kilo.jsonc
 ```
+
 ## Factory Droid
 
 Run Droid once to create `~/.factory`, then explicitly enable this integration with

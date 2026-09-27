@@ -1,6 +1,6 @@
 ---
 title: Intégrations
-description: Connectez opencodex à OpenCode, Pi, OMP, Hermes, OpenClaw, Kimi Code, gjc, DeepSeek Harness, MiniMax Code, ZCode, Prime Agent, Aside, Raycast, omo, Cline CLI et Kilo depuis le tableau de bord — un commutateur par client, avec une sauvegarde avant chaque écriture.
+description: Connectez opencodex à OpenCode, Pi, OMP, Hermes, OpenClaw, Kimi Code, gjc, DeepSeek Harness, MiniMax Code, ZCode, Prime Agent, Aside, Raycast, omo, Cline CLI, Kilo et Factory Droid depuis le tableau de bord — un commutateur par client, avec une sauvegarde avant chaque écriture.
 ---
 
 L'onglet **Intégrations** écrit le bloc fournisseur d'opencodex dans le fichier de configuration du client,
@@ -311,6 +311,7 @@ Désactiver peut retirer le bloc appartenant à OpenCodex du fichier enregistré
 ```bash
 ocx integration client enable --client kilo
 ```
+
 ## Factory Droid
 
 Factory Droid utilise `~/.factory/settings.json` (`%USERPROFILE%\.factory\settings.json` sous Windows). Activez explicitement l’intégration avec `ocx integration client enable --client droid`, puis choisissez un modèle personnalisé dans `/model`. Les entrées gérées n’utilisent pas de clé et fonctionnent uniquement en boucle locale. La désactivation supprime ces entrées ; l’annulation restaure les octets sauvegardés. Si l’ancien `config.json` contient des entrées OpenCodex ou si `settings.local.json` remplace `customModels`, résolvez ce conflit avant l’activation. Consultez la [documentation Factory BYOK](https://docs.factory.ai/model-independence/byok).
