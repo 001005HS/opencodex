@@ -50,7 +50,7 @@ does not mint a session. A remote dashboard gets a 12-hour session only through 
 identity (`remoteGui.allowedTailscaleUsers` on the Tailscale management ingress) or a one-use
 pairing grant; each authorized request extends it. Otherwise a remote operator authenticates with
 the raw admin token, and the dashboard asks for it again after a reload because the session lives
-only in page memory. See [Remote hub](../../guides/remote-hub/).
+only in page memory. See [Remote hub](/guides/remote-hub/).
 
 ## Common errors
 
