@@ -1,4 +1,5 @@
 {
+  "pnpm-command-isolation.test.ts": "update",
   "provider-antigravity-quota-retry.test.ts": "providers",
   "responses-compaction-recovery.test.ts": "responses",
   "compaction-recovery-settings.test.ts": "config",
