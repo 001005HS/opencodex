@@ -13,3 +13,22 @@ Held from this round's reviews, with reasons, for the outcome ledger: #4177 (no 
 feature), #4732 (perf rework against `snapshot-select.ts` and measurements needed from the author), #5539 (reverses
 test-locked behavior without a reproduction), #4961 (issue withholds a design), #4143 (needs the reporter's desktop
 routing details).
+
+## Build and evidence
+
+| Commit | What |
+|---|---|
+| `bee2ea4357` | #5925 carried (four commits squashed, author kept) |
+| `2a383cbc1f` | its layout entry moved onto a shared line (layout.json stays at 1993 lines) |
+| `f2727befa8` | #5977 carried; the author's noreply identity replaces the placeholder address on the commit |
+| `6341da9847` | #5977 response proof: the server signs local-read responses over the request nonce, the client verifies when asked, `ocx status` asks. New `tests/server/local-read-response-proof.test.ts` and a negative client test; both fail without the change |
+
+Security: #5925 dedicated review BLOCKER no. #5977's remaining hold is closed by `6341da9847`, which reuses the
+attestation that `/healthz` and system restart already use.
+
+Aside: #5925 shows no open review; #5977 shows two approvals from before the response-proof commit.
+
+Local proof at `6341da9847`: typecheck, structure and privacy exit 0; the seven local-read and status files plus the
+three #5925 files 122 pass. Directory runs: `tests/adapters` 2371 pass, 107 fail on this branch and 2369 pass, 107 fail
+on `dev` `7d8459388c` (same Anthropic cooldown and pool files, which pass alone), so the failures are pre-existing
+directory-run interference; `tests/responses` shows the 13 known `responses-compaction-recovery` failures.
