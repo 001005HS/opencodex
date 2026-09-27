@@ -225,6 +225,9 @@ export function satisfiesOpenAiStrictSchema(value: unknown, fineTuned = false): 
     const constraint = node[key];
     if (Object.hasOwn(node, key) && (typeof constraint !== "number" || !Number.isFinite(constraint))) return false;
   }
+  // JSON Schema requires a strictly positive divisor; a zero or negative one is a schema the
+  // destination rejects, so it cannot be certified strict.
+  if (Object.hasOwn(node, "multipleOf") && (node.multipleOf as number) <= 0) return false;
   for (const key of ["minItems", "maxItems"]) {
     const constraint = node[key];
     if (Object.hasOwn(node, key)

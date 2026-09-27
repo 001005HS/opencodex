@@ -139,6 +139,12 @@ describe("translated Anthropic structured output strict eligibility (#5901 follo
     }), true);
   });
 
+  test.each([0, -2])("does not certify a non-positive multipleOf: %d", multipleOf => {
+    const schema = closedObject({ count: { type: "integer", multipleOf } });
+    expect(satisfiesOpenAiStrictSchema(schema)).toBe(false);
+    expect(satisfiesOpenAiStrictSchema(closedObject({ count: { type: "integer", multipleOf: 2 } }))).toBe(true);
+  });
+
   test("fine-tuned targets preserve unsupported constraints with strict disabled", () => {
     const schema = closedObject({
       nested: {
