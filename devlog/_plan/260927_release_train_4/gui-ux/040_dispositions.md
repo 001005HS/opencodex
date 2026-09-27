@@ -13,3 +13,20 @@
 - **#4189:** current ZCode client integration and Z.AI provider APIs are separate. The report does not identify a ZCode upstream login/API contract. Ask the issue author in English whether they mean the ZCode client using OpenCodex, Z.AI API-key upstream, or a distinct login; leave open pending answer and do not add a fake `zcode` provider card.
 
 For every deferred PR or issue, post one evidence-backed English comment with the disposition. Do not close a contributor PR merely for being large or stale. An adopted contributor PR closes only after a replacement lands and a credit trailer plus replacement link are present.
+
+## Final dispositions (2026-09-28)
+
+The coordinator ended train 4's implementation work early and told the lane to leave hold comments on unstarted candidates. Every comment below is in English with file-level reasons, and every PR and issue stays open.
+
+| Item | Outcome | Reason |
+|---|---|---|
+| #6058 | Carried, merged in #6105 (`3401e1ee73`), closed with credit | See `010`–`012`. |
+| #4932 | Held for the next train | The plan passed audit with fixes, but implementation had not started when the scope narrowed. The plan and audit are in `020_combo_sidecar.md`. |
+| #5617 | Held | There is no migration or rollback between `globalDisabledModelIds` and `disabledModels`. It conflicts in `app-routing.ts`, `Providers.tsx` and `structure/config.md`, overlaps #6106, and has four open CodeRabbit findings. |
+| #4649 | Held | It needs a credential-handling security review. A remembered token survives logout, the tests target the old `/api/settings` path, the docs would become false, a screenshot is committed, and the branch is 317 commits behind. |
+| #5932 | Held | Every file belongs to the account-pool work (#6106), and `provider-workspace/types.ts` conflicts. |
+| #2355 | Held | 2,971 commits behind with eight conflicting files, and screenshots are committed under `docs/pr-assets/`. |
+| #5408 | Held | 67 files and 7,790 added lines, six conflicts, overlap with #6106, and eleven committed screenshots. It should be split into single-behavior PRs. |
+| #4644 | Open | #4649 is held. |
+| #3379 | Open | Journal deletion and custom ranges have landed; renaming the selector (picker/account area) remains. |
+| #4189 | Open, question asked | ZCode (client) versus Z.AI (`zai` key provider) versus draft #4259/#4647. It belongs to the provider area. |
