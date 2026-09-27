@@ -323,7 +323,14 @@ impl ExitCoordinator {
 
     /// A person asked for a runtime again (the startup page's retry).
     pub fn resume(&self) {
-        self.inner().wanted = true;
+        let mut inner = self.inner();
+        inner.wanted = true;
+        // A pending update snapshot must learn about the request too. A retried install that finds
+        // the drain already settled clears `wanted` again without replacing the snapshot, so a
+        // retry recorded only in `wanted` would be lost when that install fails and aborts.
+        if let Some(snapshot) = inner.restart_wanted.as_mut() {
+            *snapshot = true;
+        }
     }
 
     /// Reserve the right to start a runtime. False once something else owns the phase.
@@ -793,6 +800,34 @@ mod tests {
         // The ending claim still prevents supervision until the failed update is handed back.
         assert!(!coordinator.supervision_allowed());
         coordinator.finish_drain(DrainVerdict::Drained);
+        assert_eq!(
+            coordinator.abort_restart(),
+            Some(AbortedRestart {
+                phase: ExitPhase::Drained,
+                runtime_was_wanted: true,
+            })
+        );
+        assert!(coordinator.supervision_allowed());
+    }
+
+    #[test]
+    fn a_retry_between_update_attempts_survives_the_second_claim() {
+        let coordinator = ExitCoordinator::new();
+        coordinator.set_tray(TrayAvailability::Available);
+        assert!(coordinator.begin_stop());
+        assert_eq!(coordinator.finish_stop(), None);
+
+        assert_eq!(
+            coordinator.claim_drain(ExitReason::CoordinatedRestart),
+            Some(ExitReason::CoordinatedRestart)
+        );
+        coordinator.finish_drain(DrainVerdict::Drained);
+        coordinator.resume();
+        // The next install attempt finds the drain settled and clears `wanted` again.
+        assert_eq!(
+            coordinator.claim_drain(ExitReason::CoordinatedRestart),
+            None
+        );
         assert_eq!(
             coordinator.abort_restart(),
             Some(AbortedRestart {
