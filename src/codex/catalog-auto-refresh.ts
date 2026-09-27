@@ -50,8 +50,12 @@ let inFlight = false;
  * drift-heal.ts). The gate mirrors syncCodexOnStartIfEnabled: a hub must not rewrite its own
  * client, and the user's Codex OFF decision outlives restarts. A failed heal is silent here —
  * the next tick retries, and the sync's own callers report their refusals.
+ *
+ * "healed" means the keys that were missing are back on disk. A sync can succeed without
+ * writing them (for example when an external provider now owns config.toml and the injector
+ * stands down), so the outcome is read from the file, not from the sync result.
  */
-async function healCodexConfigDrift(config: OcxConfig): Promise<boolean> {
+async function healCodexConfigDrift(config: OcxConfig): Promise<"none" | "healed" | "not-healed"> {
   const [{ codexConfigDrift }, { journaledInjectedOpenaiBaseUrl, journaledInjectedRealtimeWsBaseUrl }, { shouldSyncCodexOnStart }, { syncModelsToCodex }] =
     await Promise.all([
       import("./config-drift-heal"),
@@ -59,17 +63,18 @@ async function healCodexConfigDrift(config: OcxConfig): Promise<boolean> {
       import("./desired-state"),
       import("./sync"),
     ]);
-  if (!shouldSyncCodexOnStart(config)) return false;
-  const drift = codexConfigDrift(() => ({
+  if (!shouldSyncCodexOnStart(config)) return "none";
+  const journaled = {
     injectedOpenaiBaseUrl: journaledInjectedOpenaiBaseUrl({ readOnly: true }),
     injectedRealtimeWsBaseUrl: journaledInjectedRealtimeWsBaseUrl({ readOnly: true }),
-  }));
-  if (!drift.drifted) return false;
+  };
+  const drift = codexConfigDrift(() => journaled);
+  if (!drift.drifted) return "none";
   const { readRuntimePort } = await import("../config/process-state");
   const runtime = readRuntimePort(process.pid);
-  if (!runtime) return false;
-  const result = await syncModelsToCodex(runtime.port, config, null).catch(() => null);
-  return result?.ok === true;
+  if (!runtime) return "not-healed";
+  await syncModelsToCodex(runtime.port, config, null).catch(() => null);
+  return codexConfigDrift(() => journaled).drifted ? "not-healed" : "healed";
 }
 
 /** Number of ticks that have run. Test-only observability; carries no catalog data. */
@@ -123,9 +128,11 @@ async function tick(): Promise<void> {
     // report "no change" while Codex serves its native model picker. Re-injecting through the
     // standard sync rewrites the keys, re-journals the baseline, and only runs when the
     // integration is on and this install is allowed to manage its local client.
-    const drifted = await healCodexConfigDrift(config);
-    if (drifted) {
+    const heal = await healCodexConfigDrift(config);
+    if (heal === "healed") {
       console.info("[catalog-auto-refresh] injected Codex config keys were rewritten externally; re-injected");
+    } else if (heal === "not-healed") {
+      console.info("[catalog-auto-refresh] injected Codex config keys were rewritten externally; not re-injected this tick");
     }
     const [{ createManagementConvergeCodex }, { createCatalogConvergeRequest }] = await Promise.all([
       import("./management-convergence"),

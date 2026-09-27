@@ -264,8 +264,8 @@ base-url-less table is the Codex desktop app's own native-routing placeholder (s
 each app-managed rewrite writes `model_provider = "custom"` plus such a table, stripping the
 injected root keys alongside), which re-injects cleanly because the injector strips a root
 `model_provider` line first. Recovery is drift detection (`src/codex/config-drift-heal.ts`): the
-auto-refresh tick re-runs the standard sync when the on-disk root keys no longer match the
-journal's recorded injected values.
+auto-refresh tick re-runs the standard sync when a root key the journal says was injected is
+missing on disk (presence only; a present key with another value is left alone).
 
 `ocx sync` and `ocx restore back` run the injector's non-writing preflight before provider
 discovery or catalog/cache replacement. Deterministic config and ownership refusals therefore
