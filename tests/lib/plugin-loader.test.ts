@@ -149,7 +149,9 @@ test("recorded macOS ls output rejects effective non-owner write grants", () => 
     pluginDir, ownedAncestor, inheritedChild, pluginFile, ownerNamedGroup,
     numericRecordName, rootRecordName, unresolvedUuid,
   ]) {
-    expect(macAclListingTrustError(listing)).toBe("has an access control list");
+    // Pin the current user so a runner whose login is `root` or a record named `0` cannot turn
+    // these foreign-principal refusals into the current-user exemption.
+    expect(macAclListingTrustError(listing, "runner")).toBe("has an access control list");
   }
   // Bare principals are not identity-bearing user records. Keep the rights policy explicit so a
   // future parser cleanup cannot accidentally grant them the owner/current-user exemption.
