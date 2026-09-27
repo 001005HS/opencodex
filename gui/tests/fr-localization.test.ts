@@ -148,6 +148,9 @@ const INTENTIONAL_ENGLISH = new Set<TKey>([
   "api.clientConfig.clientCline",
   "integrations.tab.kilo",
   "api.clientConfig.clientKilo",
+  // Factory Droid is a product name, identical in every locale.
+  "integrations.tab.droid",
+  "api.clientConfig.clientDroid",
   "models.reasoningEffort.minimal",
   "models.reasoningEffort.max",
   "models.reasoningEffort.ultra",
