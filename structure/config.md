@@ -1,5 +1,7 @@
 # Config Surface
 
+Quota activation reuses the existing next-reset fields without adding a polling configuration key. See the [quota activation contract](providers/openai-tiers.md#public-provider-contract).
+
 Native function-result injection follows [the separate opt-in control contract](transports/streaming-health.md#experimental-native-function-result-injection); this surface does not infer upstream support or alter its defaults.
 
 Native steering follows [the shared WebSocket contract](transports/streaming-health.md#experimental-native-mid-turn-steering); this surface's defaults remain unchanged.
@@ -203,12 +205,12 @@ provider with no name and rejects the whole config rather than one thread, which
 than the branding it would remove — so a blank, over-length, or control-character value falls back
 to the default instead of being written.
 
-Read-only doctor and project-routing diagnostics use a lightweight root/table TOML reader rather
-than mutating or normalizing the user's file. That reader must lexically skip both basic and literal
-multiline string bodies: instruction prose can contain key-shaped examples and `[table]` snippets,
-which are data rather than configuration. Diagnostic result objects may retain the real path for
-local correlation, but every formatted doctor line must pass it through the shared user-path
-redaction boundary before display.
+Read-only global ownership/doctor diagnostics follow links only to bounded regular files; an absent
+lookup reads as none and an unreadable/changed observation reports undetermined ownership.
+Project discovery instead skips links/oversized entries, and its guarded reader skips unsafe files.
+Each project-warning collection shares one global snapshot for routing and trusted-path discovery,
+including explicit absence or read failure. TOML parsing skips multiline string bodies rather than
+reading prose as configuration; formatted doctor paths pass through user-path redaction.
 
 > Decision record: [ADR-0017](decisions/ADR-0017-config-injection.md)
 
@@ -589,9 +591,7 @@ being treated as a text model by one and an image target by the other.
 malformed persisted value is off. `src/config/schema/config-schema.ts` degrades a malformed hand edit
 to absence so an optional monitoring typo cannot discard providers or credentials. The live-write
 boundary runs `metricsExportConfigError` in `src/config/diagnostics.ts` before the degrading schema,
-so wrong types and unknown nested fields are rejected rather than silently saved. Activation is read
-when the server process creates its serve options and therefore requires restart; it adds no setting
-to the live `/api/settings` mutation surface.
+so wrong types and unknown nested fields are rejected rather than silently saved. Activation is read when the server process creates its serve options and therefore requires restart; it adds no setting to the live `/api/settings` mutation surface.
 
 `apiSurfaces` and `protocols` on `src/types/config.ts` are parsed by `src/protocols/settings.ts` only; [Protocol Paths](data-planes/protocol-paths.md#settings) owns their schema handling, meaning and the one writer (`PATCH /api/protocols/settings`), including why closing Messages also writes `claudeCode.enabled` through `commitClaudeCodeBlock` (`src/claude/claude-code-block.ts`, the sentinel-stamping block writer every management route uses).
 

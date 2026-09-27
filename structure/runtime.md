@@ -1,5 +1,7 @@
 # Runtime
 
+The minute sweep checks persisted activation deadlines locally; only missing deadlines trigger metadata discovery. See the [quota activation contract](providers/openai-tiers.md#public-provider-contract).
+
 ## Resolved static model policy
 
 `src/router.ts` attaches one frozen `ResolvedModelPolicy` to every `RouteResult`. Policy/combo
@@ -502,7 +504,7 @@ This is also why the classifier cannot duplicate visible output. Native byte str
 
 Regression coverage: `tests/responses/responses-forward-prompt-envelope.test.ts`, `tests/routing/router-combo-failover-classification.test.ts`, `tests/routing/routing-policy-fallback.test.ts`, `tests/helpers/combo-context-overflow-cases.ts`, and `tests/server/server-combo-failover-e2e.test.ts`.
 
-`src/combos/failover.ts` uses a 10-minute fallback for a spent account usage window (codes `usage_limit_exceeded`, `usage_limit_reached`, `1308`, or `usage limit reached` / `usage limit has been reached` prose, including HTTP 502) and for provider-scoped credential or billing failure codes such as `invalid_api_key` and `insufficient_quota`. This duration does not change failure classification or cooldown scope; upstream retry/reset signals and configured durations retain precedence. It caps explicit upstream `Retry-After` target cooldowns at 24 hours while reset-derived, configured, and fallback cooldowns remain capped at 10 minutes.
+`src/combos/failover.ts` uses a 10-minute fallback for a spent account usage window (codes `usage_limit_exceeded`, `usage_limit_reached`, `1308`, or `usage limit reached` / `usage limit has been reached` / `token-plan <window> quota has been exhausted` prose, including HTTP 502) and for provider-scoped credential or billing failure codes such as `invalid_api_key` and `insufficient_quota`. This duration does not change failure classification or cooldown scope; upstream retry/reset signals and configured durations retain precedence. It caps explicit upstream `Retry-After` target cooldowns at 24 hours while reset-derived, configured, and fallback cooldowns remain capped at 10 minutes.
 
 ## Combo default effort precedence
 
@@ -589,9 +591,7 @@ an unreadable current record is unknown, and a valid address is probed even when
 PID is gone. Lease delegation is passed only to stop and recovery children, never package
 manager children. A replacement refusal passes through owner-aware recovery: only the same CLI
 owner revives the stopped runtime; foreign ownership stays transferred and unknown ownership
-remains a reported recovery requirement. Dashboard restart delegates the lease token to its repair child. Direct
-start holds the same lease through bind plus PID and runtime-address publication. If listener
-rollback cannot prove the socket closed, the process retains its lease until exit.
+remains a reported recovery requirement. Dashboard restart delegates the lease token to its repair child. Direct start holds the same lease through bind plus PID and runtime-address publication. If listener rollback cannot prove the socket closed, the process retains its lease until exit.
 The registration is never deleted; `ocx service install` releases the marker only after the
 registration succeeds.
 
