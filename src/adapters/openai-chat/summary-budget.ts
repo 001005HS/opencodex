@@ -18,15 +18,43 @@ function textContent(value: unknown): string | undefined {
   return text.join("\n");
 }
 
-/** Aside's emergency checkpoint is a standalone summary, not an ordinary short answer.
- * Runs at the physical Chat destination, after all combo effort overrides.
+const PROTECTED_SUMMARY_CAP = 8192;
+/** A real checkpoint carries the conversation it summarizes; a short probe is not one (#5465). */
+const MIN_CHECKPOINT_TRANSCRIPT_CHARS = 2000;
+
+/** The mitigation is scoped to Z.AI's own endpoints; another gateway serving the same model id is not. */
+function isZaiEndpoint(baseUrl: string | undefined): boolean {
+  if (!baseUrl) return false;
+  try {
+    const host = new URL(baseUrl).hostname.toLowerCase();
+    return host === "z.ai" || host.endsWith(".z.ai");
+  } catch {
+    return false;
+  }
+}
+
+function isTinyCap(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= 1024;
+}
+
+/**
+ * Aside's emergency checkpoint is a standalone summary, not an ordinary short answer (#5465).
+ * Runs at the physical Chat destination, after all combo effort overrides, so `effort` is the
+ * effective effort. Only the exhausting tiers (`high`/`max`) on Z.AI's GLM-5.3-Flash, for the
+ * two-message checkpoint shape with a real `<conversation>` transcript, qualify. Each tiny cap
+ * field is raised on its own, so a caller's larger cap is never shrunk.
  */
-export function protectGlmSummaryBudget(body: Record<string, unknown>): boolean {
+export function protectGlmSummaryBudget(
+  body: Record<string, unknown>,
+  baseUrl: string | undefined,
+  effort: unknown,
+): boolean {
+  if (!isZaiEndpoint(baseUrl)) return false;
+  if (effort !== "high" && effort !== "max") return false;
   if (typeof body.model !== "string"
       || !/^(?:(?:zai|z-ai|zai-org)\/)?glm-5\.3-flash$/i.test(body.model)) return false;
   if (body.tools !== undefined && (!Array.isArray(body.tools) || body.tools.length > 0)) return false;
-  const cap = body.max_completion_tokens ?? body.max_tokens;
-  if (typeof cap !== "number" || !Number.isInteger(cap) || cap < 1 || cap > 1024) return false;
+  if (!isTinyCap(body.max_tokens) && !isTinyCap(body.max_completion_tokens)) return false;
   const messages = body.messages;
   if (!Array.isArray(messages) || messages.length !== 2) return false;
   const [system, user] = messages;
@@ -35,12 +63,10 @@ export function protectGlmSummaryBudget(body: Record<string, unknown>): boolean 
   const instruction = textContent(system.content);
   const transcript = textContent(user.content);
   if (instruction === undefined || transcript === undefined) return false;
-  const summaryInstruction = /\bcontext[-\s]+summari[sz](?:ation|er|ing)\b/i.test(instruction);
-  const checkpointTranscript = /\b(?:summari[sz]e|summary|checkpoint)\b/i.test(instruction)
-    && /<conversation>[\s\S]*<\/conversation>/i.test(transcript);
-  if (!summaryInstruction && !checkpointTranscript) return false;
-  // Update both if supplied: gateways differ on which cap takes precedence.
-  if (body.max_tokens !== undefined) body.max_tokens = 4096;
-  if (body.max_completion_tokens !== undefined) body.max_completion_tokens = 4096;
+  if (!/\b(?:summari[sz](?:e|ation|er|ing)|summary|checkpoint)\b/i.test(instruction)) return false;
+  if (!/<conversation>[\s\S]*<\/conversation>/i.test(transcript)) return false;
+  if (transcript.length < MIN_CHECKPOINT_TRANSCRIPT_CHARS) return false;
+  if (isTinyCap(body.max_tokens)) body.max_tokens = PROTECTED_SUMMARY_CAP;
+  if (isTinyCap(body.max_completion_tokens)) body.max_completion_tokens = PROTECTED_SUMMARY_CAP;
   return true;
 }

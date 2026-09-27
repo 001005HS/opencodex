@@ -10,9 +10,11 @@ const provider: OcxProviderConfig = {
   adapter: "openai-chat", baseUrl: "https://api.z.ai/api/coding/paas/v4",
   reasoningEfforts: ["low", "medium", "high", "max"],
 };
+// Aside's emergency checkpoint: a summary instruction plus the transcript it summarizes (#5465).
+const transcript = `<conversation>${"User: implement the feature and keep the tests green.\n".repeat(60)}</conversation>`;
 const messages = [
   { role: "system", content: "You are a context-summarization assistant. Produce a checkpoint." },
-  { role: "user", content: "<conversation>User: implement the feature.</conversation>" },
+  { role: "user", content: transcript },
 ];
 function bodies(overrides: Record<string, unknown> = {}, config = provider) {
   const raw = { model, messages, max_tokens: 512, reasoning_effort: "max", ...overrides };
@@ -26,7 +28,7 @@ function bodies(overrides: Record<string, unknown> = {}, config = provider) {
 describe("GLM tiny standalone summary compatibility", () => {
   test.each([1, 512, 819, 1024])("raises cap %i and lowers effort on both Chat paths", cap => {
     for (const body of bodies({ max_tokens: cap })) {
-      expect(body.max_tokens).toBe(4096);
+      expect(body.max_tokens).toBe(8192);
       expect(body.reasoning_effort).toBe("low");
       expect(body.messages).toEqual(messages);
     }
@@ -40,7 +42,7 @@ describe("GLM tiny standalone summary compatibility", () => {
     parsed.modelId = model;
     expect(parsed.options.reasoning).toBe("max");
     const body = JSON.parse(createOpenAIChatAdapter(provider).buildRequest(parsed).body);
-    expect(body.max_tokens).toBe(4096);
+    expect(body.max_tokens).toBe(8192);
     expect(body.reasoning_effort).toBe("low");
     expect(parsed.options.maxOutputTokens).toBe(819);
     expect(parsed.options.reasoning).toBe("max");
@@ -61,5 +63,36 @@ describe("GLM tiny standalone summary compatibility", () => {
       expect(body.max_tokens).toBe(512);
       expect(body.reasoning_effort).toBe("max");
     }
+  });
+});
+
+describe("GLM summary mitigation stays inside its boundary (#5953 review)", () => {
+  const untouched = (body: Record<string, unknown>, effort = "max") => {
+    expect(body.max_tokens).toBe(512);
+    expect(body.reasoning_effort).toBe(effort);
+  };
+  test("another gateway serving the same model id is left alone", () => {
+    for (const baseUrl of ["https://example.com/v1", "https://evilz.ai/api/v4", "not a url"]) {
+      for (const body of bodies({}, { ...provider, baseUrl })) untouched(body);
+    }
+  });
+  test("a summarization system prompt with an ordinary short user message is not a checkpoint", () => {
+    const probe = [messages[0], { role: "user", content: "Hello" }];
+    for (const body of bodies({ messages: probe })) untouched(body);
+  });
+  test("a checkpoint transcript under the minimum length is not rewritten", () => {
+    const short = [messages[0], { role: "user", content: "<conversation>User: hi.</conversation>" }];
+    for (const body of bodies({ messages: short })) untouched(body);
+  });
+  test.each(["low", "medium"])("an effective %s effort is not overridden", effort => {
+    for (const body of bodies({ reasoning_effort: effort })) untouched(body, effort);
+  });
+  test("each cap field is judged on its own", () => {
+    const [, mixedLarge] = bodies({ max_tokens: 512, max_completion_tokens: 2048 });
+    expect(mixedLarge.max_tokens).toBe(8192);
+    expect(mixedLarge.max_completion_tokens).toBe(2048);
+    const [, mixedSmall] = bodies({ max_tokens: 4096, max_completion_tokens: 512 });
+    expect(mixedSmall.max_tokens).toBe(4096);
+    expect(mixedSmall.max_completion_tokens).toBe(8192);
   });
 });

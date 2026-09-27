@@ -145,7 +145,8 @@ export function createOpenAIChatAdapter(provider: OcxProviderConfig): ProviderAd
           body.stop = parsed.options.stopSequences;
         }
         const reasoningDisabled = modelInList(provider.noReasoningModels, parsed.modelId);
-        const requestedEffort = protectGlmSummaryBudget(body) ? "low" : parsed.options.reasoning;
+        const requestedEffort = protectGlmSummaryBudget(body, provider.baseUrl, parsed.options.reasoning)
+          ? "low" : parsed.options.reasoning;
         const reasoningEffort = mapReasoningEffort(provider, parsed.modelId, requestedEffort);
         const explicitReasoning = applyExplicitChatReasoningWirePolicy({
           provider,
