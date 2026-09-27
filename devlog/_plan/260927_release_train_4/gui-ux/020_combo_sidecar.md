@@ -16,3 +16,27 @@ In an isolated proxy, create a mixed combo from one image-capable and one text-o
 ## Rollback and boundary
 
 Do not overwrite sibling per-model context/reasoning axes. If the generated modality declaration cannot be distinguished from an operator's existing declaration, the implementation must preserve the existing one and explain that behavior; rollback must never delete operator-owned facts.
+
+## P revalidation for `wp2` (2026-09-28, `dev` `3401e1ee73`)
+
+Continuity: phase 010's D (`012_model_settings_done.md`) closed with #6105 merged and pointed here, adopting the explorer's corrections. That direction stands, with the corrections below.
+
+**Corrected claims.** A missing configured provider is already rejected by `comboConfigError` before #4932's silent skip could run (`src/server/management/combo-routes.ts:225-231`, `src/combos/types.ts:275-281`). An explicit provider check stays as a guard, but there is no reachable 200 to fix. #4932 never persisted `visionSidecarTargets` under `combos`, because `stored` is built from the normalized combo. Both defects that do hold are kept: #4932 overwrites an existing declaration with `["text"]` (`mergeModelCapabilities`, `src/config/provider-validation.ts:419-432`), and it classifies audio-only rows as sidecar-eligible, although the runtime requires `text` (`src/vision/eligibility.ts:136-146`). It also lacks `vi.ts`.
+
+**Enrollment mechanism, verified.** `isModelVisionSidecarConsumer` (`src/vision/eligibility.ts:136`) treats an exact `modelCapabilities[id].inputModalities` containing `text` but not `image` as a sidecar consumer. The catalog then advertises `image` for that row (`src/codex/catalog/model-hints.ts:285-294`), whether or not the sidecar is enabled. After enrollment, `GET /api/models` reports the member as image-capable, so the existing `comboImagesSupported` check passes on reload. Actually describing an image needs the sidecar enabled with a usable backend (`src/vision/plan.ts:195-217`).
+
+### Decisions
+
+1. **Server (`combo-routes.ts`).** Accept a top-level, request-only `visionSidecarTargets: {provider, model}[]` on combo create/update. Validate every target before any mutation:
+   - The target is an exact member of the submitted combo.
+   - The provider exists and is routed (not `openai` native or a combo).
+   - The combo's `imageInput` is not `disabled`.
+   - The member's existing declaration, read the way the runtime reads it (exact `modelCapabilities`, then the legacy record), is absent. An existing text-only declaration is a no-op. A declaration that includes `image`, or one that lacks `text`, is a 400; it is never overwritten.
+
+   Write each `["text"]` declaration into a copied `modelCapabilities` row, preserving sibling capability fields, in the same `commitProviderPatch` transaction as the combo write, so there is one save. The field never lands under `combos` and is not echoed back.
+2. **GUI classification (`combo-capabilities.ts`).** Each member is classed from its `/api/models` row as `image` (modalities include `image`), `sidecar` (known modalities with `text` and without `image`), or `blocked` (no known modalities, or no `text`). The Image input switch is available when no member is `blocked` and at least one member is `image` or `sidecar`. Saving with images on sends every `sidecar` member as a target.
+3. **Hint (`combo-workspace-controls.tsx`).** When `sidecar` members exist, the hint names them exactly (`provider/model`) and says the Vision Sidecar will describe images for them. If `GET /api/sidecar-settings` reports the sidecar disabled, a warning line says images for those members need it turned on, linked to its settings. When a member is `blocked`, the hint names it and the reason (modalities unknown, or no text input), and the switch stays off. Save errors surface the server's rejection through the existing error path. The save stays one primary action.
+4. **Copy.** New keys go into all ten locales, including `vi`.
+5. **Tests.** `tests/routing/combo-management-api.test.ts` gets each rejection with config unchanged and no save: non-member target, disabled image input, image-capable or audio-only declaration, and native provider. It also covers the success write that preserves sibling fields, the text-only no-op, and the absence of the field under `combos`. `tests/gui/combo-workspace-data.test.ts` gets classification and request shape; a `gui/tests/combo-workspace-*.test.tsx` case covers the rendered hint and the save body.
+
+Deferred: a provenance marker for generated declarations. Rollback keeps operator facts, and the declaration can be cleared per model from phase 010's editor.
