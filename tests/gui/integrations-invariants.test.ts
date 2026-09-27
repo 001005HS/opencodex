@@ -252,6 +252,7 @@ describe("every client survives a full lifecycle", () => {
   /** A pre-existing user document in each client's own format. */
   const SEED: Record<IntegrationClientId, string> = {
     cline: '{"version":1,"modes":{},"providers":{"mine":{"settings":{"provider":"mine"},"updatedAt":"2026-01-01T00:00:00.000Z","tokenSource":"manual"}}}\n',
+    droid: '{"theme":"dark","customModels":[{"model":"local","displayName":"Local","baseUrl":"http://127.0.0.1:11434/v1","provider":"generic-chat-completion-api"}]}\n',
     opencode: '{\n  "provider": {\n    "mine": { "npm": "keep-me" }\n  }\n}\n',
     pi: '{\n  "providers": {\n    "mine": { "api": "http://keep-me" }\n  }\n}\n',
     omp: "providers:\n  mine:\n    api: http://keep-me\n",
@@ -278,6 +279,7 @@ describe("every client survives a full lifecycle", () => {
   /** Where the seed's user-owned entry lives when the seed is a sequence. */
   const USER_ELEMENT: Partial<Record<IntegrationClientId, readonly string[]>> = {
     raycast: ["providers", "[id=lmstudio]"],
+    droid: ["customModels", "[model=local]"],
   };
 
   for (const clientId of INTEGRATION_CLIENT_IDS) {

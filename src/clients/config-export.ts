@@ -51,6 +51,8 @@ export type { DshReasoningEffort, DshWireReasoningEffort, DshModelEntry, DshProv
 export type { McodeProviderBlock, McodeModelEntry, McodeGeneratedConfig } from "./config-export/mcode";
 export type { RaycastAbility, RaycastAbilityName, RaycastModelEntry, RaycastProviderEntry, RaycastGeneratedConfig } from "./config-export/raycast";
 export { buildRaycastClientConfig, summarizeRaycast, buildRaycastContribution } from "./config-export/raycast";
+export { droidHomeDir, droidConfigPath, assertDroidSettingsUnambiguous, buildDroidClientConfig, summarizeDroid, buildDroidContribution } from "./config-export/droid";
+export type { DroidModelEntry, DroidGeneratedConfig } from "./config-export/droid";
 
 import type { OpencodeLaunchEnv, OpencodeCatalogModel, ExportContext, PiModelEntry, ManagedContribution, ManagedFragment, ExportClientId, ExportClientSpec } from "./config-export/contracts";
 import { OPENCODE_API_KEY_ENV_REF, OPENCODE_PROVIDER_BLOCK_DEFAULT_CONFIG, OPENCODE_CONFIG_SCHEMA, OPENCODE_PROVIDER_ID, PI_API_DIALECT, LOOPBACK_API_KEY_PLACEHOLDER, HERMES_API_KEY_ENV_REF, OPENCLAW_API_KEY_ENV_REF, OPENCODE_API_KEY_ENV, HERMES_API_KEY_ENV, OPENCLAW_API_KEY_ENV, KILO_API_KEY_ENV } from "./config-export/constants";
@@ -64,6 +66,7 @@ import { buildRaycastClientConfig, summarizeRaycast, buildRaycastContribution } 
 import { buildKiloClientConfig, summarizeKilo, buildKiloContribution, kiloConfigPath } from "./config-export/kilo";
 export { kiloConfigPath, kiloHomeDir, kiloCandidatePath, KILO_CONFIG_CANDIDATES } from "./config-export/kilo";
 export type { KiloGeneratedConfig, KiloProviderBlock, KiloModelEntry } from "./config-export/kilo";
+import { droidConfigPath, buildDroidClientConfig, summarizeDroid, buildDroidContribution } from "./config-export/droid";
 
 
 
@@ -1603,6 +1606,18 @@ export const EXPORT_CLIENTS: Record<ExportClientId, ExportClientSpec> = {
     buildContribution: buildKiloContribution,
     loopbackOnly: false,
     jsonc: true,
+  },
+  droid: {
+    id: "droid",
+    filename: "factory-settings.json",
+    destination: env => droidConfigPath(env),
+    apiKeyEnv: "",
+    exportHint: "Factory Droid reads keyless loopback custom models from settings.json. Select one with /model.",
+    build: buildDroidClientConfig,
+    format: "json",
+    summarize: summarizeDroid,
+    buildContribution: buildDroidContribution,
+    loopbackOnly: true,
   },
 };
 

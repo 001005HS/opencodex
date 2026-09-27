@@ -106,7 +106,8 @@ export type ExportClientId =
   | "raycast"
   | "omo"
   | "cline"
-  | "kilo";
+  | "kilo"
+  | "droid";
 
 export interface ExportClientSpec {
   id: ExportClientId;
