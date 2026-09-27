@@ -4,7 +4,7 @@ import {
   countOverviewRows,
   type OverviewSources,
 } from "../src/pages/integrations/overview-clients";
-import type { IntegrationStatus } from "../src/pages/integrations/integration-api";
+import { FILE_INTEGRATION_CLIENTS, type IntegrationStatus } from "../src/pages/integrations/integration-api";
 import type { NativeStatus } from "../src/pages/integrations/native-api";
 
 /**
@@ -310,9 +310,10 @@ test("every client counts toward the summary, not just the file clients", () => 
 
 test("an unsettled file list renders unknown rows instead of dropping them", () => {
   const built = buildOverviewRows(sources({ clients: [], clientsSettled: false }));
-  expect(built.rows).toHaveLength(21);
+  expect(built.rows).toHaveLength(FILE_INTEGRATION_CLIENTS.length + 5);
   expect(rowById(built, "cline")).toMatchObject({ hash: "integrations/cline", labelKey: "integrations.tab.cline", state: "unknown" });
   expect(rowById(built, "kilo")).toMatchObject({ hash: "integrations/kilo", labelKey: "integrations.tab.kilo", state: "unknown" });
+  expect(rowById(built, "droid")).toMatchObject({ hash: "integrations/droid", labelKey: "integrations.tab.droid", state: "unknown" });
   expect(rowById(built, "omp").state).toBe("unknown");
   expect(rowById(built, "mcode").state).toBe("unknown");
   expect(rowById(built, "zcode").state).toBe("unknown");

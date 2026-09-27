@@ -4,7 +4,7 @@ description: Connectez opencodex à OpenCode, Pi, OMP, Hermes, OpenClaw, Kimi Co
 ---
 
 L'onglet **Intégrations** écrit le bloc fournisseur d'opencodex dans le fichier de configuration du client,
-puis peut le retirer. Seize clients fonctionnent ainsi, chacun avec son propre commutateur :
+puis peut le retirer. Dix-sept clients fonctionnent ainsi, chacun avec son propre commutateur :
 
 | Client | Fichier de configuration | Format | Prise d'effet de la modification | Identifiant |
 |---|---|---|---|---|

@@ -4,7 +4,7 @@ description: Kontrol panelinden OpenCode, Pi, OMP, Hermes, OpenClaw, Kimi Code, 
 ---
 
 **Entegrasyonlar** sekmesi, opencodex'in sağlayıcı bloğunu istemcinin kendi
-yapılandırma dosyasına yazar ve tekrar kaldırır. On altı istemci bu şekilde
+yapılandırma dosyasına yazar ve tekrar kaldırır. On yedi istemci bu şekilde
 çalışır, her biri bir anahtarla:
 
 | İstemci | Yapılandırma dosyası | Format | Değişiklik ne zaman geçerli olur? | Kimlik bilgisi |

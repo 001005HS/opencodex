@@ -4,7 +4,7 @@ description: Connect opencodex to OpenCode, Pi, OMP, Hermes, OpenClaw, Kimi Code
 ---
 
 The **Integrations** tab writes opencodex's provider block into a client's own config
-file, and removes it again. Sixteen clients work this way, each with a switch:
+file, and removes it again. Seventeen clients work this way, each with a switch:
 
 | Client | Config file | Format | When the change takes effect | Credential |
 |---|---|---|---|---|
