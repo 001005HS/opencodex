@@ -53,3 +53,12 @@ Deferred: a provenance marker for generated declarations. Rollback keeps operato
 2. **Sidecar status.** `Combos.tsx` loads `GET /api/sidecar-settings` separately from the three workspace requests, so a failure never blocks the workspace. It reads `vision.enabled` (`src/server/management/config-routes.ts:280,815`). A missing or failed read shows no warning and does not guess. The warning appears only when `vision.enabled === false` and `sidecar` members exist.
 
 The integration point is confirmed: create, update and rename share `PUT /api/combos` (`combo-routes.ts:132`), with one save at `:343`, so `commitProviderPatch` can wrap the mutation and that save.
+
+### Independent A (`01a0e45f-c395-79a0-b1cb-41c43abde891`, `gpt-6-sol`): GO-WITH-FIXES; held for the next train
+
+Before B started, the coordinator narrowed train 4 to PRs that were already open or nearly finished. No implementation started, so #4932 is **held for the next train** with a comment on the PR. The audit findings below are part of the plan the next train starts from:
+
+1. **High.** Enrollment makes a member advertise `image`, so catalog modalities alone reclassify it as native-image after reload, and the "sidecar is off" warning disappears. Classify with the declaration `/api/models` exposes separately (`inputModalitiesDeclared`, `src/server/management/model-rows.ts:388-404`), and test save, reload, then disable the sidecar.
+2. **Medium.** A custom row's `/api/models` row is rebuilt from `customModels` (`model-rows.ts:323-334,373-376`), so "every enrolled member reports `image`" cannot hold for a custom row. Either align that projection with sidecar coverage or test the custom-row outcome separately.
+3. **Medium.** Show enrollment and sidecar wording only while the combo's image input is enabled. Test an existing `imageInput: "disabled"` combo, then switching it on.
+4. **Medium.** Wrapping the save in `commitProviderPatch` needs direct tests: a successful rename still migrates identity and `disabledModels`, and a failed save restores the combo, the declaration and the rewritten references. Both guides must say that removing a member leaves its provider-level declaration until the operator clears it (phase 010's editor can).
