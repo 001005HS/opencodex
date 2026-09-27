@@ -942,6 +942,9 @@ test("already-running ensure leaves Raycast untouched when saved host and listen
   let refreshCalls = 0;
   const deps = {
     findProxyOwnerBeforeJournalRecovery: async () => ({ live: { hostname: "127.0.0.1", port: 10237 } }),
+    // Cross-home ownership: this harness models a lone owner, so nothing marks it a sibling.
+    markLiveHomeSibling: async () => false,
+    siblingOfLivePort: () => null,
     loadConfig: () => savedConfig,
     codexAutoStartEnabled: () => true,
     syncModelsToCodex: async () => ({ status: "skipped" }),
