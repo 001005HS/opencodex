@@ -896,10 +896,25 @@ export async function handleModelRoutes(ctx: ManagementContext): Promise<Respons
         if (Object.keys(capabilities).length === 0) delete providerConfig.modelCapabilities;
         else providerConfig.modelCapabilities = capabilities;
       }
+      /*
+       * The legacy `modelInputModalities` record is the fallback `declaredModelInputModalities` and the
+       * router read once the capability entry is gone. A clear that left its exact entry behind would
+       * report "restored" while the old declaration stayed in force. Only the exact key is removed: a
+       * family or case-folded key covers other models too, and stays a provider-level declaration.
+       */
+      const legacy = providerConfig.modelInputModalities;
+      if (modalities === null && legacy && Object.hasOwn(legacy, modelId)) {
+        const next: Record<string, string[]> = Object.assign(Object.create(null), legacy);
+        delete next[modelId];
+        changed = true;
+        if (Object.keys(next).length === 0) delete providerConfig.modelInputModalities;
+        else providerConfig.modelInputModalities = next;
+      }
     }
 
     const hasOverrides = [providerConfig.modelContextWindows, providerConfig.modelReasoningEfforts,
-      providerConfig.modelDefaultReasoningEfforts].some(map => map !== undefined && Object.hasOwn(map, modelId))
+      providerConfig.modelDefaultReasoningEfforts, providerConfig.modelInputModalities]
+      .some(map => map !== undefined && Object.hasOwn(map, modelId))
       || providerConfig.modelCapabilities?.[modelId]?.inputModalities !== undefined;
     const state = {
       ok: true as const,

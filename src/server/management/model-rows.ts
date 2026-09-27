@@ -133,8 +133,10 @@ export function declaredModelInputModalities(
  */
 export type CatalogLadderLookup = ReadonlyMap<string, string[]>;
 
-function catalogLadder(ladders: CatalogLadderLookup | undefined, modelId: string): string[] | undefined {
-  return ladders ? ladders.get(modelId) : catalogModelEfforts([modelId]).get(modelId);
+/** Catalog entries for routed rows carry the Codex-facing `provider/model` slug, never the bare id. */
+function catalogLadder(ladders: CatalogLadderLookup | undefined, providerName: string, modelId: string): string[] | undefined {
+  const slug = routedSlug(providerName, modelId);
+  return ladders ? ladders.get(slug) : catalogModelEfforts([slug]).get(slug);
 }
 
 export function effectiveModelReasoningEfforts(config: OcxConfig, providerName: string, modelId: string, declaredEfforts?: string[], catalogLadders?: CatalogLadderLookup): string[] | undefined {
@@ -159,7 +161,7 @@ export function effectiveModelReasoningEfforts(config: OcxConfig, providerName: 
     const native = nativeReasoningEfforts(modelId);
     if (native.length > 0) return native;
   }
-  const hits = catalogLadder(catalogLadders, modelId);
+  const hits = catalogLadder(catalogLadders, providerName, modelId);
   if (hits && hits.length > 0) return hits;
   return undefined;
 }
@@ -366,8 +368,8 @@ export async function listManagementModelRows(
   // One catalog read for the whole roster. Every `catalogModelEfforts` call parses the catalog
   // file and scans it once per requested slug, so resolving these per row (and twice per row, as
   // the guard and the value) re-read the same file thousands of times on a large roster.
-  const routedIds = publicModels.filter(m => m.provider !== "combo").map(m => m.id);
-  const catalogLadders = catalogModelEfforts([...new Set(routedIds)]);
+  const routedSlugs = publicModels.filter(m => m.provider !== "combo").map(m => routedSlug(m.provider, m.id));
+  const catalogLadders = catalogModelEfforts([...new Set(routedSlugs)]);
   const dedupedRouted = publicModels.map((m): ManagementModelRow | null => {
     // Codex-facing slug (one "/", slug-codec); disabledModels compares tolerate both forms.
     const namespaced = catalogModelSlug(m);

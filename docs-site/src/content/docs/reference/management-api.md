@@ -502,7 +502,9 @@ Every field is optional, and `null` **clears** the declaration rather than writi
 which hands the fact back to the registry, the catalog, and the provider. An empty
 `inputModalities` array also clears, while an empty `reasoningEfforts` array is stored as an
 explicit "this model has no reasoning rungs" override — it does not clear.
-An emptied per-model map is removed instead of left as `{}`. A request that changes nothing
+Clearing `inputModalities` also removes the exact legacy `modelInputModalities` entry for that
+model, so a restore cannot leave an older declaration in force; family keys shared with other
+models stay. An emptied per-model map is removed instead of left as `{}`. A request that changes nothing
 answers `changed: false` with the stored state. The receipt also reports `saved` (whether this
 request published config), `hasOverrides` (whether any of the four axes remains stored), and
 `catalogRefresh` (`committed`, `skipped`, or `failed`). These fields distinguish a no-op with

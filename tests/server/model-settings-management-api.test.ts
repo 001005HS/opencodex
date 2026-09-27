@@ -10,6 +10,11 @@ import type { CatalogModel } from "../../src/codex/catalog";
 import type { OcxConfig } from "../../src/types";
 import { removeTreeWithRetry } from "../helpers/remove-tree";
 import { ConfigWritePublishedError } from "../../src/config/persist-unlocked";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
+import { readCodexCatalogPath } from "../../src/codex/catalog/parsing";
+import { effectiveModelReasoningEfforts } from "../../src/server/management/model-rows";
+import { routedSlug } from "../../src/providers/slug-codec";
 
 /**
  * `PUT /api/model-settings` writes per-model overrides onto a routed row.
@@ -95,6 +100,30 @@ function harness(config = fixture(), converge?: () => Promise<never>, save?: (sa
 }
 
 describe("per-model settings API", () => {
+  test("restoring modalities also clears the exact legacy declaration", async () => {
+    const config = fixture();
+    config.providers[PROVIDER]!.modelInputModalities = { [MODEL]: ["text"], "vendor/other": ["text", "image"] };
+    const h = harness(config);
+    const response = await h.call({ provider: PROVIDER, modelId: MODEL, inputModalities: null });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ changed: true, saved: true, hasOverrides: false, inputModalities: null });
+    expect(h.persisted).toHaveLength(1);
+    // Only the exact entry goes; another model's legacy declaration is not this request's to clear.
+    expect(h.persisted[0]!.providers[PROVIDER]!.modelInputModalities).toEqual({ "vendor/other": ["text", "image"] });
+    const noop = await h.call({ provider: PROVIDER, modelId: MODEL, inputModalities: null });
+    expect(await noop.json()).toMatchObject({ changed: false, hasOverrides: false });
+  });
+
+  test("the catalog ladder fallback is looked up by the routed slug", () => {
+    const config = fixture();
+    const catalogPath = readCodexCatalogPath();
+    mkdirSync(dirname(catalogPath), { recursive: true });
+    writeFileSync(catalogPath, JSON.stringify({ models: [
+      { slug: routedSlug(PROVIDER, MODEL), supported_reasoning_levels: [{ effort: "low" }, { effort: "high" }] },
+    ] }));
+    expect(effectiveModelReasoningEfforts(config, PROVIDER, MODEL)).toEqual(["low", "high"]);
+  });
+
   test("each axis round-trips, persists once, and converges the catalog once", async () => {
     const h = harness();
     const response = await h.call({
