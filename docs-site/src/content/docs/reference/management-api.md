@@ -522,6 +522,8 @@ effective `contextWindow`. The Models editor starts from the declaration and sho
 window as an inherited hint when no declaration exists. If a save outcome is unknown, or the
 save succeeded but the model list did not reload, the dialog disables further writes and offers
 a read-only Reload. After a successful reload, reopen the row to inspect the stored values.
+A `catalogRefresh` that failed, or was skipped with `retryable: true`, leaves the save in place and
+shows a warning to run Sync; a non-retryable skip means no managed Codex catalog and is a clean save.
 
 A manual model replaces the Models dashboard row with the same provider and model ID.
 For OpenAI, the manual row keeps `openai/<model>` and supports the same visibility controls
