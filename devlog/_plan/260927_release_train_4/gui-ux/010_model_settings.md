@@ -27,3 +27,13 @@ Read-only architect `01a0e369-14f4-7d40-b0de-1ddef731fa98` proposed MS58-01 thro
 ## Revalidation at resume (2026-09-28)
 
 The lane resumed in coordinator thread `01a0e37e-639d-7693-a2bc-5e4df49fa656` after the previous thread stopped at A. The previous D (docs-first `wp0`) locked this roadmap and pointed `wp1` at a carry-and-repair of #6058. That direction stands: `origin/dev` is still `24b2f39b77` and #6058 is still `0798999c6f`, so the diff-level map above needs no change. A fresh independent `gpt-6-sol` A verdict replaces the one lost when reviewer `01a0e372-f380-7e11-bf2b-661afd132a50` was shut down.
+
+## Independent A verdict at resume
+
+Reviewer `01a0e380-3554-72c3-935d-9f1ec8a1193b` (`gpt-6-sol`) returned **GO-WITH-FIXES** and confirmed `commitProviderPatch(config, mutate, save)` in `src/server/management/provider-patch-transaction.ts:45-61` restores the live graph after an unpublished failure and keeps it after `ConfigWritePublishedError`. Its three findings are folded into this phase:
+
+1. **CLI unsafe integers (Medium):** `src/cli/models-runtime.ts` in the PR uses `Number.isInteger`; require `Number.isSafeInteger` with a focused CLI case. The server check remains authoritative.
+2. **No-op wording (Medium):** `changed: false` means "nothing changed", not "no overrides stored". CLI and dialog no-op copy become neutral ("No settings changed" / nothing to restore only when the receipt shows every axis null), with tests for an identical write that leaves a declaration stored.
+3. **Catalog receipt (Low):** the dialog must read the server's `catalogRefresh` result; a confirmed save with a failed or skipped refresh says the settings were saved and offers reload, covered by a GUI test.
+
+The only capped file grown is `gui/src/pages/Models.tsx` (cap 2,792; dev 2,780; PR 2,788). The merge has no textual conflict, but locale, management-API doc, structure doc and test inventories need a union review after carry. The CLI is kept: it is small, already tested, and gives API parity.
