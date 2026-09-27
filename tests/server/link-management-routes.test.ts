@@ -184,7 +184,7 @@ describe("link management routes", () => {
 
     const status = await sessionCall(`${base}/api/link/status`, headers, state, cfg, deps, true);
     expect(status?.status).toBe(200);
-    expect(await status!.json()).toMatchObject({ role: "standalone", joinAvailable: true });
+    expect(await status!.json()).toMatchObject({ role: "standalone", joinAvailable: false });
     const listed = await sessionCall(`${base}/api/link/candidates`, headers, state, cfg, deps, true);
     expect(listed?.status).toBe(200);
     expect(await listed!.json()).toEqual({ candidates: [{ alias: "home", source: "ssh_config" }] });
@@ -193,14 +193,15 @@ describe("link management routes", () => {
     expect((await sessionCall(`${base}/api/link/probe`, headers, state, cfg, deps, true, "POST", { alias: "home" }))?.status).toBe(403);
     expect((await sessionCall(`${base}/api/link/confirm-host`, mutation, state, cfg, deps, true, "POST", { alias: "home", fingerprint: "SHA256:abcdefghijklmnop" }))?.status).toBe(200);
 
-    // The same session may also turn this computer into a Child: join reaches the join step.
+    // Credentialless loopback sessions may inspect and confirm a host, but cannot commit the
+    // durable routing change that turns this computer into a Child.
     let joins = 0;
     const joinDeps = { ...deps, joinHome: async () => { joins += 1; return { linkId: "lnk_0123456789abcdef", apiKeyId: "key-join" }; } } as ManagementApiDeps;
     const joined = await sessionCall(`${base}/api/link/join`, mutation, state, cfg, joinDeps, true, "POST", { alias: "home" });
-    expect(joined?.status).toBe(202);
-    expect(joins).toBe(1);
+    expect(joined?.status).toBe(403);
+    expect(joins).toBe(0);
     expect((await sessionCall(`${base}/api/link/join`, headers, state, cfg, joinDeps, true, "POST", { alias: "home" }))?.status).toBe(403);
-    expect(joins).toBe(1);
+    expect(joins).toBe(0);
 
     // The Home side runs end to end for this session: apply issues and connects, removal disconnects.
     const applied = await sessionCall(`${base}/api/link/apply`, mutation, state, cfg, deps, true, "POST", { alias: "home" });
@@ -251,10 +252,9 @@ describe("link management routes", () => {
     expect(await paired!.json()).toMatchObject({ role: "standalone", joinAvailable: true });
     const hub = await call("/api/link/status", "GET", undefined, h.deps, "gui-session", true, "pairing", true, { ...standalone, runtimeRole: "hub" } as OcxConfig);
     expect(await hub!.json()).toMatchObject({ joinAvailable: false });
-    // The local dashboard session of a standalone may join, unless this runtime is not on its
-    // configured port: the client runtime a join restarts into binds only that port.
+    // A credentialless local session cannot join even on the configured port.
     const loopback = await call("/api/link/status", "GET", undefined, h.deps, "gui-session", true, "loopback", false, standalone);
-    expect(await loopback!.json()).toMatchObject({ role: "standalone", joinAvailable: true });
+    expect(await loopback!.json()).toMatchObject({ role: "standalone", joinAvailable: false });
     const moved = await call("/api/link/status", "GET", undefined, { ...h.deps, liveListenPort: () => 10200 }, "gui-session", true, "loopback", false, standalone);
     expect(await moved!.json()).toMatchObject({ joinAvailable: false });
     const unknownPort = await call("/api/link/status", "GET", undefined, { ...h.deps, liveListenPort: () => undefined }, "gui-session", true, "loopback", false, standalone);
