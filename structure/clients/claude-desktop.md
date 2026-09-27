@@ -81,6 +81,19 @@ Disabling Desktop integration removes its gateway profile. It removes the owned 
 only when `claudeCode.cliFirstParty` is not set; otherwise the env stays for the CLI. With Desktop
 first-party ON, `ocx ensure` re-applies a stale env; the proxy port follows the public port.
 
+The settings env does not win everywhere. Desktop resolves the operating-system proxy for the API
+host when it spawns the Code tab and, for an HTTP answer, passes it as `HTTPS_PROXY`/`HTTP_PROXY`;
+only Claude Code managed settings override that, so a Windows system proxy without a bypass for
+`api.anthropic.com` silently routes the Code tab around the intercept. OpenCodex cannot fix this
+from its side without writing machine-wide managed settings or the user's proxy configuration, so
+`src/claude/desktop-system-proxy.ts` only observes it: on Windows with a Desktop first-party env
+(applied or stale), `ocx doctor` reads `ProxyEnable`/`ProxyServer`/`ProxyOverride`/`AutoConfigURL`
+and the auto-detect (WPAD) flag in `Connections\DefaultConnectionSettings`, and reports a conflict,
+a bypass, no covering proxy, or an undecidable PAC script or WPAD. A failed registry read is
+reported as unreadable, never as an absent value, and a stale settings env never earns an `ok`. It
+never prints the proxy value and never records a doctor failure, because the CLI and other clients
+still route.
+
 Surfaces: `ocx claude desktop apply [--first-party|--gateway]` in `src/cli/claude-desktop.ts`;
 `ocx claude config set --first-party on|off` and the Claude Code page switch control the CLI intent; `ocx ensure` refreshes a stale or absent env while it is on.
 `POST /api/claude-desktop/apply` with `mode` ∈ `first-party|gateway|static|hybrid|discovery` and
@@ -416,3 +429,5 @@ The [compaction routing override](../transports/responses-failover.md#compaction
 ## Native passthrough tool-call ids
 
 Native Anthropic passthrough in `src/server/claude-messages.ts` forwards the caller's body except for tool-call ids: `sanitizePassthroughToolCallIds` runs the request-scoped allocator from `src/adapters/tool-call-id.ts` over every `*tool_use` id and `*tool_result` `tool_use_id`. Conforming ids are reserved first and stay byte-identical, a non-conforming or overlength id is rewritten to a conforming id of at most 64 characters with call/result pairing kept, and an empty id throws `AnthropicRequestError`, so the request fails with a local 400 before the upstream fetch. `tests/claude-integration/claude-native-passthrough.test.ts` covers rewriting, pairing, the empty id, the overlength id and collision with an existing valid id.
+
+Linked-machine data uses the [connection-bound relay contract](../remote-link.md#connection-bound-relay-authentication); client-local credentials and routing policy remain unchanged.
