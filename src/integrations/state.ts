@@ -34,6 +34,7 @@ import {
 import {
   INTEGRATION_CLIENTS,
   boundIntegrationConfigPath,
+  assertDroidPathsUnambiguous,
   resolveIntegrationPaths,
   unresolvedPathHintFor,
   type IntegrationClientId,
@@ -527,7 +528,9 @@ export function readIntegrationState(input: IntegrationStateInput): IntegrationS
   try {
     // One resolution for both, so a client whose paths come from mutable state
     // cannot report one account's install beside another account's config path.
-    const paths = input.resolvedPaths ?? resolveIntegrationPaths(input.clientId, input.env, input.home);
+    const context = exportContextOf(input);
+    const paths = input.resolvedPaths ?? resolveIntegrationPaths(input.clientId, input.env, input.home, context);
+    if (input.clientId === "droid" && input.resolvedPaths) assertDroidPathsUnambiguous(paths.detectDir, context);
     installed = io.statKind(paths.detectDir) === "dir";
     if (input.clientId === "cline") io = createClineIO(io, paths.configPath, store);
     /*
