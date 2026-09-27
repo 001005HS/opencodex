@@ -228,6 +228,16 @@ and caller-cancellation propagation. Missing credentials or safe state, transpor
 answers fail open to the first eligible target; no response can escape the configured choice map.
 Telemetry never retains extracted state or credentials.
 
+The optional `targets[].modelProfile` note is validated at the Combo management input
+boundary to a non-empty string of at most 512 characters; tab, line feed and carriage
+return are allowed for multi-line notes, every other C0 control character and DEL is
+refused, and the value is stored sparsely.
+`src/combos/jev.ts` sends a configured target note as `state.operator_notes` on a
+JEV decision, keyed by target; built-in `instructions.model_profiles` and the
+target/effort allowlist stay authoritative. The note reaches TypeSafe with each
+applicable decision, so operators must keep secrets and private paths out of it.
+An absent note leaves the prior decision payload shape intact.
+
 `src/server/responses/core-combo.ts` computes current eligibility, asks JEV once for the initial pick,
 applies the validated effort, and removes caller `service_tier` for that child. A retryable child
 failure re-enters the ordinary Combo fallback loop from the untouched request without another JEV
@@ -480,6 +490,11 @@ normalization, and `tool_choice` alias resolution, so every adapter matches a de
 same way. `src/types/wire.ts` owns accepted wire enumerations such as the per-provider upstream
 HTTP-version pin, shared by the config load schema, the management write boundary, and the fetch
 runtime, so no boundary accepts a value another rejects.
+
+`src/types/config.ts` declares the optional per-phase `memoryModels` setting;
+`src/types/request.ts` carries the selected phase through combo handoffs without changing the
+public request model. [Memory phase routing](transports/responses-failover.md#memory-phase-routing)
+owns the selection rule.
 
 Preflight heartbeat retention keeps `replayUnsafe` sticky in the replayed tail, so a second
 preflight cannot forget earlier side effects after the original marker is evicted.
