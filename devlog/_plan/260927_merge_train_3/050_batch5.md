@@ -26,3 +26,30 @@ Held: #6030 (draft; launchd PATH adoption drops non-PATH changes, two ratchet br
   trust model.
 - #5953: the gate reads effective effort after combo overrides; transcript shapes that #5465 does not show stay
   unprotected, which is today's behavior.
+
+## Build and evidence
+
+| Commit | What |
+|---|---|
+| `4fda15d338` | #5180: canonical key-auth Command Code gets the patient same-key 429 policy; test fails without the fix |
+| `3876151d01` | #5953 carried |
+| `fb3faab205` | #5953 narrowed: Z.AI host, effective `high`/`max`, checkpoint transcript ≥ 2000 characters, per-field cap raise to 8192; negative tests per boundary |
+| `25e01a8e2b` | #6027 carried (layout registries unioned, entry kept on an existing line) |
+| `01b7e24d2d` | #6027 blockers: one-block rule, store at the success return, anonymous sharing only on a no-auth server; three tests that fail on the PR head |
+| `ad3b374820`, `2256d097e6` | `management-api.md` describes remote dashboard sessions as shipped (#4055) |
+
+Closed during this cycle with evidence: #3433 (identifiers preserved at the forward boundary, #4365; managed Hermes
+sends one, #5742; 26 pinned tests pass).
+
+Aside: #5953 shows two CHANGES_REQUESTED reviews (the overbreadth this batch narrows); #6027 shows the owner's
+three-blocker review this batch answers; #5465, #5569 and #5180 pages captured. One Aside capture failed once with a
+daemon `Aside.controlTab` error after an Aside update and succeeded on retry.
+
+Local proof at `2256d097e6`: typecheck, structure and privacy exit 0; six focused files 60 pass; `tests/adapters/openai`
+591 pass; eight request-preparation files 108 pass. The full `tests/responses` directory shows 13 failures in
+`responses-compaction-recovery.test.ts` that do not reproduce when that file runs alone (33 pass on this branch and on
+`dev`); the same directory run on `dev` is recorded below.
+
+The full `tests/responses` run on `dev` `4b3737fc5c` shows the same 13 `responses-compaction-recovery` failures
+(3567 pass, 13 fail), so they are cross-file interference in a directory run, not this batch; the branch run was 3576
+pass, 13 fail.
