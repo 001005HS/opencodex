@@ -116,6 +116,9 @@ import { encodedModelIdCollides, routedSlug, slugEquals } from "../../providers/
 import { knownModelIdsForProvider } from "../../router";
 import { effectiveModelAliases, MODEL_ALIAS_PATTERN } from "../../providers/default-aliases";
 import { isValidModelDiscoveryModelId } from "../../providers/model-discovery-limits";
+import { commitProviderPatch } from "./provider-patch-transaction";
+import { ConfigWritePublishedError } from "../../config/persist-unlocked";
+import type { CatalogDisposition } from "../../codex/convergence-types";
 import { comboPublicModelId } from "../../combos/types";
 import { COMBO_NAMESPACE, comboDisabledModelSelectors, comboModelId, preservesPhysicalComboProvider } from "../../combos";
 import { clearProviderQuotaCache, fetchProviderQuotaReports } from "../../providers/quota";
@@ -763,9 +766,17 @@ export async function handleModelRoutes(ctx: ManagementContext): Promise<Respons
     try { parsedBody = await readManagementJsonBody(req); } catch (error) { rethrowManagementBodyTooLarge(error); return jsonResponse({ error: "invalid JSON body" }, 400); }
     if (!isPlainRecord(parsedBody)) return jsonResponse({ error: "invalid model settings request" }, 400);
     const body = parsedBody;
+    for (const key of Object.keys(body)) {
+      if (!["provider", "modelId", "contextWindow", "inputModalities", "reasoningEfforts", "defaultReasoningEffort"].includes(key)) {
+        return jsonResponse({ error: `unknown model settings field: ${key}` }, 400);
+      }
+    }
     const provider = typeof body.provider === "string" ? body.provider.trim() : "";
-    const modelId = typeof body.modelId === "string" ? body.modelId.trim() : "";
+    const modelId = typeof body.modelId === "string" ? body.modelId : "";
     if (!provider || !modelId) return jsonResponse({ error: "provider and modelId are required" }, 400);
+    if (!isValidModelDiscoveryModelId(modelId) || ["__proto__", "constructor", "prototype"].includes(modelId)) {
+      return jsonResponse({ error: "modelId must be an exact non-reserved model id" }, 400);
+    }
     if (!isValidProviderName(provider) || !hasOwnProvider(config.providers, provider)) {
       return jsonResponse({ error: "unknown model settings provider" }, 400);
     }
@@ -775,15 +786,15 @@ export async function handleModelRoutes(ctx: ManagementContext): Promise<Respons
       return jsonResponse({ error: "model settings are only available for routed providers" }, 400);
     }
 
-    const providerConfig = config.providers[provider];
+    const providerConfig = { ...config.providers[provider] };
     const storedLadder = providerConfig.modelReasoningEfforts?.[modelId];
 
     let contextWindow: number | null | undefined;
     if (body.contextWindow !== undefined) {
       if (body.contextWindow === null) contextWindow = null;
-      else if (typeof body.contextWindow === "number" && Number.isFinite(body.contextWindow) && body.contextWindow > 0) {
-        contextWindow = Math.floor(body.contextWindow);
-      } else return jsonResponse({ error: "contextWindow must be a positive number or null" }, 400);
+      else if (typeof body.contextWindow === "number" && Number.isSafeInteger(body.contextWindow) && body.contextWindow > 0) {
+        contextWindow = body.contextWindow;
+      } else return jsonResponse({ error: "contextWindow must be a positive safe integer or null" }, 400);
     }
     let modalities: DeclaredInputModality[] | null | undefined;
     if (body.inputModalities !== undefined) {
@@ -832,7 +843,7 @@ export async function handleModelRoutes(ctx: ManagementContext): Promise<Respons
     ) => {
       if (value === undefined) return;
       const bag = providerConfig as unknown as Record<string, unknown>;
-      const record = { ...((bag[key] as Record<string, unknown> | undefined) ?? {}) };
+      const record: Record<string, unknown> = Object.assign(Object.create(null), (bag[key] as Record<string, unknown> | undefined) ?? {});
       const present = Object.prototype.hasOwnProperty.call(record, modelId);
       if (value === null) {
         if (!present) return;
@@ -861,13 +872,14 @@ export async function handleModelRoutes(ctx: ManagementContext): Promise<Respons
        * write, which no longer carries the removed entry.
        */
       const storedDefault = providerConfig.modelDefaultReasoningEfforts?.[modelId];
-      const effectiveLadder = ladder ?? effectiveModelReasoningEfforts(config, provider, modelId);
+      const nextConfig = { ...config, providers: { ...config.providers, [provider]: providerConfig } };
+      const effectiveLadder = ladder ?? effectiveModelReasoningEfforts(nextConfig, provider, modelId);
       if (typeof storedDefault === "string" && !(effectiveLadder ?? []).includes(storedDefault)) {
         writePerModel("modelDefaultReasoningEfforts", null);
       }
     }
     if (modalities !== undefined) {
-      const capabilities = { ...(providerConfig.modelCapabilities ?? {}) };
+      const capabilities = Object.assign(Object.create(null), providerConfig.modelCapabilities ?? {}) as NonNullable<typeof providerConfig.modelCapabilities>;
       const row = { ...(capabilities[modelId] ?? {}) };
       const declared = Array.isArray(row.inputModalities) ? [...row.inputModalities] : undefined;
       const unchanged = modalities === null
@@ -886,19 +898,31 @@ export async function handleModelRoutes(ctx: ManagementContext): Promise<Respons
       }
     }
 
+    const hasOverrides = [providerConfig.modelContextWindows, providerConfig.modelReasoningEfforts,
+      providerConfig.modelDefaultReasoningEfforts].some(map => map !== undefined && Object.hasOwn(map, modelId))
+      || providerConfig.modelCapabilities?.[modelId]?.inputModalities !== undefined;
     const state = {
       ok: true as const,
       provider,
       modelId,
+      hasOverrides,
       contextWindow: providerConfig.modelContextWindows?.[modelId] ?? null,
       inputModalities: providerConfig.modelCapabilities?.[modelId]?.inputModalities ?? null,
       reasoningEfforts: providerConfig.modelReasoningEfforts?.[modelId] ?? null,
       defaultReasoningEffort: providerConfig.modelDefaultReasoningEfforts?.[modelId] ?? null,
     };
-    // `changed: false` is a real answer, not a failure: it is what tells a caller that the model
-    // carries no override to clear, so an editor can say so instead of claiming it restored one.
-    if (!changed) return jsonResponse({ ...state, changed: false });
-    persistConfig(config);
+    // A no-op can still retain stored declarations; `hasOverrides` reports that independently.
+    if (!changed) return jsonResponse({ ...state, changed: false, saved: false,
+      catalogRefresh: { status: "skipped", reason: "not-requested", retryable: false } });
+    let publicationError = false;
+    try {
+      commitProviderPatch(config, () => { config.providers[provider] = providerConfig; }, persistConfig);
+    } catch (error) {
+      if (!(error instanceof ConfigWritePublishedError)) {
+        return jsonResponse({ error: "model settings could not be saved" }, 500);
+      }
+      publicationError = true;
+    }
     /*
      * Drop this provider's live `/models` cache before converging.
      *
@@ -910,8 +934,13 @@ export async function handleModelRoutes(ctx: ManagementContext): Promise<Respons
      * `PUT /api/provider-context-caps` clears it per affected provider.
      */
     clearModelCache(provider);
-    const catalogRefresh = await convergeCodexCatalog();
-    return jsonResponse({ ...state, changed: true, catalogRefresh });
+    let catalogRefresh: CatalogDisposition;
+    if (publicationError) catalogRefresh = { status: "skipped", reason: "not-requested", retryable: true };
+    else {
+      try { catalogRefresh = await convergeCodexCatalog(); }
+      catch { catalogRefresh = { status: "failed", reason: "internal", phase: "gather", retryable: true, partialWrite: false }; }
+    }
+    return jsonResponse({ ...state, changed: true, saved: true, catalogRefresh });
   }
 
   if (url.pathname === "/api/custom-models" && req.method === "POST") {

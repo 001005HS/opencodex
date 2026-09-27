@@ -119,12 +119,27 @@ describe("models per-model settings command", () => {
     const invalidWindow = await invoke(["vendor/model", "--context-window", "12k"]);
     expect(invalidWindow.code).toBe(2);
     expect(invalidWindow.calls).toEqual([]);
+    const unsafeWindow = await invoke(["vendor/model", "--context-window", String(2 ** 60)]);
+    expect(unsafeWindow.code).toBe(2);
+    expect(unsafeWindow.calls).toEqual([]);
   });
 
   test("an unchanged answer says so instead of claiming a write", async () => {
-    const result = await invoke(["vendor/model", "--reset"], { ok: true, changed: false });
+    const result = await invoke(["vendor/model", "--reset"], { ok: true, changed: false, hasOverrides: false });
     expect(result.code).toBe(0);
-    expect(result.stdout).toContain("no overrides");
+    expect(result.stdout).toContain("Nothing to restore");
+    const retained = await invoke(["vendor/model", "--reset"], { ok: true, changed: false, hasOverrides: true });
+    expect(retained.stdout).toContain("No settings changed");
+    expect(retained.stdout).not.toContain("Nothing to restore");
+    const stale = await invoke(["vendor/model", "--context-window", "200000"], {
+      ok: true, changed: true, saved: true, catalogRefresh: { status: "failed" },
+    });
+    expect(stale.stdout).toContain("Settings saved, but the Codex model catalog did not refresh");
+    const unmanaged = await invoke(["vendor/model", "--context-window", "200000"], {
+      ok: true, changed: true, saved: true, catalogRefresh: { status: "skipped", reason: "catalog-unavailable", retryable: false },
+    });
+    expect(unmanaged.stdout).toContain("Updated model settings");
+    expect(unmanaged.stdout).not.toContain("did not refresh");
   });
 
   test("the capability declares the route this verb drives", () => {

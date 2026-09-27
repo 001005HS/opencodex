@@ -30,6 +30,7 @@ describe("Models per-model settings dialog", () => {
   let rows: ModelRow[];
   let mutations: Mutation[];
   let settingsResponse: ((body: Mutation) => Response) | null;
+  let modelsFail: boolean;
 
   beforeEach(() => {
     clearClientResourceStoresForTests();
@@ -70,6 +71,7 @@ describe("Models per-model settings dialog", () => {
     ];
     mutations = [];
     settingsResponse = null;
+    modelsFail = false;
     testWindow.localStorage.setItem("ocx-lang", "en");
     testWindow.localStorage.setItem("ocx-models-collapsed:v2", JSON.stringify([]));
     testWindow.sessionStorage.setItem("ocx.models.catalog.v1:http://localhost", JSON.stringify({
@@ -81,9 +83,10 @@ describe("Models per-model settings dialog", () => {
         const body = JSON.parse(String(init?.body)) as Mutation;
         mutations.push(body);
         if (settingsResponse) return settingsResponse(body);
-        return Response.json({ ok: true, provider: body.provider, modelId: body.modelId, changed: true });
+        return Response.json({ ok: true, provider: body.provider, modelId: body.modelId, changed: true,
+          saved: true, hasOverrides: true, catalogRefresh: { status: "committed" } });
       }
-      if (url.endsWith("/api/models")) return Response.json(rows);
+      if (url.endsWith("/api/models")) return modelsFail ? new Response(null, { status: 500 }) : Response.json(rows);
       if (url.endsWith("/api/providers")) return Response.json(providers);
       if (url.endsWith("/api/selected-models")) return Response.json({ selected: {} });
       if (url.endsWith("/api/provider-context-caps")) return Response.json({ caps: {} });
@@ -176,6 +179,124 @@ describe("Models per-model settings dialog", () => {
     await open();
     expect(checkboxes().slice(0, 3).map(box => box.checked)).toEqual([false, false, false]);
     expect(dialog()!.textContent).toContain("text, image");
+    expect(dialog()!.textContent).toContain("currently 200000");
+  });
+
+  test("the context draft comes from the stored declaration", async () => {
+    rows[0]!.contextWindowDeclared = 128000;
+    await mount();
+    await open();
+    expect(dialog()!.textContent).not.toContain("currently 200000");
+    expect(dialog()!.textContent).toContain("128k");
+  });
+
+  test("an unknown save outcome keeps read-only recovery and allows Escape", async () => {
+    await mount();
+    settingsResponse = () => new Response(null, { status: 500 });
+    await open();
+    await act(async () => checkboxes()[1]!.click());
+    await click("Apply");
+    expect(dialog()!.textContent).toContain("could not confirm whether the settings were saved");
+    expect(dialogButton("Reload")).toBeDefined();
+    expect(testWindow.document.activeElement).toBe(dialogButton("Reload"));
+    expect(dialogButton("Apply")!.disabled).toBe(true);
+    expect(dialogButton("Restore")!.disabled).toBe(true);
+    expect(dialogButton("Close")!.disabled).toBe(false);
+    expect(mutations).toHaveLength(1);
+    await act(async () => dialog()!.dispatchEvent(new testWindow.Event("cancel", { cancelable: true })));
+    expect(dialog()).toBeNull();
+  });
+
+  test("the backdrop closes terminal recovery", async () => {
+    await mount();
+    settingsResponse = () => new Response(null, { status: 500 });
+    await open();
+    await act(async () => checkboxes()[1]!.click());
+    await click("Apply");
+    await act(async () => container.querySelector<HTMLButtonElement>("dialog .modal-backdrop-dismiss")!.click());
+    expect(dialog()).toBeNull();
+  });
+
+  test("reload after an unknown outcome reads the list without another mutation", async () => {
+    await mount();
+    settingsResponse = () => new Response(null, { status: 500 });
+    await open();
+    await act(async () => checkboxes()[1]!.click());
+    await click("Apply");
+    await click("Reload");
+    expect(mutations).toHaveLength(1);
+    expect(dialog()).toBeNull();
+    expect(container.textContent).toContain("Reopen vendor-demo/chat-large");
+  });
+
+  test("a confirmed save followed by a failed local reload remains read-only", async () => {
+    await mount();
+    await open();
+    await act(async () => checkboxes()[1]!.click());
+    modelsFail = true;
+    await click("Apply");
+    expect(dialog()!.textContent).toContain("Saved. The model list did not reload");
+    expect(dialogButton("Apply")!.disabled).toBe(true);
+    await click("Reload");
+    expect(dialog()).not.toBeNull();
+    expect(mutations).toHaveLength(1);
+    modelsFail = false;
+    await click("Reload");
+    expect(dialog()).toBeNull();
+  });
+
+  test("closing returns focus to the opening row control", async () => {
+    await mount();
+    const opener = trigger()!;
+    await act(async () => opener.focus());
+    await open();
+    await click("Close");
+    expect(testWindow.document.activeElement).toBe(opener);
+  });
+
+  test("confirmed save whose list reload fails enters read-only stale state", async () => {
+    await mount();
+    await open();
+    modelsFail = true;
+    await act(async () => checkboxes()[1]!.click());
+    await click("Apply");
+    expect(dialog()!.textContent).toContain("Saved. The model list did not reload");
+    expect(dialogButton("Reload")).toBeDefined();
+    expect(dialogButton("Apply")!.disabled).toBe(true);
+    expect(dialogButton("Restore")!.disabled).toBe(true);
+    expect(dialogButton("Cancel")!.disabled).toBe(false);
+    expect(mutations).toHaveLength(1);
+    modelsFail = false;
+    await click("Reload");
+    expect(mutations).toHaveLength(1);
+    expect(dialog()).toBeNull();
+    expect(container.textContent).toContain("Reopen vendor-demo/chat-large");
+  });
+
+  test("a failed Codex catalog refresh warns after the save instead of trapping the dialog", async () => {
+    await mount();
+    settingsResponse = body => Response.json({ ok: true, provider: body.provider, modelId: body.modelId,
+      changed: true, saved: true, hasOverrides: true,
+      catalogRefresh: { status: "failed", reason: "disk", phase: "commit", retryable: true, partialWrite: false } });
+    await open();
+    await act(async () => checkboxes()[1]!.click());
+    await click("Apply");
+    expect(dialog()).toBeNull();
+    expect(mutations).toHaveLength(1);
+    expect(container.textContent).toContain("Codex model catalog did not refresh");
+  });
+
+  test("a catalog skip the operator cannot act on is a clean save", async () => {
+    await mount();
+    settingsResponse = body => Response.json({ ok: true, provider: body.provider, modelId: body.modelId,
+      changed: true, saved: true, hasOverrides: true,
+      catalogRefresh: { status: "skipped", reason: "catalog-unavailable", retryable: false } });
+    await open();
+    await act(async () => checkboxes()[1]!.click());
+    await click("Apply");
+    expect(dialog()).toBeNull();
+    expect(container.textContent).toContain("Model settings saved for vendor-demo/chat-large");
+    expect(container.textContent).not.toContain("did not refresh");
   });
 
   test("a save submits only the axis the operator touched", async () => {
@@ -188,9 +309,22 @@ describe("Models per-model settings dialog", () => {
     expect(dialog()).toBeNull();
   });
 
+  test("a no-op receipt with retained overrides uses neutral feedback", async () => {
+    await mount();
+    settingsResponse = body => Response.json({ ok: true, provider: body.provider, modelId: body.modelId,
+      changed: false, saved: false, hasOverrides: true, catalogRefresh: { status: "skipped" } });
+    await open();
+    await act(async () => checkboxes()[1]!.click());
+    await click("Apply");
+    expect(dialog()).toBeNull();
+    expect(container.textContent).toContain("No settings changed");
+    expect(container.textContent).not.toContain("carries no overrides");
+  });
+
   test("restore clears every axis, and says so when there was nothing to clear", async () => {
     await mount();
-    settingsResponse = body => Response.json({ ok: true, provider: body.provider, modelId: body.modelId, changed: false });
+    settingsResponse = body => Response.json({ ok: true, provider: body.provider, modelId: body.modelId,
+      changed: false, saved: false, hasOverrides: false, catalogRefresh: { status: "skipped" } });
     await open();
     await click("Restore");
     // The confirmation is a second dialog on the body, so answer the one it just appended.

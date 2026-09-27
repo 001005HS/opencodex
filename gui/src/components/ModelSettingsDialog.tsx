@@ -27,7 +27,7 @@ const CONTEXT_PRESETS = ["100000", "128000", "200000", "256000", "352000", "5000
 
 const REQUEST_TIMEOUT_MS = 60_000;
 
-type Phase = "ready" | "saving" | "restoring" | "unknown";
+type Phase = "ready" | "saving" | "restoring" | "unknown" | "saved-stale";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -45,7 +45,7 @@ interface SettingsBaseline {
 function baselineOf(row: ModelRow): SettingsBaseline {
   const reasoning = row.reasoningOverridden === true;
   return {
-    contextWindow: row.contextWindow ? String(row.contextWindow) : "",
+    contextWindow: row.contextWindowDeclared !== undefined ? String(row.contextWindowDeclared) : "",
     // The DECLARATION, never the row's own `inputModalities`. That one is the catalog value:
     // pre-filling from it made an undeclared model look declared, and because an untouched field
     // is not submitted, every save came back as "nothing changed" and the row never moved.
@@ -84,7 +84,7 @@ export default function ModelSettingsDialog({ row, apiBase, onRefresh, onFeedbac
   const t = useT();
   const id = useId();
   const dialogRef = useRef<HTMLDialogElement>(null);
-  const submitRef = useRef<HTMLButtonElement>(null);
+  const reloadRef = useRef<HTMLButtonElement>(null);
   const requestRef = useRef<BoundedFetch | null>(null);
   // State rather than a ref: the form's start values are read during render to seed the fields,
   // and a ref read in render is exactly what the React Compiler lint refuses.
@@ -99,17 +99,36 @@ export default function ModelSettingsDialog({ row, apiBase, onRefresh, onFeedbac
   const [ladder, setLadder] = useState<string[]>(() => [...baseline.ladder]);
   const [defaultEffort, setDefaultEffort] = useState(() => baseline.defaultEffort);
   const [errorKey, setErrorKey] = useState<TKey | null>(null);
-  const busy = phase !== "ready";
+  const busy = phase === "saving" || phase === "restoring";
+  const terminal = phase === "unknown" || phase === "saved-stale";
 
   useEffect(() => {
     const dialog = dialogRef.current;
+    const opener = document.activeElement as HTMLElement | null;
     if (dialog && !dialog.open) dialog.showModal();
-    return () => { if (dialog?.open) dialog.close(); };
+    return () => { if (dialog?.open) dialog.close(); if (opener?.isConnected && typeof opener.focus === "function") opener.focus(); };
   }, []);
 
   useEffect(() => {
-    if (phase === "unknown") submitRef.current?.focus();
-  }, [phase]);
+    if (terminal) reloadRef.current?.focus();
+  }, [terminal]);
+
+  const reload = async () => {
+    const bounded = createBoundedFetch(REQUEST_TIMEOUT_MS);
+    requestRef.current = bounded;
+    try {
+      if (!await onRefresh(bounded.signal)) return;
+      bounded.signal.throwIfAborted();
+      if (requestRef.current !== bounded) return;
+      onFeedback(true, t("models.settingsReloaded", { model: row.namespaced }));
+      onClose();
+    } catch {
+      // Keep the terminal state: the operator still needs a successful read before another write.
+    } finally {
+      bounded.clear();
+      if (requestRef.current === bounded) requestRef.current = null;
+    }
+  };
 
   const toggleReasoning = (next: boolean) => {
     setReasoning(next);
@@ -148,24 +167,38 @@ export default function ModelSettingsDialog({ row, apiBase, onRefresh, onFeedbac
       bounded.signal.throwIfAborted();
       // Validate the receipt against the request: a 200 for another row would otherwise be
       // reported as this row's save, and the reload would appear to disagree with the toast.
-      if (!isRecord(result) || result.ok !== true || result.provider !== row.provider || result.modelId !== row.id) {
+      if (!isRecord(result) || result.ok !== true || result.provider !== row.provider || result.modelId !== row.id
+        || typeof result.changed !== "boolean" || typeof result.hasOverrides !== "boolean"
+        || typeof result.saved !== "boolean" || result.saved !== result.changed || !isRecord(result.catalogRefresh)
+        || !["committed", "skipped", "failed"].includes(String(result.catalogRefresh.status))) {
         throw new Error("invalid model-settings receipt");
       }
       if (requestRef.current !== bounded) return;
       confirmed = true;
-      const changed = result.changed === false;
+      if (!result.changed) {
+        onFeedback(true, t(restoring && !result.hasOverrides ? "models.settingsNothingToRestore" : "models.settingsNoChange", { model: row.namespaced }));
+        onClose();
+        return;
+      }
+      // `catalogRefresh` describes the Codex app's catalog, not this list: the dashboard reads the
+      // saved config directly. A skip the operator cannot act on (no managed catalog) is normal;
+      // only a failed or retryable refresh is worth a warning, and only after the list reloads.
+      const refresh = result.catalogRefresh;
+      const codexStale = refresh.status === "failed" || (refresh.status === "skipped" && refresh.retryable === true);
       if (!await onRefresh(bounded.signal)) throw new Error("catalog refresh failed");
       bounded.signal.throwIfAborted();
       if (requestRef.current !== bounded) return;
-      if (restoring) {
-        onFeedback(true, t(changed ? "models.settingsNothingToRestore" : "models.settingsRestored", { model: row.namespaced }));
+      if (codexStale) {
+        onFeedback(false, t("models.settingsSavedCodexStale", { model: row.namespaced }));
+      } else if (restoring) {
+        onFeedback(true, t("models.settingsRestored", { model: row.namespaced }));
       } else {
         onFeedback(true, t("models.settingsSaved", { model: row.namespaced }));
       }
       onClose();
     } catch {
       if (requestRef.current !== bounded) return;
-      setPhase("unknown");
+      setPhase(confirmed ? "saved-stale" : "unknown");
       setErrorKey(confirmed ? "models.settingsRefreshFailed" : "models.settingsSaveFailed");
     } finally {
       bounded.clear();
@@ -174,7 +207,7 @@ export default function ModelSettingsDialog({ row, apiBase, onRefresh, onFeedbac
   };
 
   const submit = () => {
-    if (busy) return;
+    if (phase !== "ready") return;
     const parsedWindow = parseContextWindow(contextDraft);
     if (parsedWindow === undefined) { setErrorKey("models.contextInvalid"); return; }
     const base = baseline;
@@ -197,7 +230,7 @@ export default function ModelSettingsDialog({ row, apiBase, onRefresh, onFeedbac
   };
 
   const restore = async () => {
-    if (busy) return;
+    if (phase !== "ready") return;
     const confirmed = await confirmAction({
       message: t("models.settingsRestoreConfirm", { model: row.namespaced }),
       confirmLabel: t("models.settingsRestore"),
@@ -291,6 +324,11 @@ export default function ModelSettingsDialog({ row, apiBase, onRefresh, onFeedbac
                 />
               )}
             </div>
+            {row.contextWindowDeclared === undefined && (
+              <span className="muted text-caption">{t("models.settingsContextInherit", {
+                value: row.contextWindow ? String(row.contextWindow) : t("models.settingsContextUnknown"),
+              })}</span>
+            )}
           </label>
 
           <div className="text-label models-field">
@@ -373,11 +411,14 @@ export default function ModelSettingsDialog({ row, apiBase, onRefresh, onFeedbac
         </div>
 
         <div className="modal-actions">
+          {terminal && <button ref={reloadRef} type="button" className="btn btn-ghost" onClick={() => void reload()}>
+            {t("models.settingsReload")}
+          </button>}
           <button
             type="button"
             className="btn btn-ghost"
             title={t("models.settingsRestoreHint")}
-            disabled={busy}
+            disabled={busy || terminal}
             onClick={() => void restore()}
           >
             {t("models.settingsRestore")}
@@ -385,7 +426,7 @@ export default function ModelSettingsDialog({ row, apiBase, onRefresh, onFeedbac
           <button type="button" className="btn btn-ghost" onClick={requestClose} disabled={busy}>
             {t("common.cancel")}
           </button>
-          <button ref={submitRef} type="submit" className="btn btn-primary" disabled={busy}>
+          <button type="submit" className="btn btn-primary" disabled={busy || terminal}>
             {busy ? t("models.customSaving") : t("models.customApply")}
           </button>
         </div>

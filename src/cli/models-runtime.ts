@@ -208,7 +208,7 @@ async function edit(argv: string[], deps: RuntimeApiDeps): Promise<void> {
   if (displayName !== undefined) patch.displayName = displayName === "-" ? "" : displayName;
   if (contextRaw !== undefined) {
     const value = Number(contextRaw.replace(/[_,]/g, ""));
-    if (!Number.isInteger(value) || value < 0) throw new CliUsageError("--context-window must be an integer >= 0", USAGE);
+    if (!Number.isSafeInteger(value) || value < 0) throw new CliUsageError("--context-window must be a safe integer >= 0", USAGE);
     patch.contextWindow = value === 0 ? null : value;
   }
   if (modalitiesRaw !== undefined) patch.inputModalities = modalitiesRaw === "-" ? [] : csv(modalitiesRaw);
@@ -282,8 +282,8 @@ async function setModelSettings(argv: string[], deps: RuntimeApiDeps): Promise<v
     if (raw === "-") patch.contextWindow = null;
     else {
       const value = Number(raw.replace(/[_,]/g, ""));
-      if (!Number.isInteger(value) || value < 0) {
-        throw new CliUsageError("--context-window must be an integer >= 0 (0 or - clears the override)", USAGE);
+      if (!Number.isSafeInteger(value) || value < 0) {
+        throw new CliUsageError("--context-window must be a safe integer >= 0 (0 or - clears the override)", USAGE);
       }
       patch.contextWindow = value === 0 ? null : value;
     }
@@ -314,14 +314,18 @@ async function setModelSettings(argv: string[], deps: RuntimeApiDeps): Promise<v
     for (const key of ["contextWindow", "inputModalities", "reasoningEfforts", "defaultReasoningEffort"]) patch[key] = null;
   }
   if (Object.keys(patch).length === 0) throw new CliUsageError("at least one setting or --reset is required", USAGE);
-  const result = await runtimeRequest<{ changed?: boolean }>("/api/model-settings", {
+  const result = await runtimeRequest<{ changed?: boolean; hasOverrides?: boolean; saved?: boolean; catalogRefresh?: { status?: string; retryable?: boolean } }>("/api/model-settings", {
     method: "PUT",
     body: JSON.stringify({ provider: target.provider, modelId: target.id, ...patch }),
   }, deps);
-  printData(result, wantsJson, [
-    result?.changed === false
-      ? selector + " carries no overrides; it already resolves to the computed values."
-      : "Updated model settings for " + selector + ".",
+  const message = result?.changed === false
+    ? (reset && result.hasOverrides === false ? "Nothing to restore for " + selector + "." : "No settings changed for " + selector + ".")
+    : "Updated model settings for " + selector + ".";
+  printData(result, wantsJson, [message,
+    // A non-retryable skip means there is no managed Codex catalog to refresh, which is normal.
+    ...(result?.saved && (result.catalogRefresh?.status === "failed"
+      || (result.catalogRefresh?.status === "skipped" && result.catalogRefresh.retryable === true))
+      ? ["Settings saved, but the Codex model catalog did not refresh. Run `ocx sync` so Codex picks up the change."] : []),
   ]);
 }
 
@@ -495,7 +499,7 @@ async function context(argv: string[], deps: RuntimeApiDeps): Promise<void> {
     const raw = args.shift();
     if (!raw) throw new CliUsageError("context value is required", USAGE);
     const value = Number(raw.replace(/[_,]/g, ""));
-    if (!Number.isInteger(value) || value <= 0) throw new CliUsageError("context value must be a positive integer", USAGE);
+    if (!Number.isSafeInteger(value) || value <= 0) throw new CliUsageError("context value must be a positive safe integer", USAGE);
     body = { value };
     // Explicit apply-to-all switch for headless use: re-points every routed provider to
     // the new value, mirroring the dashboard's "apply to every routed provider" toggle.

@@ -9,6 +9,7 @@ import { listManagementModelRows } from "../../src/server/management/model-rows"
 import type { CatalogModel } from "../../src/codex/catalog";
 import type { OcxConfig } from "../../src/types";
 import { removeTreeWithRetry } from "../helpers/remove-tree";
+import { ConfigWritePublishedError } from "../../src/config/persist-unlocked";
 
 /**
  * `PUT /api/model-settings` writes per-model overrides onto a routed row.
@@ -63,7 +64,7 @@ afterEach(() => {
   removeTreeWithRetry(home);
 });
 
-function harness(config = fixture(), converge?: () => Promise<never>) {
+function harness(config = fixture(), converge?: () => Promise<never>, save?: (saved: OcxConfig) => void) {
   const persisted: OcxConfig[] = [];
   let convergeCalls = 0;
   async function call(body?: unknown, rawBody?: string) {
@@ -78,12 +79,12 @@ function harness(config = fixture(), converge?: () => Promise<never>) {
       url,
       config,
       deps: {
-        saveConfigPreservingClaudeCode: saved => { persisted.push(structuredClone(saved)); },
+        saveConfigPreservingClaudeCode: saved => { if (save) save(saved); persisted.push(structuredClone(saved)); },
       },
       convergeCodexCatalog: async () => {
         convergeCalls += 1;
         if (converge) return converge();
-        return { status: "ok", changed: true } as never;
+        return { status: "committed", changed: true, degraded: false, notices: [] } as never;
       },
       syncClaudeAgentDefsBestEffort: async () => {},
     });
@@ -114,6 +115,8 @@ describe("per-model settings API", () => {
       reasoningEfforts: ["low", "medium", "high"],
       defaultReasoningEffort: "medium",
       changed: true,
+      saved: true,
+      hasOverrides: true,
     });
     const provider = h.config.providers[PROVIDER]!;
     expect(provider.modelContextWindows).toEqual({ [MODEL]: 262_144 });
@@ -135,7 +138,7 @@ describe("per-model settings API", () => {
     let cacheWasClearAtConvergence = false;
     const h = harness(fixture(), async () => {
       cacheWasClearAtConvergence = getFreshCached(PROVIDER, 60_000) === null;
-      return { status: "ok", changed: true } as never;
+      return { status: "committed", changed: true, degraded: false, notices: [] } as never;
     });
 
     const response = await h.call({ provider: PROVIDER, modelId: MODEL, contextWindow: 200_000 });
@@ -150,8 +153,47 @@ describe("per-model settings API", () => {
 
     const response = await h.call({ provider: PROVIDER, modelId: MODEL });
 
-    expect(await response.json()).toMatchObject({ changed: false });
+    expect(await response.json()).toMatchObject({ changed: false, hasOverrides: false, saved: false });
     expect(getFreshCached(PROVIDER, 60_000)).not.toBeNull();
+    expect(h.convergeCalls).toBe(0);
+  });
+
+  test("an identical write is a no-op while its override remains stored", async () => {
+    const h = harness();
+    await h.call({ provider: PROVIDER, modelId: MODEL, contextWindow: 200000 });
+    const response = await h.call({ provider: PROVIDER, modelId: MODEL, contextWindow: 200000 });
+    expect(await response.json()).toMatchObject({ changed: false, saved: false, hasOverrides: true });
+    expect(h.persisted).toHaveLength(1);
+  });
+
+  test("an unpublished save failure rolls back the live graph and identical retry persists", async () => {
+    let attempts = 0;
+    const durable: OcxConfig[] = [];
+    const h = harness(fixture(), undefined, saved => {
+      if (++attempts === 1) throw new Error("private path must not escape");
+      durable.push(structuredClone(saved));
+    });
+    setCached(PROVIDER, [{ provider: PROVIDER, id: MODEL }]);
+    const body = { provider: PROVIDER, modelId: MODEL, contextWindow: 200000 };
+    const failed = await h.call(body);
+    expect(failed.status).toBe(500);
+    expect(JSON.stringify(await failed.json())).not.toContain("private path");
+    expect(h.config.providers[PROVIDER]!.modelContextWindows).toBeUndefined();
+    expect(getFreshCached(PROVIDER, 60000)).not.toBeNull();
+    expect(h.convergeCalls).toBe(0);
+    const retried = await h.call(body);
+    expect(await retried.json()).toMatchObject({ saved: true, changed: true });
+    expect(durable[0]!.providers[PROVIDER]!.modelContextWindows).toEqual(h.config.providers[PROVIDER]!.modelContextWindows);
+  });
+
+  test("a published post-write error returns a saved receipt without claiming convergence", async () => {
+    const h = harness(fixture(), undefined, () => { throw new ConfigWritePublishedError(new Error("postwrite")); });
+    setCached(PROVIDER, [{ provider: PROVIDER, id: MODEL }]);
+    const response = await h.call({ provider: PROVIDER, modelId: MODEL, contextWindow: 200000 });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ saved: true, changed: true, hasOverrides: true, catalogRefresh: { status: "skipped" } });
+    expect(h.config.providers[PROVIDER]!.modelContextWindows).toEqual({ [MODEL]: 200000 });
+    expect(getFreshCached(PROVIDER, 60000)).toBeNull();
     expect(h.convergeCalls).toBe(0);
   });
 
@@ -176,7 +218,7 @@ describe("per-model settings API", () => {
       reasoningEfforts: null,
       defaultReasoningEffort: null,
     });
-    expect(await cleared.json()).toMatchObject({ changed: true, contextWindow: null, inputModalities: null });
+    expect(await cleared.json()).toMatchObject({ changed: true, hasOverrides: false, contextWindow: null, inputModalities: null });
     const provider = h.config.providers[PROVIDER]!;
     expect(provider.modelContextWindows).toBeUndefined();
     expect(provider.modelCapabilities).toBeUndefined();
@@ -185,7 +227,7 @@ describe("per-model settings API", () => {
     // The second identical request must not claim it restored anything: the dashboard says
     // "already the computed values" on this answer instead of reporting a restore.
     const again = await h.call({ provider: PROVIDER, modelId: MODEL, contextWindow: null, inputModalities: null });
-    expect(await again.json()).toMatchObject({ changed: false });
+    expect(await again.json()).toMatchObject({ changed: false, hasOverrides: false });
     // The set and the clear each changed something; the repeated clear changed nothing.
     expect(h.persisted).toHaveLength(2);
     expect(h.convergeCalls).toBe(2);
@@ -209,7 +251,12 @@ describe("per-model settings API", () => {
     const h = harness();
     const cases: [unknown, string][] = [
       [{ provider: PROVIDER, modelId: MODEL, inputModalities: ["video"] }, "unsupported input modality"],
-      [{ provider: PROVIDER, modelId: MODEL, contextWindow: -1 }, "contextWindow must be a positive number"],
+      [{ provider: PROVIDER, modelId: MODEL, contextWindow: -1 }, "contextWindow must be a positive safe integer"],
+      [{ provider: PROVIDER, modelId: MODEL, contextWindow: 0.5 }, "contextWindow"],
+      [{ provider: PROVIDER, modelId: MODEL, contextWindow: 2 ** 60 }, "contextWindow"],
+      [{ provider: PROVIDER, modelId: MODEL, surprise: true }, "surprise"],
+      ...["__proto__", "constructor", "prototype", " leading", "control\u0000char", "x".repeat(1025)]
+        .map(id => [{ provider: PROVIDER, modelId: id, contextWindow: 200000 }, "modelId"] as [unknown, string]),
       [{ provider: PROVIDER, modelId: MODEL, reasoningEfforts: ["low"], defaultReasoningEffort: "max" }, "not in the declared reasoningEfforts ladder"],
       [{ provider: PROVIDER, modelId: MODEL, reasoningEfforts: ["turbo"] }, "unsupported reasoning effort"],
       [{ provider: PROVIDER }, "provider and modelId are required"],
@@ -224,6 +271,7 @@ describe("per-model settings API", () => {
     }
     expect(h.persisted).toHaveLength(0);
     expect(h.convergeCalls).toBe(0);
+    expect(h.config.providers[PROVIDER]!.modelContextWindows).toBeUndefined();
   });
 
   test("a malformed body is a 400, not a crash", async () => {
@@ -241,6 +289,7 @@ describe("per-model settings API", () => {
       // What the provider published. The declaration below is what the operator stored, and the
       // two must stay distinguishable or an editor cannot round-trip its own writes.
       inputModalities: ["text", "image"],
+      contextWindow: 200000,
     }];
     // Match on provider + upstream id: the Codex-facing slug escapes the model's own slash
     // (slug-codec), so the namespaced form is not provider + "/" + modelId.
@@ -248,11 +297,15 @@ describe("per-model settings API", () => {
       .find(row => row.provider === PROVIDER && row.id === MODEL)!;
     const before = await rowOf();
     expect(before.inputModalitiesDeclared).toBeUndefined();
+    expect(before.contextWindowDeclared).toBeUndefined();
+    expect(before.contextWindow).toBe(200000);
     expect(before.reasoningOverridden).toBe(false);
 
-    await h.call({ provider: PROVIDER, modelId: MODEL, inputModalities: ["text"], reasoningEfforts: ["low"] });
+    await h.call({ provider: PROVIDER, modelId: MODEL, contextWindow: 131072, inputModalities: ["text"], reasoningEfforts: ["low"] });
     const after = await rowOf();
     expect(after.inputModalitiesDeclared).toEqual(["text"]);
+    expect(after.contextWindowDeclared).toBe(131072);
+    expect(after.contextWindow).toBe(200000);
     expect(after.inputModalities).toEqual(["text", "image"]);
     expect(after.reasoningEfforts).toEqual(["low"]);
     expect(after.reasoningOverridden).toBe(true);

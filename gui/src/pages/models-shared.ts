@@ -52,6 +52,8 @@ export interface ModelRow {
   pricingStatus?: "free" | "paid";
   inputModalities?: string[];
   contextWindow?: number;
+  /** Exact stored context override; absent when the row inherits its effective window. */
+  contextWindowDeclared?: number;
   contextCap?: number;
   contextCapped?: boolean;
   /**

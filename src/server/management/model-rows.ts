@@ -66,6 +66,8 @@ export type ManagementModelRow = Partial<CatalogModel> & {
    * one thing and saves another, so its own writes never appear to take.
    */
   inputModalitiesDeclared?: string[];
+  /** Exact stored context override, distinct from the effective catalog window. */
+  contextWindowDeclared?: number;
   /**
    * True when the provider config actually CHANGES reasoning for this model. A persisted key is
    * not proof of an operator edit — OpenCodex itself writes the registry ladder into the provider
@@ -382,6 +384,7 @@ export async function listManagementModelRows(
       ? effectiveModelDefaultReasoningEffort(config, m.provider, m.id, m.defaultReasoningEffort, reasoningEfforts)
       : undefined;
     const inputModalitiesDeclared = routed ? declaredModelInputModalities(config, m.provider, m.id) : undefined;
+    const contextWindowDeclared = routed ? config.providers[m.provider]?.modelContextWindows?.[m.id] : undefined;
     return {
       ...m,
       ...displayName,
@@ -397,6 +400,7 @@ export async function listManagementModelRows(
       ...(defaultReasoningEffort !== undefined ? { defaultReasoningEffort } : {}),
       ...(routed ? { reasoningOverridden: reasoningOverrideFor(config, m.provider, m.id, catalogLadders) } : {}),
       ...(inputModalitiesDeclared !== undefined ? { inputModalitiesDeclared } : {}),
+      ...(contextWindowDeclared !== undefined ? { contextWindowDeclared } : {}),
     };
   }).filter((row): row is ManagementModelRow => row !== null);
   // Manual OpenAI rows retain their routed selector but replace the bare dashboard row.
