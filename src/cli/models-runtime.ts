@@ -31,6 +31,10 @@ const USAGE = `Usage:
       [--context-window <tokens|0>] [--modalities <text,image,audio|->]
       [--reasoning-efforts <none,minimal,low,medium,high,xhigh,max,ultra|->]
       [--default-reasoning-effort <level|->] [--json]
+  ocx models set <provider/model> [--context-window <tokens|0|->]
+      [--modalities <text,image,audio|->]
+      [--reasoning-efforts <none,minimal,low,medium,high,xhigh,max,ultra|"">|->]
+      [--default-reasoning-effort <level|->] [--reset] [--json]
   ocx models <enable|disable> <provider/model|native-model> [--native] [--json]
   ocx models provider <name> <on|off> [--json]
   ocx models selected <provider> [--set <id,id...>|--clear] [--json]
@@ -243,6 +247,82 @@ async function edit(argv: string[], deps: RuntimeApiDeps): Promise<void> {
     throw error;
   }
   printData(result, wantsJson, [`Updated custom model ${id}.`]);
+}
+
+/**
+ * Per-model overrides on a routed row: the twin of `ocx models edit` for rows that already
+ * exist, rather than for a custom definition.
+ *
+ * Every option has a clear spelling instead of an empty-value sentinel, because the API treats
+ * `null` as "hand this fact back to the registry, the catalog and the provider default". That is
+ * a different intent from storing a value that merely looks blank, and collapsing the two is how
+ * an override outlives the data it was copied from.
+ */
+async function setModelSettings(argv: string[], deps: RuntimeApiDeps): Promise<void> {
+  const args = [...argv];
+  const selector = args.shift()?.trim();
+  const wantsJson = takeFlag(args, "--json");
+  const reset = takeFlag(args, "--reset");
+  if (!selector) throw new CliUsageError("model selector is required", USAGE);
+  const contextRaw = takeOption(args, "--context-window");
+  const modalitiesRaw = takeOption(args, "--modalities");
+  const reasoningEffortsRaw = takeOption(args, "--reasoning-efforts");
+  const defaultEffortRaw = takeOption(args, "--default-reasoning-effort");
+  rejectArgs(args, USAGE);
+  const target = parseSelector(selector, false);
+  if (target.native) {
+    throw new CliUsageError(
+      "model settings address a routed model; use provider/model (the native openai lane has no per-model overrides)",
+      USAGE,
+    );
+  }
+  const patch: Record<string, unknown> = {};
+  if (contextRaw !== undefined) {
+    const raw = contextRaw.trim();
+    if (raw === "-") patch.contextWindow = null;
+    else {
+      const value = Number(raw.replace(/[_,]/g, ""));
+      if (!Number.isInteger(value) || value < 0) {
+        throw new CliUsageError("--context-window must be an integer >= 0 (0 or - clears the override)", USAGE);
+      }
+      patch.contextWindow = value === 0 ? null : value;
+    }
+  }
+  if (modalitiesRaw !== undefined) patch.inputModalities = modalitiesRaw.trim() === "-" ? null : csv(modalitiesRaw);
+  if (reasoningEffortsRaw !== undefined) {
+    // "-" restores inheritance by clearing the stored ladder (null); "" stores an explicit empty
+    // ladder, which is the "this model does not reason" override. Embedded blank CSV members
+    // (`low,,high`) are malformed and rejected rather than normalized away.
+    const trimmed = reasoningEffortsRaw.trim();
+    if (trimmed === "-") {
+      patch.reasoningEfforts = null;
+    } else if (trimmed === "") {
+      patch.reasoningEfforts = [];
+    } else {
+      const values = trimmed.split(",").map(value => value.trim());
+      if (values.some(value => value === "")) {
+        throw new CliUsageError("--reasoning-efforts must be comma-separated values from none, minimal, low, medium, high, xhigh, max, ultra (\"\" for no reasoning, \"-\" to inherit)", USAGE);
+      }
+      patch.reasoningEfforts = values;
+    }
+  }
+  if (defaultEffortRaw !== undefined) patch.defaultReasoningEffort = defaultEffortRaw.trim() === "-" ? null : defaultEffortRaw.trim();
+  if (reset) {
+    if (Object.keys(patch).length > 0) {
+      throw new CliUsageError("--reset clears every override and cannot be combined with other options", USAGE);
+    }
+    for (const key of ["contextWindow", "inputModalities", "reasoningEfforts", "defaultReasoningEffort"]) patch[key] = null;
+  }
+  if (Object.keys(patch).length === 0) throw new CliUsageError("at least one setting or --reset is required", USAGE);
+  const result = await runtimeRequest<{ changed?: boolean }>("/api/model-settings", {
+    method: "PUT",
+    body: JSON.stringify({ provider: target.provider, modelId: target.id, ...patch }),
+  }, deps);
+  printData(result, wantsJson, [
+    result?.changed === false
+      ? selector + " carries no overrides; it already resolves to the computed values."
+      : "Updated model settings for " + selector + ".",
+  ]);
 }
 
 function parseSelector(selector: string, forceNative: boolean): { provider: string; id: string; native: boolean } {
@@ -475,6 +555,7 @@ export async function handleModelsRuntimeCommand(sub: string, argv: string[], de
   else if (sub === "price") action = () => price(false, argv, deps);
   else if (sub === "set-price") action = () => price(true, argv, deps);
   else if (sub === "edit") action = () => edit(argv, deps);
+  else if (sub === "set") action = () => setModelSettings(argv, deps);
   else if (sub === "enable") action = () => visibility(true, argv, deps);
   else if (sub === "disable") action = () => visibility(false, argv, deps);
   else if (sub === "provider") action = () => providerVisibility(argv, deps);

@@ -11,9 +11,17 @@ import { shouldInjectApiAuthHeader } from "../../codex/loopback-target";
  * be handed back to the GUI and CLI as if it were real, and the offline `ocx models add` path
  * already refuses it. Validate at ingress so all three paths agree.
  */
-const ALLOWED_INPUT_MODALITIES = new Set(["text", "image", "audio"]);
+/**
+ * The modalities a declaration may carry. `video` is missing on purpose: the wire carries text
+ * and image parts, so advertising it would be a promise no request path can keep.
+ */
+type DeclaredInputModality = NonNullable<ModelCapabilities["inputModalities"]>[number];
 
-function readInputModalities(raw: unknown): { values?: string[]; error?: string } {
+// A plain string set on purpose: the lookup runs against unvalidated input, and the enum lives in
+// the return type below, where the cast is the validator's stated guarantee.
+const ALLOWED_INPUT_MODALITIES: ReadonlySet<string> = new Set(["text", "image", "audio"]);
+
+function readInputModalities(raw: unknown): { values?: DeclaredInputModality[]; error?: string } {
   if (raw === undefined) return {};
   if (!Array.isArray(raw)) return { error: "inputModalities must be an array" };
   // Reject non-strings rather than filtering them out. Dropping them silently accepted a
@@ -28,7 +36,7 @@ function readInputModalities(raw: unknown): { values?: string[]; error?: string 
   if (rejected.length > 0) {
     return { error: `unsupported input modality: ${rejected.join(", ")} (allowed: text, image, audio)` };
   }
-  return { values: raw as string[] };
+  return { values: raw as DeclaredInputModality[] };
 }
 
 /**
@@ -131,7 +139,7 @@ import {
   setDebugSettings,
   type DebugFlag,
 } from "../../lib/debug-settings";
-import type { OcxClaudeCodeConfig, OcxConfig, OcxCustomModel, OcxProviderConfig, ProviderCostOverlay } from "../../types";
+import type { ModelCapabilities, OcxClaudeCodeConfig, OcxConfig, OcxCustomModel, OcxProviderConfig, ProviderCostOverlay } from "../../types";
 import { drainAndShutdown } from "../lifecycle";
 import { filterRequestLogs, getRequestLogEntries, type RequestLogEntry } from "../request-log";
 import { estimateComboCost, estimateRequestCost, normalizeCostTokens, tokensPerSecond } from "../../usage/cost";
@@ -157,7 +165,7 @@ import type {
 import { isPlainRecord, parseDebugLogQuery, tokPerSecondResult, unavailableCostReason, costResult, requestLogDto, stripRegistryOnlyStaticHeaders, fetchAllModels } from "./shared";
 import type { MetricUnavailableReason, TokPerSecondResult, CostEstimateReason, CostResult, MetricSource } from "./shared";
 import type { ManagementContext } from "./context";
-import { listManagementModelRows, loadExportModels } from "./model-rows";
+import { effectiveModelReasoningEfforts, inheritedModelReasoningEfforts, listManagementModelRows, loadExportModels } from "./model-rows";
 import { initialModelSelectionPending } from "../../providers/initial-model-selection";
 import { readManagementJsonBody, rethrowManagementBodyTooLarge } from "./body";
 import {
@@ -731,6 +739,179 @@ export async function handleModelRoutes(ctx: ManagementContext): Promise<Respons
 
   if (url.pathname === "/api/custom-models" && req.method === "GET") {
     return jsonResponse(config.customModels ?? []);
+  }
+
+  /*
+   * Per-model overrides for a routed row, addressed by provider + upstream model id.
+   *
+   * Deliberately not a custom model. A custom model is a row the operator declares; this edits
+   * facts about a row that already exists, through the provider-level per-model maps the runtime
+   * already reads. Creating a custom model to change one field would replace the row's identity
+   * and its discovery provenance, which is the opposite of what an edit means.
+   *
+   * Every field is optional and `null` CLEARS the declaration rather than writing a default: that
+   * is what hands the fact back to the registry, the catalog and the provider, instead of pinning
+   * today's answer as an override that silently outlives the data it came from.
+   *
+   * Display name is not here on purpose. The row already has a dedicated editor for it
+   * (PUT /api/providers/{provider}/model-display-names) with its own provenance display; a second
+   * control writing the same key is two statements that can drift, and this endpoint's job is the
+   * capability axes nothing else edits.
+   */
+  if (url.pathname === "/api/model-settings" && req.method === "PUT") {
+    let parsedBody: unknown;
+    try { parsedBody = await readManagementJsonBody(req); } catch (error) { rethrowManagementBodyTooLarge(error); return jsonResponse({ error: "invalid JSON body" }, 400); }
+    if (!isPlainRecord(parsedBody)) return jsonResponse({ error: "invalid model settings request" }, 400);
+    const body = parsedBody;
+    const provider = typeof body.provider === "string" ? body.provider.trim() : "";
+    const modelId = typeof body.modelId === "string" ? body.modelId.trim() : "";
+    if (!provider || !modelId) return jsonResponse({ error: "provider and modelId are required" }, 400);
+    if (!isValidProviderName(provider) || !hasOwnProvider(config.providers, provider)) {
+      return jsonResponse({ error: "unknown model settings provider" }, 400);
+    }
+    // "openai" is the native passthrough lane and "combo" is a synthetic row: neither is a
+    // provider whose per-model maps the runtime consults for these facts.
+    if (provider === "openai" || provider === "combo") {
+      return jsonResponse({ error: "model settings are only available for routed providers" }, 400);
+    }
+
+    const providerConfig = config.providers[provider];
+    const storedLadder = providerConfig.modelReasoningEfforts?.[modelId];
+
+    let contextWindow: number | null | undefined;
+    if (body.contextWindow !== undefined) {
+      if (body.contextWindow === null) contextWindow = null;
+      else if (typeof body.contextWindow === "number" && Number.isFinite(body.contextWindow) && body.contextWindow > 0) {
+        contextWindow = Math.floor(body.contextWindow);
+      } else return jsonResponse({ error: "contextWindow must be a positive number or null" }, 400);
+    }
+    let modalities: DeclaredInputModality[] | null | undefined;
+    if (body.inputModalities !== undefined) {
+      if (body.inputModalities === null) modalities = null;
+      else {
+        const parsed = readInputModalities(body.inputModalities);
+        if (parsed.error) return jsonResponse({ error: parsed.error }, 400);
+        // An empty array means "cleared", exactly like null: a model that accepts no modality at
+        // all is not a state this surface can express, and storing [] would advertise text-only
+        // through a value the catalog then has to special-case.
+        // Deduplicated before the unchanged check and before the write: `["text","text"]` against
+        // a stored `["text","image"]` passes a length test and an every-member test, so the
+        // operator's edit would be dropped as a no-op; when it did differ, the duplicates would be
+        // persisted as submitted.
+        const unique = parsed.values ? [...new Set(parsed.values)] : [];
+        modalities = unique.length > 0 ? unique : null;
+      }
+    }
+    let ladder: string[] | null | undefined;
+    if (body.reasoningEfforts !== undefined) {
+      if (body.reasoningEfforts === null) ladder = null;
+      else {
+        const parsed = readReasoningEfforts(body.reasoningEfforts);
+        if (parsed.error) return jsonResponse({ error: parsed.error }, 400);
+        ladder = parsed.values ?? [];
+      }
+    }
+    /*
+     * Validated against the ladder this write leaves behind, not the one that happens to be stored:
+     * a caller replacing both in one request must not be rejected for the value it is replacing, and
+     * a default-only request must be judged against the ladder the model actually resolves — which
+     * may be the provider-level, registry, native or catalog one, not only a per-model entry.
+     * `inheritedModelReasoningEfforts` is what the clear case leaves behind: it removes the model's
+     * entry from a copy before resolving, so it answers the post-write state.
+     */
+    const resultingLadder = ladder === undefined
+      ? (Array.isArray(storedLadder) ? storedLadder : effectiveModelReasoningEfforts(config, provider, modelId))
+      : (ladder ?? inheritedModelReasoningEfforts(config, provider, modelId));
+    const defaultEffort = readDefaultReasoningEffort(body.defaultReasoningEffort, resultingLadder);
+    if (defaultEffort.error) return jsonResponse({ error: defaultEffort.error }, 400);
+
+    let changed = false;
+    const writePerModel = (
+      key: "modelContextWindows" | "modelReasoningEfforts" | "modelDefaultReasoningEfforts",
+      value: unknown,
+    ) => {
+      if (value === undefined) return;
+      const bag = providerConfig as unknown as Record<string, unknown>;
+      const record = { ...((bag[key] as Record<string, unknown> | undefined) ?? {}) };
+      const present = Object.prototype.hasOwnProperty.call(record, modelId);
+      if (value === null) {
+        if (!present) return;
+        delete record[modelId];
+        changed = true;
+      } else {
+        if (present && JSON.stringify(record[modelId]) === JSON.stringify(value)) return;
+        record[modelId] = value;
+        changed = true;
+      }
+      // An emptied map is removed rather than left as {}. The maps are optional config fields, and
+      // an empty one is indistinguishable from a configured-but-blank state to every reader.
+      if (Object.keys(record).length === 0) delete bag[key];
+      else bag[key] = record;
+    };
+    writePerModel("modelContextWindows", contextWindow);
+    writePerModel("modelReasoningEfforts", ladder);
+    if (body.defaultReasoningEffort !== undefined) {
+      writePerModel("modelDefaultReasoningEfforts", defaultEffort.value === undefined ? null : defaultEffort.value);
+    } else if (ladder !== undefined) {
+      /*
+       * A ladder write can strand a stored default that the model can no longer select, and the
+       * catalog would then publish a default outside its own ladder. The caller said nothing about
+       * the default, so only one that cannot survive is cleared. With `ladder === null` the override
+       * is gone and the ladder to test against is the inherited one — read from the config after the
+       * write, which no longer carries the removed entry.
+       */
+      const storedDefault = providerConfig.modelDefaultReasoningEfforts?.[modelId];
+      const effectiveLadder = ladder ?? effectiveModelReasoningEfforts(config, provider, modelId);
+      if (typeof storedDefault === "string" && !(effectiveLadder ?? []).includes(storedDefault)) {
+        writePerModel("modelDefaultReasoningEfforts", null);
+      }
+    }
+    if (modalities !== undefined) {
+      const capabilities = { ...(providerConfig.modelCapabilities ?? {}) };
+      const row = { ...(capabilities[modelId] ?? {}) };
+      const declared = Array.isArray(row.inputModalities) ? [...row.inputModalities] : undefined;
+      const unchanged = modalities === null
+        ? declared === undefined
+        : declared !== undefined
+          && declared.length === modalities.length
+          && modalities.every(modality => declared.includes(modality));
+      if (!unchanged) {
+        changed = true;
+        if (modalities === null) delete row.inputModalities;
+        else row.inputModalities = modalities;
+        if (Object.keys(row).length === 0) delete capabilities[modelId];
+        else capabilities[modelId] = row;
+        if (Object.keys(capabilities).length === 0) delete providerConfig.modelCapabilities;
+        else providerConfig.modelCapabilities = capabilities;
+      }
+    }
+
+    const state = {
+      ok: true as const,
+      provider,
+      modelId,
+      contextWindow: providerConfig.modelContextWindows?.[modelId] ?? null,
+      inputModalities: providerConfig.modelCapabilities?.[modelId]?.inputModalities ?? null,
+      reasoningEfforts: providerConfig.modelReasoningEfforts?.[modelId] ?? null,
+      defaultReasoningEffort: providerConfig.modelDefaultReasoningEfforts?.[modelId] ?? null,
+    };
+    // `changed: false` is a real answer, not a failure: it is what tells a caller that the model
+    // carries no override to clear, so an editor can say so instead of claiming it restored one.
+    if (!changed) return jsonResponse({ ...state, changed: false });
+    persistConfig(config);
+    /*
+     * Drop this provider's live `/models` cache before converging.
+     *
+     * The gather bakes the resolved hints into the rows it caches, and on a cache hit it re-applies
+     * the config through `clampObservedModelLimits`, where a configured window may only LOWER the
+     * observed one. A raised or cleared override would therefore keep reading back the previous
+     * answer for the whole TTL, and a cleared modality or ladder would keep the baked one. Clearing
+     * the entry is what makes the save visible on the next read, the same reason
+     * `PUT /api/provider-context-caps` clears it per affected provider.
+     */
+    clearModelCache(provider);
+    const catalogRefresh = await convergeCodexCatalog();
+    return jsonResponse({ ...state, changed: true, catalogRefresh });
   }
 
   if (url.pathname === "/api/custom-models" && req.method === "POST") {

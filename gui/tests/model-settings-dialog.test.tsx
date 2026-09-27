@@ -1,0 +1,212 @@
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { Window } from "happy-dom";
+import { act } from "react";
+import type { Root } from "react-dom/client";
+import { clearClientResourceStoresForTests } from "../src/client-resource";
+import { LanguageProvider } from "../src/i18n/provider";
+import Models from "../src/pages/Models";
+import type { ModelRow } from "../src/pages/models-shared";
+
+/**
+ * The per-model settings dialog, driven through the Models page so the row button, the dialog and
+ * the request it sends are exercised as one path.
+ *
+ * The two properties worth pinning are both about what the form SHOWS versus what it WRITES: the
+ * modality boxes pre-fill from the stored declaration rather than the catalog value, and a save
+ * submits only the axis the operator touched. Either one inverted makes the row look unchanged
+ * after a successful write, which is the failure this dialog was written to fix.
+ */
+type Mutation = Record<string, unknown>;
+
+describe("Models per-model settings dialog", () => {
+  const globals = [
+    "document", "window", "navigator", "localStorage", "sessionStorage",
+    "IS_REACT_ACT_ENVIRONMENT", "fetch", "setInterval", "clearInterval",
+  ] as const;
+  let previousGlobals: Record<(typeof globals)[number], PropertyDescriptor | undefined>;
+  let testWindow: Window;
+  let container: HTMLElement;
+  let root: Root | null;
+  let rows: ModelRow[];
+  let mutations: Mutation[];
+  let settingsResponse: ((body: Mutation) => Response) | null;
+
+  beforeEach(() => {
+    clearClientResourceStoresForTests();
+    previousGlobals = Object.fromEntries(globals.map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)])) as typeof previousGlobals;
+    testWindow = new Window({ url: "http://localhost/#models" });
+    Object.defineProperties(globalThis, {
+      document: { configurable: true, value: testWindow.document },
+      window: { configurable: true, value: testWindow },
+      navigator: { configurable: true, value: testWindow.navigator },
+      localStorage: { configurable: true, value: testWindow.localStorage },
+      sessionStorage: { configurable: true, value: testWindow.sessionStorage },
+      IS_REACT_ACT_ENVIRONMENT: { configurable: true, value: true },
+      setInterval: { configurable: true, value: () => 1 },
+      clearInterval: { configurable: true, value: () => {} },
+    });
+    rows = [
+      {
+        provider: "vendor-demo",
+        id: "chat-large",
+        namespaced: "vendor-demo/chat-large",
+        disabled: false,
+        contextWindow: 200_000,
+        // What the provider published, versus what the operator stored. The dialog must show the
+        // second one; showing the first is how a save came back as "nothing changed".
+        inputModalities: ["text", "image"],
+        inputModalitiesDeclared: ["text"],
+        reasoningEfforts: ["low", "medium", "high"],
+        defaultReasoningEffort: "medium",
+        reasoningOverridden: false,
+      },
+      { provider: "vendor-demo", id: "vendor/custom", namespaced: "vendor-demo/vendor/custom", disabled: false, custom: true, customId: "custom-1" },
+      { provider: "openai", id: "gpt-5.5", namespaced: "openai/gpt-5.5", disabled: false, native: true },
+      { provider: "combo", id: "balanced", namespaced: "combo/balanced", disabled: false },
+    ];
+    const providers = [
+      { name: "vendor-demo", liveModels: false, models: ["chat-large", "vendor/custom"] },
+      { name: "openai", liveModels: false, models: ["gpt-5.5"] },
+    ];
+    mutations = [];
+    settingsResponse = null;
+    testWindow.localStorage.setItem("ocx-lang", "en");
+    testWindow.localStorage.setItem("ocx-models-collapsed:v2", JSON.stringify([]));
+    testWindow.sessionStorage.setItem("ocx.models.catalog.v1:http://localhost", JSON.stringify({
+      models: rows, providers, selectedModels: {}, disabled: [], contextCaps: {}, contextCapValue: 350_000,
+    }));
+    globalThis.fetch = (async (input, init) => {
+      const url = String(input);
+      if (url.endsWith("/api/model-settings")) {
+        const body = JSON.parse(String(init?.body)) as Mutation;
+        mutations.push(body);
+        if (settingsResponse) return settingsResponse(body);
+        return Response.json({ ok: true, provider: body.provider, modelId: body.modelId, changed: true });
+      }
+      if (url.endsWith("/api/models")) return Response.json(rows);
+      if (url.endsWith("/api/providers")) return Response.json(providers);
+      if (url.endsWith("/api/selected-models")) return Response.json({ selected: {} });
+      if (url.endsWith("/api/provider-context-caps")) return Response.json({ caps: {} });
+      if (url.endsWith("/api/aliases")) return Response.json({ providers: {}, models: {}, defaults: { global: false, providers: {} } });
+      if (url.endsWith("/api/combos")) return Response.json({ combos: [] });
+      if (url.endsWith("/api/shadow-call-settings")) return Response.json({ enabled: false, model: "" });
+      if (url.endsWith("/api/v2")) return Response.json({ enabled: false, agentsMaxThreadsConflict: false, multiAgentMode: "default" });
+      return new Response(null, { status: 404 });
+    }) as typeof fetch;
+    container = testWindow.document.createElement("div");
+    testWindow.document.body.appendChild(container as never);
+    root = null;
+  });
+
+  afterEach(async () => {
+    clearClientResourceStoresForTests();
+    if (root) await act(async () => root!.unmount());
+    testWindow.close();
+    for (const key of globals) {
+      const descriptor = previousGlobals[key];
+      if (descriptor) Object.defineProperty(globalThis, key, descriptor);
+      else Reflect.deleteProperty(globalThis, key);
+    }
+  });
+
+  async function flush() {
+    await act(async () => { await new Promise(resolve => testWindow.setTimeout(resolve, 0)); });
+  }
+
+  async function mount() {
+    const { createRoot } = await import("react-dom/client");
+    await act(async () => {
+      root = createRoot(container);
+      root.render(<LanguageProvider><Models apiBase="http://localhost" /></LanguageProvider>);
+    });
+    await flush();
+  }
+
+  function trigger(model = "vendor-demo/chat-large"): HTMLButtonElement | null {
+    return container.querySelector<HTMLButtonElement>(`[aria-label="Edit model — ${model}"]`);
+  }
+
+  function dialog(): HTMLElement | null {
+    return container.querySelector<HTMLElement>("dialog");
+  }
+
+  function dialogButton(label: string): HTMLButtonElement | undefined {
+    return [...container.querySelectorAll<HTMLButtonElement>("dialog button")].find(node => node.textContent === label);
+  }
+
+  function checkboxes(): HTMLInputElement[] {
+    return [...container.querySelectorAll<HTMLInputElement>("dialog input[type=checkbox]")];
+  }
+
+  async function open(model?: string) {
+    await act(async () => trigger(model)!.click());
+    await flush();
+  }
+
+  async function click(label: string) {
+    await act(async () => dialogButton(label)!.click());
+    await flush();
+  }
+
+  test("only a routed row offers the editor", async () => {
+    await mount();
+    expect(container.querySelectorAll('[aria-label^="Edit model — "]')).toHaveLength(1);
+    expect(trigger("vendor-demo/vendor/custom")).toBeNull();
+    expect(trigger("openai/gpt-5.5")).toBeNull();
+    expect(trigger("combo/balanced")).toBeNull();
+  });
+
+  test("the dialog shows the stored declaration, not the catalog value", async () => {
+    await mount();
+    await open();
+    const boxes = checkboxes();
+    // text, image, audio, then the reasoning override — image stays unticked even though the
+    // catalog advertises it, because the declaration is what this form writes.
+    expect(boxes.slice(0, 3).map(box => box.checked)).toEqual([true, false, false]);
+    expect(boxes[3]!.checked).toBe(false);
+    expect(dialog()!.textContent).toContain("vendor-demo/chat-large");
+    // A declaration exists, so the "following the upstream declaration" hint must stay away:
+    // it describes the undeclared state, and showing it here would contradict the ticked box.
+    expect(dialog()!.textContent).not.toContain("upstream declaration");
+  });
+
+  test("an undeclared model ticks nothing and names what it is following instead", async () => {
+    delete rows[0]!.inputModalitiesDeclared;
+    await mount();
+    await open();
+    expect(checkboxes().slice(0, 3).map(box => box.checked)).toEqual([false, false, false]);
+    expect(dialog()!.textContent).toContain("text, image");
+  });
+
+  test("a save submits only the axis the operator touched", async () => {
+    await mount();
+    await open();
+    const image = checkboxes()[1]!;
+    await act(async () => image.click());
+    await click("Apply");
+    expect(mutations).toEqual([{ provider: "vendor-demo", modelId: "chat-large", inputModalities: ["text", "image"] }]);
+    expect(dialog()).toBeNull();
+  });
+
+  test("restore clears every axis, and says so when there was nothing to clear", async () => {
+    await mount();
+    settingsResponse = body => Response.json({ ok: true, provider: body.provider, modelId: body.modelId, changed: false });
+    await open();
+    await click("Restore");
+    // The confirmation is a second dialog on the body, so answer the one it just appended.
+    const confirm = [...testWindow.document.querySelectorAll("dialog")].at(-1)!;
+    const accept = [...confirm.querySelectorAll("button")].find(node => node.textContent === "Restore")!;
+    await act(async () => accept.click());
+    await flush();
+    expect(mutations).toEqual([{
+      provider: "vendor-demo",
+      modelId: "chat-large",
+      contextWindow: null,
+      inputModalities: null,
+      reasoningEfforts: null,
+      defaultReasoningEffort: null,
+    }]);
+    expect(dialog()).toBeNull();
+    expect(container.textContent).toContain("carries no overrides");
+  });
+});
