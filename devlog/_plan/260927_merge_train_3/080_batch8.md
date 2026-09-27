@@ -11,3 +11,15 @@ Base: `dev` `29cef45a86` (after B7 #6070; open issues reached 40). Branch `codex
 
 Order: #6064 before #6068, resolving their shared tail of `structure/remote-link.md`; new layout entries go on
 existing lines. Security reviews for #6064 and #6068 are recorded in scratch.
+
+## Build and evidence
+
+Carried: `159085ed6c` (#6064), `e1c8943670` (#6068; the `remote-link.md` tail keeps both sections),
+`a5e2f7272a` (#6067), `390b69f2c8` (#6065); `eab0ac1422` pairs the two new layout entries (layout.json 1994 lines).
+
+Local: typecheck, structure and privacy exit 0; the six carried test files plus `doctor.test.ts`: 185 pass here, and
+the 19 `doctor` failures are this worktree's protected-home guard. In a `/tmp` worktree at `eab0ac1422`,
+`doctor`, `link-join-route` and `claude-desktop-system-proxy` pass 136/136.
+
+Aside: all four PR pages captured; no open CHANGES_REQUESTED review on any of them. Security reviews for #6064 and
+#6068 (BLOCKER no) are kept in scratch.
