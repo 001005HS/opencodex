@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { fetchLiveStartupHealth, selectStatusStartupHealth, statusServiceSummary } from "../../src/cli/status";
 import type { StartupHealth } from "../../src/codex/autostart-health";
+import { LOCAL_ATTESTATION_PROOF_HEADER, createLocalAttestationProof } from "../../src/lib/local-management-attestation";
 
 const LIVE = {
   pid: 4242,
@@ -43,7 +44,7 @@ function startupPayload() {
   };
 }
 
-function deps(body: unknown) {
+function deps(body: unknown, proof: string | null = createLocalAttestationProof(SECRET, NONCE, LIVE.pid, LIVE.port)) {
   return {
     readRuntime: () => ({
       pid: LIVE.pid,
@@ -55,7 +56,7 @@ function deps(body: unknown) {
     now: () => 1_000,
     fetchImpl: async () => new Response(JSON.stringify(body), {
       status: 200,
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", ...(proof ? { [LOCAL_ATTESTATION_PROOF_HEADER]: proof } : {}) },
     }),
   };
 }
@@ -121,6 +122,16 @@ describe("ocx status live startup health", () => {
     expect(summary).toContain("live startup reports service absent, not running, not viable");
     expect(summary).toContain("ocx service repair");
     expect(summary).not.toContain("healthy local service");
+  });
+
+  // Whoever holds the port can answer the request; only the server that owns the runtime secret
+  // can sign this request's nonce. A substituted listener's verdict must never be trusted.
+  test("rejects a live verdict without the server's proof over this request's nonce", async () => {
+    expect(await fetchLiveStartupHealth(LIVE, deps(startupPayload(), null))).toBeNull();
+    const otherNonce = createLocalAttestationProof(SECRET, "C".repeat(43), LIVE.pid, LIVE.port);
+    expect(await fetchLiveStartupHealth(LIVE, deps(startupPayload(), otherNonce))).toBeNull();
+    const otherSecret = createLocalAttestationProof("D".repeat(43), NONCE, LIVE.pid, LIVE.port);
+    expect(await fetchLiveStartupHealth(LIVE, deps(startupPayload(), otherSecret))).toBeNull();
   });
 
   test("fails closed when the runtime attestation cannot bind the live PID", async () => {

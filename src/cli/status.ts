@@ -249,7 +249,7 @@ export async function fetchLiveStartupHealth(
   deps: Parameters<typeof fetchBoundLocalManagementRead>[2] = {},
 ): Promise<StartupHealth | null> {
   const result = await fetchBoundLocalManagementRead(
-    live, LOCAL_MANAGEMENT_READ_PATHS.startupHealth, { timeoutMs: 1_500, ...deps },
+    live, LOCAL_MANAGEMENT_READ_PATHS.startupHealth, { timeoutMs: 1_500, ...deps, requireResponseProof: true },
   );
   if (result.kind !== "response" || !result.response.ok) return null;
   let payload: unknown;
