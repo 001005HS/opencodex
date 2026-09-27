@@ -598,6 +598,28 @@ JSON mode: `payload`.
 
 - Uses the exact upstream model ID after the first slash. Omitted cache rates default to zero; sibling model prices are preserved.
 
+### `ocx models set`
+
+Save per-model overrides for a routed model, or clear them back to the computed values.
+
+| Method | Route |
+|---|---|
+| PUT | `/api/model-settings` |
+
+| Flag | Value | Meaning |
+|---|---|---|
+| `--context-window` | string | Context window in tokens; 0 or - clears the override. |
+| `--modalities` | string | Comma-separated text,image,audio; - clears the override. |
+| `--reasoning-efforts` | string | Comma-separated ladder; "" for no reasoning, - to inherit. |
+| `--default-reasoning-effort` | string | Ladder member a request inherits when it omits one; - to inherit. |
+| `--reset` | boolean | Clear every override on this model; cannot be combined with the options above. |
+| `--json` | boolean | Emit the saved state as JSON. |
+
+JSON mode: `envelope`.
+
+- Addresses a routed model as provider/model. The native openai lane and combos have no per-model overrides.
+- Unlike ocx models edit, which changes a custom model's own definition, this edits a row that already exists.
+
 ### `ocx hub invite`
 
 Mint a single-use pairing code on a hub and print the exact `ocx connect` line for one more machine.
@@ -1158,6 +1180,6 @@ JSON mode: `payload`.
 
 ## Counts
 
-- declared capabilities: 65
-- of those, state-changing: 35
+- declared capabilities: 66
+- of those, state-changing: 36
 - head-resolved invocations: 2

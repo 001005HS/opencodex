@@ -485,6 +485,47 @@ can still fail when a recorded session has no surviving rollout file.
 | `PUT, DELETE /api/custom-models/{id}` | Edit or delete one custom model | 400 invalid id/fields; 404 not found; 409 duplicate model |
 | `GET, PUT /api/selected-models` | Read provider allowlists and availability, or replace one allowlist | 400 missing provider/body; 404 unknown provider; PUT 409 `initial_model_selection_pending` |
 | `GET, PUT /api/model-presets` | Read preset summaries or choose preset/all/custom mode | 400 invalid mode or unsupported preset; 404 unknown provider; PUT 409 `initial_model_selection_pending` |
+| `PUT /api/model-settings` | Edit one routed model's capability axes in place | 400 missing provider/modelId, unknown or native/combo provider, malformed field, unknown field, non-exact model id, or an invalid default effort for the resulting ladder; 500 when the config could not be saved (live config left unchanged) |
+
+`PUT /api/model-settings` takes `{ provider, modelId }` plus any of `contextWindow`,
+`inputModalities`, `reasoningEfforts`, and `defaultReasoningEffort`. It writes the
+provider-level per-model maps the runtime already reads (`modelContextWindows`,
+`modelCapabilities.<modelId>.inputModalities`, `modelReasoningEfforts`,
+`modelDefaultReasoningEfforts`), so an edited row keeps its discovery provenance instead of
+being replaced by a custom model. `inputModalities` accepts `text`, `image`, and `audio`;
+`reasoningEfforts` must be a subset of the efforts the runtime knows. Unknown request fields
+are rejected by name. `modelId` must be exact, without surrounding whitespace, control
+characters, excessive length, or a reserved object-property name. `contextWindow` must be
+`null` or a positive safe integer.
+
+Every field is optional, and `null` **clears** the declaration rather than writing a default,
+which hands the fact back to the registry, the catalog, and the provider. An empty
+`inputModalities` array also clears, while an empty `reasoningEfforts` array is stored as an
+explicit "this model has no reasoning rungs" override — it does not clear.
+Clearing `inputModalities` also removes the exact legacy `modelInputModalities` entry for that
+model, so a restore cannot leave an older declaration in force; family keys shared with other
+models stay. An emptied per-model map is removed instead of left as `{}`. A request that changes nothing
+answers `changed: false` with the stored state. The receipt also reports `saved` (whether this
+request published config), `hasOverrides` (whether any of the four axes remains stored), and
+`catalogRefresh` (`committed`, `skipped`, or `failed`). These fields distinguish a no-op with
+stored declarations from a model with nothing to restore. A changed request persists atomically;
+an unpublished save failure leaves the live config unchanged. After publication the server
+drops that provider's cached `/models` result and reports the catalog outcome. A published write
+followed by a bookkeeping error still returns `saved: true` with a skipped refresh. The gather
+bakes resolved hints into the rows it caches, and a cache hit may only lower a configured window,
+so a raised or cleared override would otherwise read back the previous answer for the whole TTL.
+Only routed providers are addressable: `openai` is the
+native passthrough lane and `combo` is a synthetic row, so neither is a provider whose per-model
+maps these facts come from. Display name is not part of this route; use
+`PUT /api/providers/{provider}/model-display-names`.
+
+`GET /api/models` reports the exact stored `contextWindowDeclared` separately from the
+effective `contextWindow`. The Models editor starts from the declaration and shows the effective
+window as an inherited hint when no declaration exists. If a save outcome is unknown, or the
+save succeeded but the model list did not reload, the dialog disables further writes and offers
+a read-only Reload. After a successful reload, reopen the row to inspect the stored values.
+A `catalogRefresh` that failed, or was skipped with `retryable: true`, leaves the save in place and
+shows a warning to run Sync; a non-retryable skip means no managed Codex catalog and is a clean save.
 
 A manual model replaces the Models dashboard row with the same provider and model ID.
 For OpenAI, the manual row keeps `openai/<model>` and supports the same visibility controls

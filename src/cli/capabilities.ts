@@ -241,6 +241,25 @@ export const CAPABILITIES: readonly Capability[] = [
     details: ["Uses the exact upstream model ID after the first slash. Omitted cache rates default to zero; sibling model prices are preserved."],
   },
   {
+    command: ["models", "set"],
+    summary: "Save per-model overrides for a routed model, or clear them back to the computed values.",
+    routes: [{ method: "PUT", path: "/api/model-settings" }],
+    flags: [
+      { name: "--context-window", value: "string", summary: "Context window in tokens; 0 or - clears the override." },
+      { name: "--modalities", value: "string", summary: "Comma-separated text,image,audio; - clears the override." },
+      { name: "--reasoning-efforts", value: "string", summary: "Comma-separated ladder; \"\" for no reasoning, - to inherit." },
+      { name: "--default-reasoning-effort", value: "string", summary: "Ladder member a request inherits when it omits one; - to inherit." },
+      { name: "--reset", value: "boolean", summary: "Clear every override on this model; cannot be combined with the options above." },
+      { name: "--json", value: "boolean", summary: "Emit the saved state as JSON." },
+    ],
+    mutates: true,
+    json: "envelope",
+    details: [
+      "Addresses a routed model as provider/model. The native openai lane and combos have no per-model overrides.",
+      "Unlike ocx models edit, which changes a custom model's own definition, this edits a row that already exists.",
+    ],
+  },
+  {
     command: ["status"],
     summary: "Proxy status, injection state, and version skew between this CLI and the running proxy.",
     // No management route: `collectStatus` identity-probes `/healthz` through
