@@ -81,8 +81,10 @@ function foreignLiveOwner(configDir: string, published: string): boolean {
 
 /**
  * `check` runs under a cross-process lock keyed to the picker state dir so the read-decide-publish
- * sequence cannot interleave with a peer's. A refused lock fails closed: `fallback` may republish
- * only when no live foreign owner exists, and a genuinely foreign certificate is never clobbered.
+ * sequence cannot interleave with a peer's. Returns undefined when the lock cannot be taken, and
+ * callers then run the same step without it. For a cached authority that step still defers to a
+ * live foreign owner. A fresh authority publishes unconditionally, with or without the lock; the
+ * peer it displaces sees the new owner record and stops republishing.
  */
 function underPickerCaLock<T>(configDir: string, check: () => T): T | undefined {
   try {

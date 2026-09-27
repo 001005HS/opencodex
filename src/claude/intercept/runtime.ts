@@ -133,6 +133,10 @@ export interface StartClaudeInterceptOptions<T> {
  * rejecting; callers treat it as a degraded optional integration, never as a startup failure.
  */
 export async function startClaudeIntercept<T>(options: StartClaudeInterceptOptions<T>): Promise<ClaudeInterceptHandle<T> | null> {
+  // An older release may have left the picker's exportable signing key on disk. Remove it on every
+  // start, even when the intercept or the picker is off, so an upgrade with the picker disabled
+  // does not keep the key of a CA that may still be trusted. Failure here must not block startup.
+  try { discardPickerCaKey(options.configDir ?? getConfigDir()); } catch { /* retried on the next start */ }
   if (!claudeInterceptEnabled(options.config)) return null;
   const explicitPort = typeof options.config.claudeCode?.intercept?.port === "number";
   if (options.requestedPort === 0 && !explicitPort) return null;

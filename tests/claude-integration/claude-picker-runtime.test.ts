@@ -707,3 +707,20 @@ describe("startClaudeIntercept wiring", () => {
     expect(await canBind(port + 1)).toBe(true);
   });
 });
+
+describe("legacy picker signing key", () => {
+  // An upgrade with the picker (or the whole intercept) off must still drop the old exportable key.
+  test("is removed at intercept start even when the intercept is disabled", async () => {
+    const legacyKey = join(pickerStateDir(root), "ca.key");
+    mkdirSync(pickerStateDir(root), { recursive: true });
+    writeFileSync(legacyKey, "legacy key fixture");
+    const handle = await startClaudeIntercept({
+      config: config({ claudeCode: { intercept: { enabled: false } } }),
+      publicPort: 10100,
+      configDir: root,
+      dispatch: async () => new Response("unused"),
+    });
+    expect(handle).toBeNull();
+    expect(existsSync(legacyKey)).toBe(false);
+  });
+});
