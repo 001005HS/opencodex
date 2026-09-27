@@ -42,7 +42,11 @@ separately billed generation.
 On non-loopback binds, data-plane authentication and origin policy cover both Images routes. An
 explicit keyed Images provider accepts the proxy admission secret as either an OpenAI-style bearer
 or `x-opencodex-api-key` because the provider key replaces caller authorization before fetch. The
-ChatGPT forward path still requires the dedicated header so its upstream bearer remains distinct.
+ChatGPT Direct path still requires the dedicated header so its caller-owned upstream bearer remains
+distinct. A proxy admission bearer leaves managed Pool eligible: Pool replaces it with its stored
+credential, while Direct cannot forward it. A selected Pool authentication failure remains its own
+error rather than falling through to a separately billed keyed provider. The outbound Images send
+has one selected Authorization value, validated before the non-idempotent upstream POST.
 The keyed path never enters `handleResponses`, so `src/server/images.ts` repeats
 `selectProactiveApiKeyTransport` inside the keyed branch and rebuilds Authorization from the
 returned clone rather than the earlier snapshot.
@@ -52,8 +56,11 @@ on: the ChatGPT forward account, the keyed provider, the xAI Imagine bridge, or 
 fallback. It is evaluated against that destination rather than the selector in the body, because
 the bridge and the fallback choose their own model, and a body that names no model cannot satisfy
 a model list. A refusal is the same 403 the scope returns on the routed path, and a key with no
-scope reaches every destination as before. Coverage lives in
-`tests/server/api-key-scope-images.test.ts`.
+scope reaches every destination as before. Forward candidates are filtered by that scope before any
+stored Pool credential is resolved, refreshed or leased, so a forbidden key never reaches account
+state; when no allowed destination remains, the 403 wins over the generic configuration 400.
+Coverage lives in `tests/server/api-key-scope-images.test.ts` and
+`tests/server/server-images-pool-admission.test.ts`.
 
 The API-key `openai-responses` path also adapts Codex's private standalone image tool to the public
 Responses tool surface. A complete `image_gen` namespace is lowered to safe
