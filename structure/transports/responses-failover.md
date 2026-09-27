@@ -565,6 +565,8 @@ stable ceiling without making a cooled account eligible. Same-provider auth reco
 physical target, rather than a diagnostic key, and a real send is charged once even when recovery
 rebuilds the request.
 
+Antigravity main adapter dispatch: after same-account refresh, a second pre-output 401 or terminal refresh failure may switch once to a live sibling within existing budgets; continuations, passthrough, sidecars and 403s never rotate (contract: `docs-site/src/content/docs/reference/configuration/providers.md`, `rotateAntigravityAccountOnAuthRefusal` in `src/oauth/generic-account-failover.ts`).
+
 Precommit Codex model refusals use bounded account recovery for HTTP `detail` and WebSocket-projected
 `error.message` bodies. Only an exact HTTP 400 refusal naming the requested or wire model establishes
 denial evidence; ordinary malformed requests and committed stream errors do not authorize another

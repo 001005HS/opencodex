@@ -32,3 +32,19 @@ Run the named Google formatter, OAuth failover and Antigravity server tests, plu
 ## Field and bypass chain
 
 No new persisted field or enum is added. The transient classification is created from a response status and bounded body, consumed by the three reachable primary inference paths (adapter dispatch, native passthrough, generic continuation), and never serialized/deserialized (N/A: no disk or management DTO). Executing surface is the proxy runtime; Codexclaw E1–E8 process tiers do not gate an installed proxy. Direct provider calls, image/web-search sidecars and requests that have already committed output bypass this recovery opportunity. A validation marker beyond the bound intentionally stays a terminal 403. Wording is limited to bounded pre-output primary-inference rotation; final enforcement layer for traffic outside this proxy: none.
+
+## Amendment: narrowed scope (2026-09-28)
+
+This amendment replaces the MODIFY map above wherever the two disagree.
+
+- **Native passthrough removed.** Real Antigravity traffic goes through the Google adapter's `fetchResponse`. Passthrough is reachable only through a synthetic model-adapter override, and `passthrough-dispatch.ts` had the least headroom under the size limit.
+- **Continuation arm removed.** An independent sol review found that it rotated before a same-account refresh and started a second one-sibling guard. The one rotation site is the main recovery loop in `adapter-dispatch.ts`, so a request switches accounts at most once.
+- **Validated-403 rotation deferred.** Recording it truthfully needs a new recovery kind across the telemetry roster, the failure-cause map, the dashboard labels and ten locale catalogs. That is a GUI change this train does not take. The bounded 403 read and the formatter-owned `Antigravity account validation required (VALIDATION_REQUIRED)` prefix still ship, as a clearer error message.
+- **Terminal refresh only.** The sibling path runs only on `OAuthLoginRequiredError` with the failed row marked `needsReauth`. Transient refresh errors keep the sanitized 401.
+- **One switch, not one send.** The sibling request keeps the adapter's ordinary transient retries, and every physical send is charged to the request's shared send budget.
+
+The #5099 disposition becomes: the 401 slice landed, 403 rotation is held for the telemetry decision, and pausing the failing account (#6106) is the workaround for a persistent `Verify your account` 403.
+
+## Outcome (2026-09-28)
+
+A gpt-6-sol worker implemented the narrowed slice. An independent sol reviewer passed it after three rounds; the fixes from the failing rounds are in the amendment above. Local verification on the union with `dev` at `555ef68ac6` (isolated homes, files run one at a time) passed with 0 failures: `google-errors` 18, `google-vertex-http` 40, `generic-oauth-failover` 62, Antigravity 401 replay 29, `terminal-guard-server` 15, `oauth-store-multi` 62, Kiro leased responses 18, main-account hard lock policy 32 and recovery 19, reset-credit recovery 68, and layout, layout tooling and file-size ratchet. `typecheck`, `structure:check`, `privacy:scan` and `skill:surface:check` passed. The new tests were checked red-green by mutating the source; the transient-refresh test failed before the terminal-only guard (a 503 was sent on the sibling). Per the coordinator's train rule, hosted Cross-platform CI runs once on the final `dev`.
