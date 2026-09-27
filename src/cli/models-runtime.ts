@@ -288,7 +288,19 @@ async function setModelSettings(argv: string[], deps: RuntimeApiDeps): Promise<v
       patch.contextWindow = value === 0 ? null : value;
     }
   }
-  if (modalitiesRaw !== undefined) patch.inputModalities = modalitiesRaw.trim() === "-" ? null : csv(modalitiesRaw);
+  if (modalitiesRaw !== undefined) {
+    // "-" is the one spelling that clears. A blank value or a blank member would otherwise
+    // become [] after CSV normalization, which the server also reads as "clear".
+    const trimmed = modalitiesRaw.trim();
+    if (trimmed === "-") patch.inputModalities = null;
+    else {
+      const members = trimmed.split(",").map(item => item.trim());
+      if (members.some(item => !["text", "image", "audio"].includes(item))) {
+        throw new CliUsageError("--modalities must list text, image or audio (comma-separated), or - to clear", USAGE);
+      }
+      patch.inputModalities = [...new Set(members)];
+    }
+  }
   if (reasoningEffortsRaw !== undefined) {
     // "-" restores inheritance by clearing the stored ladder (null); "" stores an explicit empty
     // ladder, which is the "this model does not reason" override. Embedded blank CSV members

@@ -122,6 +122,12 @@ describe("models per-model settings command", () => {
     const unsafeWindow = await invoke(["vendor/model", "--context-window", String(2 ** 60)]);
     expect(unsafeWindow.code).toBe(2);
     expect(unsafeWindow.calls).toEqual([]);
+    // Only "-" clears: a blank value or blank member must not normalize to [] and clear silently.
+    for (const raw of ["", ",", "text,,image", "video"]) {
+      const blank = await invoke(["vendor/model", "--modalities", raw]);
+      expect(blank.code).toBe(2);
+      expect(blank.calls).toEqual([]);
+    }
   });
 
   test("an unchanged answer says so instead of claiming a write", async () => {

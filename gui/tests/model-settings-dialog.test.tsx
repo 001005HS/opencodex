@@ -298,6 +298,19 @@ describe("Models per-model settings dialog", () => {
 
   test("a failed Codex catalog refresh warns after the save instead of trapping the dialog", async () => {
     await mount();
+    settingsResponse = () => Response.json({ error: "raw server detail" }, { status: 400 });
+    await open();
+    await act(async () => checkboxes()[1]!.click());
+    await click("Apply");
+    // A 4xx means nothing was written: the form stays editable and shows translated copy only.
+    expect(dialog()!.textContent).toContain("rejected these settings");
+    expect(dialog()!.textContent).not.toContain("raw server detail");
+    expect(dialogButton("Apply")!.disabled).toBe(false);
+    expect(dialogButton("Reload")).toBeUndefined();
+  });
+
+  test("a Codex catalog refresh failure is only a warning after the save", async () => {
+    await mount();
     settingsResponse = body => Response.json({ ok: true, provider: body.provider, modelId: body.modelId,
       changed: true, saved: true, hasOverrides: true,
       catalogRefresh: { status: "failed", reason: "disk", phase: "commit", retryable: true, partialWrite: false } });

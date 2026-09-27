@@ -156,6 +156,7 @@ export default function ModelSettingsDialog({ row, apiBase, onRefresh, onFeedbac
     setPhase(restoring ? "restoring" : "saving");
     setErrorKey(null);
     let confirmed = false;
+    let rejected = false;
     try {
       const response = await fetch(apiBase + "/api/model-settings", {
         method: "PUT",
@@ -163,6 +164,12 @@ export default function ModelSettingsDialog({ row, apiBase, onRefresh, onFeedbac
         body: JSON.stringify({ provider: row.provider, modelId: row.id, ...patch }),
         signal: bounded.signal,
       });
+      // A 4xx is answered before anything is written, so the outcome is known: nothing saved.
+      // The form stays editable, and the server's untranslated text is not shown.
+      if (response.status >= 400 && response.status < 500) {
+        rejected = true;
+        throw new Error("model settings rejected");
+      }
       const result = await readJsonOrThrow<unknown>(response);
       bounded.signal.throwIfAborted();
       // Validate the receipt against the request: a 200 for another row would otherwise be
@@ -198,6 +205,11 @@ export default function ModelSettingsDialog({ row, apiBase, onRefresh, onFeedbac
       onClose();
     } catch {
       if (requestRef.current !== bounded) return;
+      if (rejected) {
+        setPhase("ready");
+        setErrorKey("models.settingsRejected");
+        return;
+      }
       setPhase(confirmed ? "saved-stale" : "unknown");
       setErrorKey(confirmed ? "models.settingsRefreshFailed" : "models.settingsSaveFailed");
     } finally {

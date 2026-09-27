@@ -485,7 +485,7 @@ can still fail when a recorded session has no surviving rollout file.
 | `PUT, DELETE /api/custom-models/{id}` | Edit or delete one custom model | 400 invalid id/fields; 404 not found; 409 duplicate model |
 | `GET, PUT /api/selected-models` | Read provider allowlists and availability, or replace one allowlist | 400 missing provider/body; 404 unknown provider; PUT 409 `initial_model_selection_pending` |
 | `GET, PUT /api/model-presets` | Read preset summaries or choose preset/all/custom mode | 400 invalid mode or unsupported preset; 404 unknown provider; PUT 409 `initial_model_selection_pending` |
-| `PUT /api/model-settings` | Edit one routed model's capability axes in place | 400 missing provider/modelId, unknown or native/combo provider, malformed field, or an invalid default effort for the resulting ladder |
+| `PUT /api/model-settings` | Edit one routed model's capability axes in place | 400 missing provider/modelId, unknown or native/combo provider, malformed field, unknown field, non-exact model id, or an invalid default effort for the resulting ladder; 500 when the config could not be saved (live config left unchanged) |
 
 `PUT /api/model-settings` takes `{ provider, modelId }` plus any of `contextWindow`,
 `inputModalities`, `reasoningEfforts`, and `defaultReasoningEffort`. It writes the
