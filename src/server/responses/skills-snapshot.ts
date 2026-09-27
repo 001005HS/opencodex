@@ -12,7 +12,7 @@
  * - 8 MiB global retained byte bound across all sessions
  */
 import type { OcxConfig, SkillsCatalogRefresh } from "../../types/config";
-import { resolveContextPrincipal, type DataPlaneAdmission } from "../auth-cors";
+import { isApiAuthRequired, resolveContextPrincipal, type DataPlaneAdmission } from "../auth-cors";
 import {
   reasoningReplayConversationIdFromResponsesRequest,
   sessionIdHeaderFromRequest,
@@ -62,6 +62,20 @@ export interface ResolveSkillsSessionScopeInput {
 }
 
 /**
+ * The principal a snapshot is scoped to. Without a named principal, only a server that requires
+ * no data-plane auth may share by conversation id (loopback admission, or an internal caller that
+ * passed none on such a server): its callers already share one trust domain, which on a no-auth
+ * server bound beyond loopback includes remote callers. Any other anonymous request gets no
+ * snapshot.
+ */
+function snapshotPrincipal(input: ResolveSkillsSessionScopeInput): string | null | undefined {
+  const principal = resolveContextPrincipal(input.req, input.config, input.admission);
+  if (principal) return principal;
+  if (input.admission) return input.admission.kind === "loopback" ? null : undefined;
+  return isApiAuthRequired(input.config) ? undefined : null;
+}
+
+/**
  * Resolves a trustworthy cache key for skills catalog snapshotting.
  * Returns null if no specific, reliable thread/session identity is available,
  * or if the identity comes from a shared cohort fallback.
@@ -85,7 +99,8 @@ export function resolveSkillsSnapshotScopeKey(input: ResolveSkillsSessionScopeIn
       return null;
     }
     const qualifiedId = `${parentThread}\u0000${childId}`;
-    const principal = resolveContextPrincipal(input.req, input.config, input.admission) ?? null;
+    const principal = snapshotPrincipal(input);
+    if (principal === undefined) return null;
     return JSON.stringify(["skills_catalog_snapshot_v1", principal, qualifiedId]);
   }
 
@@ -98,109 +113,122 @@ export function resolveSkillsSnapshotScopeKey(input: ResolveSkillsSessionScopeIn
   if (!standaloneId) {
     return null;
   }
-  const principal = resolveContextPrincipal(input.req, input.config, input.admission) ?? null;
+  const principal = snapshotPrincipal(input);
+  if (principal === undefined) return null;
   return JSON.stringify(["skills_catalog_snapshot_v1", principal, standaloneId]);
 }
 
-function snapshotOrReplaceInText(
-  text: string,
-  scopeKey: string,
-  now: number,
-): string {
-  if (!text.includes("<skills_instructions>")) return text;
+/** One text slot that may carry a catalog: `instructions` or a developer/system text part. */
+interface CatalogSlot {
+  text: string;
+  write(next: string): void;
+}
 
-  return text.replace(SKILLS_BLOCK_GLOBAL_REGEX, (match) => {
-    const existing = snapshotCache.get(scopeKey);
-    if (existing) {
-      // Check TTL on cache hits
-      if (now - existing.lastAccessed > SNAPSHOT_TTL_MS) {
-        totalRetainedBytes -= existing.byteLength;
-        snapshotCache.delete(scopeKey);
-      } else {
-        existing.lastAccessed = now;
-        // Refresh Map order for true LRU behavior
-        snapshotCache.delete(scopeKey);
-        snapshotCache.set(scopeKey, existing);
-        return existing.skillsBlock;
+/** Every developer/system text slot, walked the same way the replacement writes. */
+function catalogSlots(body: Record<string, unknown>): CatalogSlot[] {
+  const slots: CatalogSlot[] = [];
+  if (typeof body.instructions === "string") {
+    slots.push({ text: body.instructions, write: next => { body.instructions = next; } });
+  }
+  if (!Array.isArray(body.input)) return slots;
+  for (const item of body.input) {
+    if (!item || typeof item !== "object") continue;
+    const it = item as Record<string, unknown>;
+    // Restrict message item type: must be undefined or "message", so role-like tool objects are untouched
+    if (it.type !== undefined && it.type !== "message") continue;
+    // Only developer and system content is inspected/transformed
+    if (it.role !== "developer" && it.role !== "system") continue;
+    const content = it.content;
+    if (typeof content === "string") {
+      slots.push({ text: content, write: next => { it.content = next; } });
+    } else if (Array.isArray(content)) {
+      for (const part of content) {
+        if (!part || typeof part !== "object") continue;
+        const p = part as Record<string, unknown>;
+        // Restrict text parts to known text / input_text
+        if (p.type !== "text" && p.type !== "input_text") continue;
+        if (typeof p.text === "string") slots.push({ text: p.text, write: next => { p.text = next; } });
       }
     }
+  }
+  return slots;
+}
 
-    // First turn or expired: snapshot incoming block if bounded
-    const incomingBlock = match;
-    const blockBytes = Buffer.byteLength(incomingBlock, "utf8");
-    if (blockBytes <= MAX_SKILLS_BLOCK_BYTES && blockBytes <= MAX_TOTAL_RETAINED_BYTES) {
-      // Evict oldest entries until under count ceiling AND under global byte ceiling
-      while (
-        (snapshotCache.size >= MAX_SNAPSHOT_SESSIONS || totalRetainedBytes + blockBytes > MAX_TOTAL_RETAINED_BYTES)
-        && snapshotCache.size > 0
-      ) {
-        if (!evictOldestEntry()) break;
-      }
+function liveSnapshot(scopeKey: string, now: number): SnapshotEntry | undefined {
+  const existing = snapshotCache.get(scopeKey);
+  if (!existing) return undefined;
+  if (now - existing.lastAccessed > SNAPSHOT_TTL_MS) {
+    totalRetainedBytes -= existing.byteLength;
+    snapshotCache.delete(scopeKey);
+    return undefined;
+  }
+  existing.lastAccessed = now;
+  // Refresh Map order for true LRU behavior
+  snapshotCache.delete(scopeKey);
+  snapshotCache.set(scopeKey, existing);
+  return existing;
+}
 
-      if (totalRetainedBytes + blockBytes <= MAX_TOTAL_RETAINED_BYTES) {
-        snapshotCache.set(scopeKey, {
-          skillsBlock: incomingBlock,
-          byteLength: blockBytes,
-          lastAccessed: now,
-        });
-        totalRetainedBytes += blockBytes;
-      }
-    }
-    return match;
-  });
+function storeSnapshot(scopeKey: string, skillsBlock: string, now: number): void {
+  const blockBytes = Buffer.byteLength(skillsBlock, "utf8");
+  if (blockBytes > MAX_SKILLS_BLOCK_BYTES || blockBytes > MAX_TOTAL_RETAINED_BYTES) return;
+  // A concurrent request of the same conversation may have stored first; the first catalog wins.
+  if (snapshotCache.has(scopeKey)) return;
+  // Evict oldest entries until under count ceiling AND under global byte ceiling
+  while (
+    (snapshotCache.size >= MAX_SNAPSHOT_SESSIONS || totalRetainedBytes + blockBytes > MAX_TOTAL_RETAINED_BYTES)
+    && snapshotCache.size > 0
+  ) {
+    if (!evictOldestEntry()) break;
+  }
+  if (totalRetainedBytes + blockBytes > MAX_TOTAL_RETAINED_BYTES) return;
+  snapshotCache.set(scopeKey, { skillsBlock, byteLength: blockBytes, lastAccessed: now });
+  totalRetainedBytes += blockBytes;
 }
 
 /**
- * Transforms incoming developer/system prompt contents to reuse the session's
- * snapshotted <skills_instructions>, preserving prefix cache across turns.
- * User and assistant messages, as well as tool calls, are never modified.
+ * Reuses the session's snapshotted <skills_instructions> in developer/system content, preserving
+ * the prompt cache prefix across turns. User and assistant messages and tool calls are never
+ * modified.
+ *
+ * Only a body with exactly one catalog block across all of those slots takes part: with two or
+ * more there is no way to tell which one the snapshot stands for, so the body passes through
+ * untouched rather than rewriting every block to one catalog.
+ *
+ * A known snapshot is substituted at once, so parsing and the verbatim passthrough body both see
+ * it. A new catalog is only stored through the returned commit, which the caller runs once the
+ * request has passed parsing and admission, so a rejected first request pins nothing.
  */
 export function snapshotSkillsCatalogInBody(
   body: unknown,
   scopeKey: string | null,
   config: OcxConfig,
   now: number = Date.now(),
-): void {
-  if (!scopeKey) return;
-  if (resolveSkillsCatalogRefresh(config) === "per_turn") return;
-  if (!body || typeof body !== "object" || Array.isArray(body)) return;
+): (() => void) | undefined {
+  if (!scopeKey) return undefined;
+  if (resolveSkillsCatalogRefresh(config) === "per_turn") return undefined;
+  if (!body || typeof body !== "object" || Array.isArray(body)) return undefined;
 
-  const b = body as Record<string, unknown>;
-
-  // 1. Check top-level instructions field
-  if (typeof b.instructions === "string" && b.instructions.includes("<skills_instructions>")) {
-    b.instructions = snapshotOrReplaceInText(b.instructions, scopeKey, now);
-  }
-
-  // 2. Check input array for developer/system messages only
-  if (Array.isArray(b.input)) {
-    for (const item of b.input) {
-      if (!item || typeof item !== "object") continue;
-      const it = item as Record<string, unknown>;
-      // Restrict message item type: must be undefined or "message", so role-like tool objects are untouched
-      if (it.type !== undefined && it.type !== "message") continue;
-      const role = it.role;
-      // Only developer and system content is inspected/transformed
-      if (role !== "developer" && role !== "system") continue;
-
-      const content = it.content;
-      if (typeof content === "string") {
-        if (content.includes("<skills_instructions>")) {
-          it.content = snapshotOrReplaceInText(content, scopeKey, now);
-        }
-      } else if (Array.isArray(content)) {
-        for (const part of content) {
-          if (!part || typeof part !== "object") continue;
-          const p = part as Record<string, unknown>;
-          // Restrict text parts to known text / input_text
-          if (p.type !== "text" && p.type !== "input_text") continue;
-          if (typeof p.text === "string" && p.text.includes("<skills_instructions>")) {
-            p.text = snapshotOrReplaceInText(p.text, scopeKey, now);
-          }
-        }
-      }
+  let found: { slot: CatalogSlot; block: string } | undefined;
+  let blocks = 0;
+  for (const slot of catalogSlots(body as Record<string, unknown>)) {
+    if (!slot.text.includes("<skills_instructions>")) continue;
+    for (const match of slot.text.matchAll(SKILLS_BLOCK_GLOBAL_REGEX)) {
+      blocks++;
+      found ??= { slot, block: match[0] };
     }
   }
+  if (blocks !== 1 || !found) return undefined;
+
+  const existing = liveSnapshot(scopeKey, now);
+  if (existing) {
+    const { slot, block } = found;
+    const at = slot.text.indexOf(block);
+    slot.write(slot.text.slice(0, at) + existing.skillsBlock + slot.text.slice(at + block.length));
+    return undefined;
+  }
+  const incoming = found.block;
+  return () => storeSnapshot(scopeKey, incoming, now);
 }
 
 /** Test helpers */

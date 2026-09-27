@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { getDefaultConfig } from "../../src/config/proxy-env";
 import { handleResponses } from "../../src/server/responses/core";
-import { resetSkillsSnapshotCacheForTests } from "../../src/server/responses/skills-snapshot";
+import { resetSkillsSnapshotCacheForTests, resolveSkillsSnapshotScopeKey } from "../../src/server/responses/skills-snapshot";
 import type { OcxConfig } from "../../src/types";
 import { acquireOwnedSpendHome } from "../helpers/owned-spend-home";
 
@@ -109,5 +109,65 @@ describe("skills catalog snapshots on the Responses request path", () => {
     await send(config, "first-child-catalog", undefined, "outside", headers);
     expect(await send(config, "second-child-catalog", undefined, "outside", headers))
       .toContain("second-child-catalog");
+  });
+});
+
+describe("skills catalog snapshot blockers from the #6027 review", () => {
+  function body(model: string, developerTexts: string[], extra: Record<string, unknown> = {}) {
+    return JSON.stringify({
+      model, stream: false, ...extra,
+      input: [
+        ...developerTexts.map(text => ({ role: "developer", content: [{ type: "input_text", text }] })),
+        { role: "user", content: "hi" },
+      ],
+    });
+  }
+  async function raw(
+    config: OcxConfig, model: string, developerTexts: string[], thread: string, extra: Record<string, unknown> = {},
+  ) {
+    const response = await handleResponses(new Request("http://localhost/v1/responses", {
+      method: "POST",
+      headers: { "content-type": "application/json", "thread-id": thread },
+      body: body(model, developerTexts, extra),
+    }), config, { model: "", provider: "" });
+    await response.text();
+    return { status: response.status, sent: captured.at(-1) };
+  }
+  const block = (name: string) => `<skills_instructions>${name}</skills_instructions>`;
+
+  test("a body with two catalog blocks passes through and pins nothing", async () => {
+    const config = fixture("openai-responses");
+    const two = await raw(config, "fixture/fixture-model", [block("alpha"), block("beta")], "multi");
+    expect(two.sent).toContain("alpha");
+    expect(two.sent).toContain("beta");
+    const one = await raw(config, "fixture/fixture-model", [block("gamma")], "multi");
+    expect(one.sent).toContain("gamma");
+    // A later two-block body is not rewritten to the stored catalog either.
+    const again = await raw(config, "fixture/fixture-model", [block("delta"), block("epsilon")], "multi");
+    expect(again.sent).toContain("delta");
+    expect(again.sent).toContain("epsilon");
+    expect(again.sent).not.toContain("gamma");
+  });
+
+  test("a rejected first request pins nothing", async () => {
+    const config = fixture("openai-responses");
+    // The catalog is inspected before parsing; this body then fails parsing (tools must be an array).
+    const rejected = await raw(config, "fixture/fixture-model", [block("rejected")], "reject-first", { tools: "x" });
+    expect(rejected.status).toBe(400);
+    const first = await raw(config, "fixture/fixture-model", [block("accepted")], "reject-first");
+    expect(first.sent).toContain("accepted");
+    const second = await raw(config, "fixture/fixture-model", [block("edited")], "reject-first");
+    expect(second.sent).toContain("accepted");
+    expect(second.sent).not.toContain("edited");
+  });
+
+  test("anonymous callers share only on a server that requires no data-plane auth", () => {
+    const req = new Request("http://localhost/v1/responses", { headers: { "thread-id": "anon" } });
+    const open = { ...getDefaultConfig(), hostname: "127.0.0.1" } as OcxConfig;
+    const remote = { ...getDefaultConfig(), hostname: "0.0.0.0" } as OcxConfig;
+    expect(resolveSkillsSnapshotScopeKey({ req, config: open, admission: { kind: "loopback", source: "loopback" } }))
+      .not.toBeNull();
+    expect(resolveSkillsSnapshotScopeKey({ req, config: open })).not.toBeNull();
+    expect(resolveSkillsSnapshotScopeKey({ req, config: remote })).toBeNull();
   });
 });

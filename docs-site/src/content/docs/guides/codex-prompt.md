@@ -175,6 +175,8 @@ The proxy defaults to `skills.catalog_refresh: "per_session"`: the first
 `<skills_instructions>` catalog received for a conversation is reused on later
 requests in that conversation. This keeps skill discovery and `SKILL.md` edits
 from changing that part of the upstream prompt cache prefix mid-session.
+A request that carries more than one `<skills_instructions>` block is passed
+through unchanged, and a request the proxy rejects does not set the catalog.
 
 To use the catalog supplied by the client on every turn, set this in opencodex's
 `$OPENCODEX_HOME/config.json` (normally `~/.opencodex/config.json`), then restart

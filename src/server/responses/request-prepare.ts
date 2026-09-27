@@ -321,7 +321,8 @@ export async function prepareResponsesRequest(
     admission: options.admission,
         promptCacheKeyIsSharedCohort: options.promptCacheKeyIsSharedCohort,
   });
-  snapshotSkillsCatalogInBody(body, skillsSnapshotScopeKey, config);
+  // Substitutes a known snapshot now; a new catalog is only stored once the request is prepared.
+  const commitSkillsSnapshot = snapshotSkillsCatalogInBody(body, skillsSnapshotScopeKey, config);
 
   let parsed: OcxParsedRequest;
   let toolBridgeMaps: ReturnType<typeof buildToolBridgeMaps>;
@@ -1272,6 +1273,7 @@ export async function prepareResponsesRequest(
     ? admissionState.authCtx.accountId
     : config.activeCodexAccountId ?? null;
 
+  commitSkillsSnapshot?.();
   return {
     inboundWire,
     translatorBudget,
