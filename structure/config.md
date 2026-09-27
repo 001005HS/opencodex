@@ -203,12 +203,12 @@ provider with no name and rejects the whole config rather than one thread, which
 than the branding it would remove — so a blank, over-length, or control-character value falls back
 to the default instead of being written.
 
-Read-only doctor and project-routing diagnostics use a lightweight root/table TOML reader rather
-than mutating or normalizing the user's file. That reader must lexically skip both basic and literal
-multiline string bodies: instruction prose can contain key-shaped examples and `[table]` snippets,
-which are data rather than configuration. Diagnostic result objects may retain the real path for
-local correlation, but every formatted doctor line must pass it through the shared user-path
-redaction boundary before display.
+Read-only global ownership/doctor diagnostics follow links only to bounded regular files; an absent
+lookup reads as none and an unreadable/changed observation reports undetermined ownership.
+Project discovery instead skips links/oversized entries, and its guarded reader skips unsafe files.
+Each project-warning collection shares one global snapshot for routing and trusted-path discovery,
+including explicit absence or read failure. TOML parsing skips multiline string bodies rather than
+reading prose as configuration; formatted doctor paths pass through user-path redaction.
 
 > Decision record: [ADR-0017](decisions/ADR-0017-config-injection.md)
 

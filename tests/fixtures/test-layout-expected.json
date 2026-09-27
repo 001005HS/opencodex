@@ -1,5 +1,6 @@
 {
   "pnpm-command-isolation.test.ts": "update",
+  "project-config-warning-snapshot.test.ts": "codex-integration",
   "provider-antigravity-quota-retry.test.ts": "providers",
   "responses-compaction-recovery.test.ts": "responses",
   "compaction-recovery-settings.test.ts": "config",
