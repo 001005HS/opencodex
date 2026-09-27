@@ -28,3 +28,26 @@ Captured to `.tmp/aside/` for every PR and issue above. All seven issues are own
 code pointers that match the PR premises. #4191's thread records the owner's position (Sep 21) that an established
 WebSocket dying mid-turn is a failed leg rather than an SSE fallback, plus two contributor data sets (Sep 23) asking for
 a fallback, so a test-and-ADR PR does not by itself resolve that issue.
+
+## Review outcome
+
+| PR | Kimi verdict | Folded |
+|---|---|---|
+| #6015 | LAND | — |
+| #6034 | LAND; security review: no blocker | — |
+| #6026 | LAND (cosmetic: `~` marker also shown for manual prices) | not folded; display only |
+| #6019 | LAND-WITH-FIXES | `14913d98ad` pins the current user in the foreign-principal test |
+| #6041 | LAND-WITH-FIXES | `462990242a` `resume()` updates a pending update snapshot; new two-attempt Rust test |
+| #6006 | LAND-WITH-FIXES (optional) | `bfbcbd6f81` refuses strict for `multipleOf <= 0` |
+| #6011 | LAND-WITH-FIXES | `2bfc18aca1` ADR-4191 validation bullet and scope |
+
+Accepted residuals: #6019 still compares owner and current user by record name, which the PR states and which predates
+it; #6011 resolves #4191 only for socket death before the first Responses event.
+
+## Local proof at `2bfc18aca1`
+
+- `bun run typecheck`, `bun run structure:check`, `bun run privacy:scan`: exit 0.
+- Focused `bun test` on nine files: 207 pass, 4 skip, 0 fail.
+- `cargo fmt --check` and `cargo test --lib -- exit:: updater::` (CI placeholder resources): 41 pass.
+
+Batch PR: #6059.
