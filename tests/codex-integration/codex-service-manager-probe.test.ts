@@ -889,6 +889,20 @@ describe("ownership refuses what it cannot prove", () => {
     expect(result.reason).not.toContain("foreign");
   });
 
+  // A differently spelled recorded home that no longer exists cannot be an alias of the current
+  // home. It stays foreign, so a stale mount keeps refusing restore and startup writes.
+  test("a vanished, differently spelled recorded home stays foreign", () => {
+    const { opencodexHome } = useHomes();
+    const recordedHome = join(home, "unmounted-home");
+    writeState(opencodexHome, recordedHome, opencodexHome);
+    const { run } = recorder(() => ({ status: 113 }));
+    const realpathSync = (path: string) => {
+      if (path === recordedHome) throw Object.assign(new Error("absent"), { code: "ENOENT" });
+      return path;
+    };
+    expect(inspectNativeCodexOwnership(own({ run, realpathSync })).ownership).toBe("foreign");
+  });
+
   // An older install may have recorded a junction or symlink spelling of the
   // home this process now knows canonically — same directory, different name.
   test("state spelling the current home through an alias is owned", () => {

@@ -869,10 +869,20 @@ export type ServicePathComparison = "same" | "different" | "unknown";
 export function compareServicePathToInstall(recorded: string, current: string, deps: CodexHomeDeps = {}): ServicePathComparison {
   if (serviceHomeMatches(recorded, current)) return "same";
   const realpath = deps.realpathSync ?? realpathSync;
+  let currentPhysical: string;
   try {
-    return serviceHomeMatches(realpath(recorded), realpath(current)) ? "same" : "different";
+    currentPhysical = realpath(current);
   } catch {
     return "unknown";
+  }
+  try {
+    return serviceHomeMatches(realpath(recorded), currentPhysical) ? "same" : "different";
+  } catch (error) {
+    // The spellings already differ. A recorded path that no longer exists cannot be an alias of
+    // the current home, so it stays a mismatch (a stale mount keeps the foreign-owner refusal);
+    // only an error that leaves existence unproven, such as EACCES, is indeterminate.
+    const code = (error as NodeJS.ErrnoException | null)?.code;
+    return code === "ENOENT" || code === "ENOTDIR" ? "different" : "unknown";
   }
 }
 
