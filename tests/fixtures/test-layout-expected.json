@@ -1393,6 +1393,8 @@
   "responses-bare-echo-helper-fence.test.ts": "responses",
   "responses-canonical-only-top-level-fields.test.ts": "responses",
   "responses-code-mode-goal-helpers.test.ts": "responses",
+  "responses-code-mode-mcp-direct.test.ts": "responses",
+  "local-read-response-proof.test.ts": "server",
   "responses-code-mode-patch-compile.test.ts": "responses",
   "responses-code-mode-shell-compile.test.ts": "responses",
   "responses-compact-handoff-admission.test.ts": "responses",

@@ -88,6 +88,13 @@ capability, and an unexpected management response so a reachable `401` cannot be
 their detailed CLI health remains unavailable until restarted with an attested runtime record and
 capability-aware server.
 
+The server signs every response to a local-read capability with `x-opencodex-attestation-proof`
+over that request's nonce, PID, and port. A caller that decides something from the answer opts in
+with `requireResponseProof`, which refuses an unsigned or mismatched response: the capability
+proves the request to the server, and only the proof tells the caller that the answer came from it
+and not from a process that took the port. `ocx status` requires the proof before it prefers the
+live proxy's `/api/startup-health` verdict over its own shell-local probe (#5977).
+
 The desktop tray uses the same read-v1 contract for its fixed GET allowlist in
 `src/lib/local-management-capability.ts`, including `/api/oauth/accounts` and
 `/api/providers/keys`. Provider selectors and `quota=1` remain signed into the
