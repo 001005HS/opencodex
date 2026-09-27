@@ -14,3 +14,16 @@ GUI, so GUI bug fixes are in scope; earlier batches skipped them by a stricter r
 The batch PR needs a screenshot for #6007. It is taken from this branch's proxy run with `HOME`, `OPENCODEX_HOME`
 and `CODEX_HOME` all pointed at a temporary directory, so no real shell profile, Codex config or app integration is
 touched, and uploaded through the `pr-assets` branch.
+
+## Build and evidence
+
+Carried: `960e482b9e` (#6025), `519b9d7676` (#6010), `b51e20ceb0` (#6007), each keeping Ingwannu's authorship.
+
+Local proof at `b51e20ceb0`: typecheck, structure and privacy exit 0; `codex-inject` and `codex-inject-integration`
+160 pass; the four GUI files (Kiro device login, provider deep link, vision sidecar dashboard, locale parity) 82 pass;
+`gui` `tsc -b` exit 0.
+
+Screenshot: a proxy from this branch on port 18477 with `HOME`, `OPENCODEX_HOME` and `CODEX_HOME` under a temporary
+directory (the running proxy on 10100 kept client routing). Aside opened the dashboard, turned on "Open Codex without
+signing in" in that temporary config, and captured the row; the image is `pr-assets` `e202d69d1e`
+(`260927-train3-b7/remote-history-hint.png`). The temporary proxy was stopped afterwards.
