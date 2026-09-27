@@ -85,6 +85,7 @@ import { installCrashGuards } from "../lib/crash-guard";
 import { SpendLedgerOwnerError } from "../lib/spend-ledger-owner";
 import { redactUrlForLog } from "../lib/redact";
 import { dispatchCommand, decideBusyPreferredPort, decideStartExitTeardown, decideStartWithLiveOwner, startupLeftCodexNativeLine } from "./dispatch";
+import { probeOwnerPastRestartParent, takeRestartHandoffMarkers } from "./restart-handoff";
 import { AuxiliaryListenerBindError, findAvailablePort, isAddrInUse, PortUnavailableError, shouldPersistSelectedPort, waitForPortAvailable } from "../server/ports";
 import {
   findLiveProxy,
@@ -412,28 +413,25 @@ async function handleStart(options: { block?: boolean } = {}) {
     }
   }
   const requestedPort = startOpts.port;
-  // Always probe the configured port, even when both state files are absent. A
-  // fallback-port sibling overwrites the pid/runtime records when it starts and
-  // removes them on its own shutdown, so their absence proves nothing about the
-  // configured port. Without the probe, `start` shadowed a healthy proxy with an
-  // ephemeral-port copy and re-pointed client config at the copy; the next sibling
-  // shutdown then left no runtime record for discovery at all. `handleEnsure`
-  // already passes this; `handleStart` also consumes a sibling replacement's handoff first.
+  // Probe the configured port even without state files: a fallback sibling can remove them,
+  // and an unprobed start could shadow the owner and reroute Codex to a short-lived port.
+  // Consume a sibling replacement's handoff before probing, even if its owner is momentarily down.
   let siblingStart = honorSiblingMarker(process.env, consumeSiblingHandoff) !== null;
-  const owner = await findProxyOwnerBeforeJournalRecovery({ probeConfiguredPort: true });
+  // A restart replacement waits out its draining parent instead of refusing it, and bounds its handoff log (restart-handoff.ts).
+  const restartParent = { restartParentPid: takeRestartHandoffMarkers(process.env), requestedPort, ocxService: process.env.OCX_SERVICE };
+  const owner = await probeOwnerPastRestartParent(() => findProxyOwnerBeforeJournalRecovery({ probeConfiguredPort: true }), restartParent);
   if (owner.live) {
     // Rationale and the full decision table live on `decideStartWithLiveOwner`.
     const decision = decideStartWithLiveOwner({
       livePort: owner.live.port,
-      requestedPort,
-      ocxService: process.env.OCX_SERVICE,
+      livePid: owner.live.pid, ...restartParent,
     });
     if (decision === "service-stay-out") {
       // A live owner is an intentional stay-out, not an unexpected child exit.
       console.log(`Proxy already running (PID ${owner.live.pid ?? owner.pidSnapshot ?? "unknown"}, port ${owner.live.port}); service wrapper staying out of the way.`);
       process.exit(serviceStayOutExitCode());
     }
-    if (decision === "refuse") {
+    if (decision === "refuse" || decision === "await-parent") {
       console.error(`⚠️  Proxy already running (PID ${owner.live.pid ?? owner.pidSnapshot ?? "unknown"}, port ${owner.live.port}). Use 'ocx stop' first.`);
       process.exit(1);
     }
@@ -491,6 +489,7 @@ async function handleStart(options: { block?: boolean } = {}) {
         if (fencedLive) {
           const decision = decideStartWithLiveOwner({
             livePort: fencedLive.port,
+            livePid: fencedLive.pid, restartParentPid: restartParent.restartParentPid,
             requestedPort,
             ocxService: process.env.OCX_SERVICE,
           });
@@ -498,7 +497,7 @@ async function handleStart(options: { block?: boolean } = {}) {
             console.log(`Proxy already running (PID ${fencedLive.pid ?? "unknown"}, port ${fencedLive.port}); service wrapper staying out of the way.`);
             throw new StartCommandExit(serviceStayOutExitCode());
           }
-          if (decision === "refuse") {
+          if (decision === "refuse" || decision === "await-parent") {
             console.error(`⚠️  Proxy appeared before bind (PID ${fencedLive.pid ?? "unknown"}, port ${fencedLive.port}). Use 'ocx stop' first.`);
             throw new StartCommandExit(1);
           }
@@ -578,12 +577,14 @@ async function handleStart(options: { block?: boolean } = {}) {
   // background — the first `ocx start` after an update usually races the Codex app's DB lock.
   // Loopback-only (legacy mode still forward-tags) and respects syncResumeHistory opt-out.
   let historyGuardian: ReturnType<typeof startHistoryMigrationGuardian> | undefined;
+  let routingHealer: { stop(): void } | undefined; // routing-healer.ts; stopped first in syncCleanup
 
   let cleaned = false;
   let cleanupSucceeded = true;
   const syncCleanup = () => {
     if (cleaned) return cleanupSucceeded;
     cleaned = true;
+    try { routingHealer?.stop(); } catch { /* best-effort */ }
     try { guardian.stop(); } catch { /* best-effort */ }
     try { historyGuardian?.stop(); } catch { /* best-effort */ }
     // Dashboard drain-and-restart (#563) must not tear down injection: the replacement
@@ -709,6 +710,8 @@ async function handleStart(options: { block?: boolean } = {}) {
   if (!siblingStart && !currentExternalCodexModelProvider() && !shouldInjectApiAuthHeader(config) && config.syncResumeHistory !== false) {
     historyGuardian = startHistoryMigrationGuardian();
   }
+  const routingHealerModule = siblingStart ? null : await import("../codex/routing-healer");
+  if (routingHealerModule && !cleaned) routingHealer = routingHealerModule.startCodexRoutingHealer({ port, config }); // `cleaned` read once the import settled
   // Grok Build auto-registration: additive fenced block in ~/.grok/config.toml so an installed
   // grok CLI can pick opencodex-routed models without manual config. No-op when ~/.grok is
   // absent or the bind is non-loopback; removed again by stop/eject/uninstall/shutdown.
