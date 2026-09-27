@@ -1,6 +1,6 @@
 ---
 title: Integrations
-description: Connect opencodex to OpenCode, Pi, OMP, Hermes, OpenClaw, Kimi Code, gjc, DeepSeek Harness, MiniMax Code, ZCode, Prime Agent, Aside, Raycast, omo, Cline CLI and Kilo from the dashboard — one switch per client, with a backup taken before every write.
+description: Connect opencodex to OpenCode, Pi, OMP, Hermes, OpenClaw, Kimi Code, gjc, DeepSeek Harness, MiniMax Code, ZCode, Prime Agent, Aside, Raycast, omo, Cline CLI, Kilo and Factory Droid from the dashboard — one switch per client, with a backup taken before every write.
 ---
 
 The **Integrations** tab writes opencodex's provider block into a client's own config
@@ -24,6 +24,7 @@ file, and removes it again. Sixteen clients work this way, each with a switch:
 | omo | `~/.omo/agent/models.json` | JSON | new sessions | loopback placeholder |
 | Cline CLI | `~/.cline/data/settings/providers.json` and sibling `models.json` | JSON pair | after stopping and restarting Cline | loopback placeholder |
 | Kilo | first existing `kilo.jsonc`, `kilo.json`, `opencode.jsonc`, `opencode.json`, or `config.json` under `~/.config/kilo` | JSONC | new sessions | `OPENCODEX_KILO_API_KEY` |
+| Factory Droid | `~/.factory/settings.json` (`%USERPROFILE%\.factory\settings.json` on Windows) | JSON | immediately via file watching | none — keyless loopback |
 
 Generated catalogs include only enabled models from each provider selection. This applies to both
 downloads and managed integrations, including Pi and Aside. The management model list still shows
@@ -548,3 +549,18 @@ refresh it explicitly after changing the routed model selection.
 ocx integration client enable --client kilo
 ocx export --client kilo --out ./kilo.jsonc
 ```
+## Factory Droid
+
+Run Droid once to create `~/.factory`, then explicitly enable this integration with
+`ocx integration client enable --client droid`. OpenCodex adds only documented
+`customModels` entries to your personal `settings.json`, using a keyless local
+Chat Completions endpoint. Choose a row from Droid's `/model` picker. Disable
+removes the managed rows; Undo restores the exact saved file. Other settings and
+custom models remain yours.
+
+Droid also reads legacy `config.json` and local `settings.local.json`. Resolve
+any existing OpenCodex rows in legacy config, or a local `customModels` override,
+before enabling; OpenCodex refuses those ambiguous settings. It also refuses an
+unsafe target or a row edited since apply. The integration is loopback only and
+never copies provider credentials. Factory documents the [BYOK schema](https://docs.factory.ai/model-independence/byok)
+and [personal settings path](https://docs.factory.ai/droid-cli/settings).

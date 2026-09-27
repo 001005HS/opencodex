@@ -157,6 +157,7 @@ const FILE_LABEL_KEY: Record<FileIntegrationClientId, TKey> = {
   omo: "integrations.tab.omo",
   cline: "integrations.tab.cline",
   kilo: "integrations.tab.kilo",
+  droid: "integrations.tab.droid",
 };
 
 /** A file client's block is in the file for both `current` and `stale`. */

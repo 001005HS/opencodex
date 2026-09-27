@@ -23,6 +23,7 @@ description: 대시보드에서 OpenCode, Pi, OMP, Hermes, OpenClaw, Kimi Code, 
 | omo | `~/.omo/agent/models.json` | JSON | 새 세션에서 | 루프백 자리표시자 |
 | Cline CLI | `~/.cline/data/settings/providers.json` 및 같은 위치의 `models.json` | JSON 파일 쌍 | Cline을 중지하고 다시 시작한 뒤 | 루프백 자리표시자 |
 | Kilo | `~/.config/kilo`에서 먼저 존재하는 `kilo.jsonc`, `kilo.json`, `opencode.jsonc`, `opencode.json`, `config.json` (`XDG_CONFIG_HOME`로 디렉터리 변경 가능, 모두 없으면 `kilo.jsonc` 생성) | JSONC | 새 세션에서 | `OPENCODEX_KILO_API_KEY` |
+| Factory Droid | `~/.factory/settings.json` (`%USERPROFILE%\.factory\settings.json` on Windows) | JSON | file watch | keyless loopback |
 
 생성된 카탈로그에는 각 프로바이더 선택에서 활성화된 모델만 들어갑니다. Pi와 Aside를 포함한 다운로드와 관리형 연동 모두에 적용됩니다. 관리 모델 목록에는 전체 모델이 계속 표시되어 추가 모델을 활성화할 수 있습니다.
 
@@ -254,3 +255,7 @@ GitHub Copilot 데스크톱 앱에서 opencodex를 OpenAI 호환 모델 프로�
 앱은 모델 검색에 `GET /v1/models`, 요청 처리에 `POST /v1/chat/completions`를 사용합니다. 요청은 opencodex의 일반 모델 라우팅을 거치므로 다른 클라이언트와 마찬가지로 프로바이더 자격 증명, OAuth 계정, 콤보가 적용됩니다. 허용되는 요청 필드는 [프록시 형식 레퍼런스](/reference/proxy-formats/)를 확인하세요.
 
 모델이 없다고 표시되면 Base URL이 `/v1/chat/completions`가 아니라 `/v1`로 끝나는지, `/v1/models`가 비어 있지 않은 `data` 배열을 반환하는지 확인하세요. opencodex가 루프백이 아닌 주소에서 수신 대기한다면 앱의 API key 입력란에 데이터 수용 키([원격 액세스](/reference/configuration/server/#remote-access)에 설명된 토큰 또는 대시보드에서 생성한 `ocx_…` 키)를 입력하세요. 앱은 이를 `Authorization: Bearer`로 전송하며, `/v1/chat/completions`는 프록시 수용 인증에만 사용하고 upstream으로 전달하지 않습니다. 자세한 내용은 [인증 매트릭스](/reference/proxy-formats/#authentication-matrix)를 확인하세요.
+
+## Factory Droid
+
+Factory Droid uses `~/.factory/settings.json` (`%USERPROFILE%\.factory\settings.json` on Windows). Explicitly enable with `ocx integration client enable --client droid`, then select a custom model in `/model`. The managed rows are keyless and loopback only. Disable removes managed rows; Undo restores the saved bytes. If legacy `config.json` contains OpenCodex rows or `settings.local.json` overrides `customModels`, resolve that conflict before enabling. See the [Factory BYOK documentation](https://docs.factory.ai/model-independence/byok).

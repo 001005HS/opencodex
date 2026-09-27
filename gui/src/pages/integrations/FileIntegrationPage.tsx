@@ -85,6 +85,7 @@ const SEMANTICS_KEY: Record<FileIntegrationClientId, TKey> = {
   omo: "integrations.semantics.omo",
   cline: "integrations.semantics.cline",
   kilo: "integrations.semantics.kilo",
+  droid: "integrations.semantics.droid",
 };
 
 const TAB_LABEL_KEY: Record<FileIntegrationClientId, TKey> = {
@@ -104,6 +105,7 @@ const TAB_LABEL_KEY: Record<FileIntegrationClientId, TKey> = {
   omo: "integrations.tab.omo",
   cline: "integrations.tab.cline",
   kilo: "integrations.tab.kilo",
+  droid: "integrations.tab.droid",
 };
 
 export default function FileIntegrationPage({

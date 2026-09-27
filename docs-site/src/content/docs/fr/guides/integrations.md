@@ -24,6 +24,7 @@ puis peut le retirer. Seize clients fonctionnent ainsi, chacun avec son propre c
 | omo | `~/.omo/agent/models.json` | JSON | nouvelles sessions | espace réservé de bouclage |
 | Cline CLI | `~/.cline/data/settings/providers.json` + `models.json` | JSON | après arrêt et redémarrage | bouclage uniquement |
 | Kilo | premier fichier existant parmi `kilo.jsonc`, `kilo.json`, `opencode.jsonc`, `opencode.json` ou `config.json` sous `~/.config/kilo` (`XDG_CONFIG_HOME` déplace ce répertoire ; `kilo.jsonc` est créé si aucun n'existe) | JSONC | nouvelles sessions | `OPENCODEX_KILO_API_KEY` |
+| Factory Droid | `~/.factory/settings.json` (`%USERPROFILE%\.factory\settings.json` on Windows) | JSON | file watch | keyless loopback |
 
 Les modèles GJC dotés d'une échelle d'effort de raisonnement prise en charge exportent `reasoning: true`, `thinking.levels` et `compat.supportsReasoningEffort`, afin que GJC propose le choix de l'effort. Les modèles Codex natifs reçoivent leur échelle standard même si le catalogue l'omet. Ces champs sont absents sans échelle connue ; `none` n'envoie pas d'effort et `ultra` devient `max` sur le réseau. Actualisez l'intégration pour mettre à jour ces options.
 
@@ -310,3 +311,6 @@ Désactiver peut retirer le bloc appartenant à OpenCodex du fichier enregistré
 ```bash
 ocx integration client enable --client kilo
 ```
+## Factory Droid
+
+Factory Droid uses `~/.factory/settings.json` (`%USERPROFILE%\.factory\settings.json` on Windows). Explicitly enable with `ocx integration client enable --client droid`, then select a custom model in `/model`. The managed rows are keyless and loopback only. Disable removes managed rows; Undo restores the saved bytes. If legacy `config.json` contains OpenCodex rows or `settings.local.json` overrides `customModels`, resolve that conflict before enabling. See the [Factory BYOK documentation](https://docs.factory.ai/model-independence/byok).
