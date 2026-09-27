@@ -19,3 +19,17 @@ Held: #6027 (owner's three blockers are still open on a draft head), #6030 and #
 
 Security-boundary items: #6037 (updater command execution) and #6042 (link join credential) have dedicated Kimi
 security reviews with no blocker recorded in this unit.
+
+## Audit (Kimi, NEAR-PASS) and folded decisions
+
+- #6020 busy path: a named `NativeMainBusyError`; the retry record keeps its prior `delay` and sets `after = now + 60 s`.
+- #6020 `main account unavailable`: stays in the growing backoff. It is keyed by generation, so a token that
+  arrives later starts clean.
+- #6020 both retry maps (`retryAfterByAccount`, `quotaRefreshAfterByAccount`) carry the credential generation; a
+  record from another generation is dropped when read. The generation is captured before `warm()`/`refresh()` and a
+  failure is not recorded when it changed during the await. The second same-tick `hasScheduledWindows` delete goes,
+  because the generation check covers it and a leftover metadata backoff cannot gate a scheduled account.
+- #6020 tests: replacement during the await, repeated busy refusal then release, reauth then rotation.
+- #5494: the regex is anchored to the token-plan phrasing,
+  `/usage limit (?:has been )?reached|token-plan\s+\S+\s+quota has been exhausted/`, with a negative case for
+  "quota exhausted for this minute". The hold is the existing ten-minute exhaustion cap, not the announced reset.
