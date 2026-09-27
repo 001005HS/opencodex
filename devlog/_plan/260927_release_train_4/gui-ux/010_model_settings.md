@@ -23,3 +23,7 @@ Existing provider per-model maps remain readable if this editor is reverted. Do 
 ## Architect consultation for this work-phase
 
 Read-only architect `01a0e369-14f4-7d40-b0de-1ddef731fa98` proposed MS58-01 through MS58-05 against contributor head `0798999c6f`. Main accepted MS58-01 atomic write using the repository's `commitProviderPatch` owner and copied touched maps; accepted MS58-02 exact ingress; accepted MS58-03 with a sanitized publication receipt that distinguishes config save from catalog convergence; accepted MS58-04 read-only recovery and focus behavior; and accepted MS58-05 stored-versus-effective context projection. The alternative of a discovery fetch to prove model-row existence is rejected here because it makes a local config mutation depend on a possibly unavailable upstream; exact ID validation is the admission boundary. The same handle reflected on this amended plan and returned **ALIGNED** with no material gap. The independent A reviewer remains separate.
+
+## Revalidation at resume (2026-09-28)
+
+The lane resumed in coordinator thread `01a0e37e-639d-7693-a2bc-5e4df49fa656` after the previous thread stopped at A. The previous D (docs-first `wp0`) locked this roadmap and pointed `wp1` at a carry-and-repair of #6058. That direction stands: `origin/dev` is still `24b2f39b77` and #6058 is still `0798999c6f`, so the diff-level map above needs no change. A fresh independent `gpt-6-sol` A verdict replaces the one lost when reviewer `01a0e372-f380-7e11-bf2b-661afd132a50` was shut down.
