@@ -182,6 +182,29 @@ describe("Models per-model settings dialog", () => {
     expect(dialog()!.textContent).toContain("currently 200000");
   });
 
+  test("the first modality tick on an undeclared model starts from what it follows", async () => {
+    delete rows[0]!.inputModalitiesDeclared;
+    rows[0]!.inputModalities = ["text"];
+    await mount();
+    await open();
+    await act(async () => checkboxes()[1]!.click());
+    expect(checkboxes().slice(0, 3).map(box => box.checked)).toEqual([true, true, false]);
+    await click("Apply");
+    expect(mutations).toEqual([{ provider: "vendor-demo", modelId: "chat-large", inputModalities: ["text", "image"] }]);
+  });
+
+  test("the context menu opens inside the modal so its options can be clicked", async () => {
+    await mount();
+    await open();
+    const combo = dialog()!.querySelector<HTMLButtonElement>('[role="combobox"]')!;
+    await act(async () => combo.click());
+    // A menu portaled to <body> sits under the modal's top layer and the backdrop takes its clicks.
+    expect(dialog()!.querySelector('[role="listbox"]')).not.toBeNull();
+    const custom = [...dialog()!.querySelectorAll<HTMLButtonElement>('[role="option"]')].find(node => node.textContent?.startsWith("Custom"));
+    await act(async () => custom!.click());
+    expect(dialog()!.querySelector('input[aria-label="Context window"]')).not.toBeNull();
+  });
+
   test("the context draft comes from the stored declaration", async () => {
     rows[0]!.contextWindowDeclared = 128000;
     await mount();

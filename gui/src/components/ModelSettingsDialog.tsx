@@ -243,6 +243,9 @@ export default function ModelSettingsDialog({ row, apiBase, onRefresh, onFeedbac
   };
 
   const inheritedModalities = Array.isArray(row.inputModalities) ? row.inputModalities.join(", ") : "";
+  const inheritedModalityList = Array.isArray(row.inputModalities)
+    ? row.inputModalities.filter((value): value is string => (MODALITIES as readonly string[]).includes(value))
+    : [];
 
   return (
     <dialog
@@ -279,7 +282,7 @@ export default function ModelSettingsDialog({ row, apiBase, onRefresh, onFeedbac
           </button>
         </div>
 
-        {errorKey && <Notice tone="err">{t(errorKey)}</Notice>}
+        {errorKey && <Notice tone={phase === "saved-stale" ? "warn" : "err"}>{t(errorKey)}</Notice>}
 
         <div className="models-field-stack">
           <div className="text-label models-field">
@@ -310,6 +313,8 @@ export default function ModelSettingsDialog({ row, apiBase, onRefresh, onFeedbac
                 }}
                 disabled={busy}
                 label={t("models.customFieldContext")}
+                // A portaled menu lands under the modal's top layer, where the backdrop takes its clicks.
+                portal={false}
               />
               {customContext && (
                 <input
@@ -340,9 +345,15 @@ export default function ModelSettingsDialog({ row, apiBase, onRefresh, onFeedbac
                     type="checkbox"
                     checked={modalities.includes(modality)}
                     onChange={event => {
-                      setModalities(prev => (
-                        event.target.checked ? [...prev, modality] : prev.filter(value => value !== modality)
-                      ));
+                      const checked = event.target.checked;
+                      setModalities(prev => {
+                        if (!checked) return prev.filter(value => value !== modality);
+                        // An empty set means "follow the upstream declaration". The first tick
+                        // starts from what the row already follows, so adding image to a text
+                        // model does not silently declare it image-only.
+                        const start = prev.length > 0 ? prev : inheritedModalityList;
+                        return [...new Set([...start, modality])];
+                      });
                     }}
                     disabled={busy}
                   />
@@ -404,6 +415,7 @@ export default function ModelSettingsDialog({ row, apiBase, onRefresh, onFeedbac
                   onChange={setDefaultEffort}
                   disabled={busy}
                   label={t("models.settingsDefaultEffort")}
+                  portal={false}
                 />
               </div>
             </label>
