@@ -120,7 +120,7 @@ function labeledPlansFor(actions: readonly BulkDisableAction[]): LabeledIntegrat
 }
 
 function isApplied(status: IntegrationStatus): boolean {
-  return status.state === "current" || status.state === "stale";
+  return status.state === "current" || status.state === "stale" || canDisableKiloWithCandidateIssue(status);
 }
 
 /**

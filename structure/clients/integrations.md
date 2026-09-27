@@ -59,8 +59,8 @@ legacy `config.json` rows that share the exported endpoint, a generated model ID
 `OpenCodex:` display name, and any `customModels` override in
 `settings.local.json`, because Factory merges those files with personal settings.
 Apply and refresh repeat that competing-settings check after the target-file
-compare and before taking a snapshot, so a newly created override cannot slip
-through preflight and authorize a write.
+compare and before taking a snapshot. Droid has no writer lock, so a competing
+settings file can still appear after this check and before the write.
 No Droid file is written by detection or on the proxy request path.
 
 ## Cursor installed capability reads

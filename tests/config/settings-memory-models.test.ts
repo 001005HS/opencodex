@@ -6,8 +6,8 @@
  * re-reads the response of its own save, so a response without the block would render both
  * phases as "Off" while the server still held them.
  */
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync } from "node:fs";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { getConfigPath, loadConfig, saveConfig } from "../../src/config";
@@ -95,5 +95,19 @@ describe("/api/settings memoryModels", () => {
       expect(response!.status).toBe(400);
       expect(config).toEqual(before);
     }
+  });
+
+  test.each(["merged defaults", "salvaged profile"])("warns about a degraded phase after %s", route => {
+    const raw: Record<string, unknown> = { ...baseConfig(), memoryModels: { extract: { model: " " } } };
+    if (route === "merged defaults") delete raw.defaultProvider;
+    else raw.routingProfiles = { bad: { candidates: [] } };
+    writeFileSync(getConfigPath(), JSON.stringify(raw));
+    const warn = spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const loaded = loadConfig();
+      expect(loaded.providers.gateway).toBeDefined();
+      expect(loaded.memoryModels?.extract).toBeUndefined();
+      expect(warn.mock.calls.flat().join("\n")).toContain("memoryModels.extract is invalid");
+    } finally { warn.mockRestore(); }
   });
 });

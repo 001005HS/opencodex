@@ -4,6 +4,7 @@ import type { OcxComboConfig, OcxComboCooldownWaitPolicy, OcxComboDefaultEffort,
 import { COMBO_NAMESPACE, isValidComboId, targetKey } from "./identifiers";
 
 export const COMBO_DEFAULT_WAIT_FOR_COOLDOWN_MS = 0;
+export const JEV_MAX_CANDIDATE_FIELD_CHARS = 512;
 export { COMBO_NAMESPACE, preservesPhysicalComboProvider, isNativeAliasCombo, targetKey, parseComboModelId, comboModelId, comboPublicModelId, comboDisabledModelId, comboDisabledModelSelectors, resolveComboId, isValidComboId } from "./identifiers";
 
 /**
@@ -338,11 +339,11 @@ export function comboConfigIssues(
     if (target.modelProfile !== undefined
       && (typeof target.modelProfile !== "string"
         || target.modelProfile.trim().length === 0
-        || target.modelProfile.length > 512
+        || target.modelProfile.length > JEV_MAX_CANDIDATE_FIELD_CHARS
         || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(target.modelProfile))) {
       issues.push({
         path: ["targets", i, "modelProfile"],
-        message: `targets[${i}].modelProfile must be a non-empty string of at most 512 characters; only tab, line feed and carriage return are allowed among control characters`,
+        message: `targets[${i}].modelProfile must be a non-empty string of at most ${JEV_MAX_CANDIDATE_FIELD_CHARS} characters; only tab, line feed and carriage return are allowed among control characters`,
       });
     }
 

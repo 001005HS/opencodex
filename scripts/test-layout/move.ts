@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, relative } from "node:path";
 import { LAYOUT_PATH, loadLayout, rewriteMetaDirEscapes, rewriteSource, scanEscapes, seedsPathFor, type Layout } from "./schema";
 import { parseDomainArgs, planMoves, repoRootFromHere, type Move } from "./plan";
@@ -166,7 +166,13 @@ export function runMove(options: MoveOptions): MoveReport {
   for (const domain of domains) migrated.add(domain);
   const seeds = JSON.parse(readFileSync(seedsPath, "utf8")) as Pick<Layout, "keepAtRoot" | "domains" | "migrated">;
   seeds.migrated = [...migrated].sort();
-  writeFileSync(seedsPath, JSON.stringify(seeds, null, 2) + "\n");
+  const tempSeedsPath = `${seedsPath}.tmp-${process.pid}`;
+  try {
+    writeFileSync(tempSeedsPath, JSON.stringify(seeds, null, 2) + "\n");
+    renameSync(tempSeedsPath, seedsPath);
+  } finally {
+    rmSync(tempSeedsPath, { force: true });
+  }
 
   scanMoved(root, moves, move => readFileSync(join(root, move.to), "utf8"), manual, suppressed);
   for (const hit of suppressed) log(`  layout: local honoured at ${hit.file}:${hit.line}`);

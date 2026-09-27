@@ -6,6 +6,7 @@ import {
 import { resolveProviderApiKey } from "../providers/api-key-resolve";
 import { providerMatchesRegistryTransport } from "../providers/registry";
 import type { OcxComboDefaultEffort, OcxConfig, OcxProviderConfig } from "../types";
+import { JEV_MAX_CANDIDATE_FIELD_CHARS } from "./types";
 
 export const JEV_PROVIDER_ID = "jev";
 export const JEV_API_URL = "https://api.typesafe.ai/v1/systemone";
@@ -13,7 +14,6 @@ export const JEV_MODEL = "jev-latest";
 
 const JEV_TIMEOUT_MS = 4_000;
 const JEV_MAX_CANDIDATES = 64;
-const JEV_MAX_CANDIDATE_FIELD_CHARS = 512;
 const JEV_MAX_REQUEST_BYTES = 65_536;
 const JEV_MAX_RESPONSE_BYTES = 65_536;
 const JEV_OUTBOUND_DEPENDENCIES = {
@@ -436,7 +436,7 @@ function candidatesFitRequestBounds(candidates: readonly JevCandidate[]): boolea
   return candidates.every(candidate => [candidate.key, candidate.provider, candidate.model]
     .every(value => value.length > 0 && value.length <= JEV_MAX_CANDIDATE_FIELD_CHARS)
     && (candidate.modelProfile === undefined
-      || (typeof candidate.modelProfile === "string" && candidate.modelProfile.length <= 512)));
+      || (typeof candidate.modelProfile === "string" && candidate.modelProfile.length <= JEV_MAX_CANDIDATE_FIELD_CHARS)));
 }
 
 function modelProfile(candidate: JevCandidate): string {

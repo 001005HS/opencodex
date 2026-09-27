@@ -738,6 +738,19 @@ test("overview allows disabling an owned Kilo block during candidate conflict", 
     && (request.body as { operation?: string }).operation === "disable")).toBe(true);
 });
 
+test("Disable all includes an owned Kilo block with an off-target candidate conflict", async () => {
+  const path = "/tmp/home/.config/kilo/config.json";
+  stateResponse = () => json({ clients: [status({ clientId: "kilo", state: "conflict", reason: "candidate-conflict", conflictPaths: [path], lastOpId: "owned-operation" })] });
+  await mountOverview();
+  const disableAll = buttonByText("Disable all…");
+  expect(disableAll?.disabled).toBe(false);
+  await act(async () => { disableAll!.click(); });
+  await act(async () => { await new Promise<void>(resolve => testWindow.setTimeout(resolve, 40)); });
+  expect(requests.some(request => request.url.endsWith("/api/client-integrations/preview")
+    && (request.body as { clientId?: string; operation?: string }).clientId === "kilo"
+    && (request.body as { operation?: string }).operation === "disable")).toBe(true);
+});
+
 test("the overview reconciles a journal row another tab already deleted", async () => {
   stateResponse = () => json({ clients: [status()] });
   journalRows = [{
