@@ -36,6 +36,7 @@ import {
 import { AmbiguousSelectorError, createdContainerPaths, mergeContribution, removeFragments } from "./merge";
 import {
   INTEGRATION_CLIENTS,
+  assertDroidPathsUnambiguous,
   isLoopbackOnly,
   resolveIntegrationPaths,
   restoreOwnershipCollision,
@@ -445,6 +446,14 @@ function applyOrRefreshIntegration(
       `${configPath} cannot be managed while ${candidates.paths.join(", ")} also defines provider.opencodex`);
     if (candidates.kind === "unsafe") return refuse(clientId, "unsafe", "unsafe",
       `${candidates.path} cannot be inspected safely (${candidates.why})`);
+  }
+  if (clientId === "droid") {
+    try {
+      assertDroidPathsUnambiguous(detectDir, exportContextOf(input));
+    } catch (error) {
+      if (!(error instanceof ClientPathError)) throw error;
+      return refuse(clientId, "unsafe", "unsafe", messageOf(error));
+    }
   }
 
   const opId = newOpId();

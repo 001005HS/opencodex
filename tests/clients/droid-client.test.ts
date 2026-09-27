@@ -263,6 +263,30 @@ describe("Factory Droid documented personal settings", () => {
     expect(() => resolveIntegrationPaths("droid", {}, home)).toThrow("settings.local.json");
   });
 
+  test("a competing local override created after preflight refuses before snapshot or write", () => {
+    const seed = '{"customModels":[]}\n';
+    const path = install(seed);
+    const local = join(droidHomeDir({}, home), "settings.local.json");
+    const baseIO = store.io();
+    let selectedReads = 0;
+    const result = applyIntegration({ ...request(), io: {
+      ...baseIO,
+      readText(candidate) {
+        const read = baseIO.readText(candidate);
+        if (candidate === path && ++selectedReads === 2) {
+          writeFileSync(local, '{"customModels":[]}\n');
+        }
+        return read;
+      },
+    } });
+    expect(selectedReads).toBe(2);
+    expect(result).toMatchObject({ ok: false, reason: "unsafe" });
+    if (!result.ok) expect(result.message).toContain("settings.local.json");
+    expect(readFileSync(path, "utf8")).toBe(seed);
+    expect(store.listOperations("droid")).toHaveLength(0);
+    expect(existsSync(join(store.root, "snapshots", "droid"))).toBe(false);
+  });
+
   for (const [caseName, row] of [
     ["legacy OpenCodex display name", { model: "other", display_name: "OpenCodex: Existing", base_url: "http://example.test/v1" }],
     ["same generated model id", { model: MODELS[0]!.namespaced, display_name: "Personal", base_url: "http://example.test/v1" }],

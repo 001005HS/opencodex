@@ -58,6 +58,9 @@ prior bytes and refuses changed managed rows or unsafe paths. `src/integrations/
 legacy `config.json` rows that share the exported endpoint, a generated model ID, or an
 `OpenCodex:` display name, and any `customModels` override in
 `settings.local.json`, because Factory merges those files with personal settings.
+Apply and refresh repeat that competing-settings check after the target-file
+compare and before taking a snapshot, so a newly created override cannot slip
+through preflight and authorize a write.
 No Droid file is written by detection or on the proxy request path.
 
 ## Cursor installed capability reads
