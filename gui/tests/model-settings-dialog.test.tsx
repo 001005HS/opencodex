@@ -296,7 +296,7 @@ describe("Models per-model settings dialog", () => {
     expect(container.textContent).toContain("Reopen vendor-demo/chat-large");
   });
 
-  test("a failed Codex catalog refresh warns after the save instead of trapping the dialog", async () => {
+  test("a rejected save stays editable with translated copy", async () => {
     await mount();
     settingsResponse = () => Response.json({ error: "raw server detail" }, { status: 400 });
     await open();
