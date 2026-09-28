@@ -297,7 +297,7 @@ Anthropic Fast eligibility and downgrade recovery use the [Responses failover co
 
 `POST /v1/responses/compact` handles remote compaction v1 before the generic `/v1/responses` branch
 and before the `/v1/*` guard. Unknown `/v1/*` paths return JSON 404 errors instead of falling through
-to GUI static serving.
+to GUI static serving. Translated compaction uses the [historical image projection](responses-wire-shapes.md#compaction-image-input).
 
 Both entry points apply the Reserve opt-in refusal in
 [providers/openai-tiers.md](../providers/openai-tiers.md#public-provider-contract) before auth, host-circuit
@@ -417,7 +417,7 @@ is composed from the following owners in `src/server/responses/`; none is a gene
 | `request-prepare.ts` | Body parsing, combo handoff, final route, encrypted-task recovery and initial admission. |
 | `shadow-target-availability.ts` | Shadow-call target resolution for `request-prepare.ts`: an unavailable target fails once with `409 intercept_target_unavailable` instead of reaching the native source model or the default provider. |
 | `request-transport.ts` | Live credential selection, dispatch bindings, adapter replacement and same-target request identity. |
-| `request-sidecar-auth.ts` | Sidecar credential resolution and vision preprocessing. |
+| `request-sidecar-auth.ts` | Routed-compaction image projection, sidecar credential resolution and vision preprocessing. |
 | `response-effects.ts` | Completion notification, replay publication and live request-tool aliases. |
 | `request-send-budget.ts` | Request-wide send accounting, remaining allowance, the pending recovery permit and the shared ambiguous-resend grant. |
 | `reset-replay.ts` | The operator opt-in for replacing an ambiguous native Responses send, and the per-request grant both stages claim from. |
