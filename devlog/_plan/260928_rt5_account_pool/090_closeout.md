@@ -6,11 +6,11 @@ its current head; "dropped" names the reason.
 
 | Item | Outcome | PR | Head | Ubuntu CI | Notes |
 |---|---|---|---|---|---|
-| #6154 quota query backoff (fixes #6153) | open PR (draft) | #6179 | b8b5c53738 | queued | carry+fix, credit Terry Tan |
-| #5831 stale main lock, two-window WHAM | open PR (draft, stacked on #6179) | #6183 | c619392b63 | queued | carry; provider topology decision held for maintainers |
-| #5099 Antigravity 403 validation rotation | open PR (draft) | #6180 | 582c18ef2f | queued | narrow slice; needs screenshot waiver/capture; health store/probes deferred |
-| #5561 Anthropic model routes | open PR (draft) | #6181 | 3e48aab75d | queued | reimplement |
-| #5956 low-quota protection (refs #5649) | open PR (draft) | #6182 | d41eab5c4b | queued | carry+fix, credit codingbo |
+| #6154 quota query backoff (fixes #6153) | open PR | #6179 | b531355702 | see CI | carry+fix, credit Terry Tan; Codex findings (post-reset key, hard-lock deadline) fixed |
+| #5831 stale main lock, two-window WHAM | split: fence PR #6183 (stacked on #6179) + held draft #6188 (stacked on #6183) | #6183 / #6188 | 81b3ee04fa / 09a756487a | see CI | owner review: parser exception held for provider confirmation; account list shows published cache |
+| #5099 Antigravity 403 validation rotation | open PR (draft) | #6180 | 761f3b1cfd | tests green; enforce-target needs screenshot | coordinator: capture Logs label or apply gui-screenshot-waived (no-local-runs rule) |
+| #5561 Anthropic model routes | open PR | #6181 | 8a6c7952fe | see CI | coordinator finding (route names in client errors) and Codex fallback Retry-After finding fixed |
+| #5956 low-quota protection (refs #5649) | open PR | #6182 | 3545ec36e0 | see CI | coordinator security review: per-server ledger, honest logged status |
 
 ## Deferred
 
