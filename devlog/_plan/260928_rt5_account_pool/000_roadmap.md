@@ -64,3 +64,20 @@ PR links are recorded in `090_closeout.md`.
    records a failed event; it does not block shutdown. A test stops the first of
    two live servers while its save is pending and checks that the other server's
    registration survives.
+
+## Audit fold-back (A round 2, GO-WITH-FIXES, blockers=2)
+
+1. **Screenshot ref (Medium, rebutted with a bounded alternative).** AGENTS.md
+   names `pr-assets` for maintainer command-line uploads, but this lane's push
+   authority is limited to its own `codex/rt5-*` branches. The purpose of the
+   rule is to keep the image off the PR branch so the squash never carries it
+   into `dev`. An asset-only `codex/rt5-account-pool-assets` branch, which is
+   never a PR head, satisfies that purpose within lane authority. The PR body
+   links the image by commit SHA and asks the coordinator to re-host it on
+   `pr-assets` if preferred.
+2. **Late write after release (Medium, folded).** Each low-quota writer carries
+   an owner generation. `flush()` or release marks the owner closed. A queued or
+   retrying save checks the generation before it starts the config write and
+   drops its work, recording a `cancelled` event, once the owner is closed. A
+   test times out a flush, releases the owner, then advances the retry timer and
+   asserts that no config write occurs.
