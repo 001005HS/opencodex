@@ -73,6 +73,28 @@ region-matched `/v1/api/openplatform/coding_plan/remains` endpoint. It publishes
 model's consumed 5-hour percentage and, when active, weekly percentage with their reset times;
 video quota rows are unrelated and omitted.
 
+Devin account quota in `src/providers/quota/devin.ts` reads Cognition's unary
+`SeatManagementService/GetUserStatus` with the default cloud-direct Metadata, against the
+credential's allowlisted api-server host, falling back to the configured allowlisted provider
+base URL (or the US default) for a legacy credential without a usable host. Redirects are
+refused; one eight-second deadline covers both the fetch and bounded body read, so a
+continuing byte drip keeps last-good when that deadline expires. It
+publishes only daily and weekly windows the plan does not hide whose reset is still ahead,
+because a credit-billed plan leaves those percents at a zero default and a past reset describes a
+rolled-over window; both would read as exhausted. Prompt plus flex credits form one monthly pool
+measured against the server balance, published only for a credit-billed plan (or an unknown
+strategy with both reset fields absent) when at least one of the four prompt/flex balance fields
+is present (proto3 omits zeros, so an exhausted pool arrives as a used count alone); a negative
+available balance is the unlimited sentinel; a negative used balance is malformed and omits the
+monthly window even when zero is available. Valid zero available reads as exhausted.
+Expired dated windows
+do not cause the credit fallback. Only a 401 rejects the credential and clears last-good; a 403
+may scope this one RPC away from a key that still serves
+chat. Other HTTP failures and malformed protobufs, including a wrong
+wire type for a known field or a varint longer than ten bytes, keep last-good; a decoded status
+with nothing measurable is authoritative-empty. Only Devin's credential host extends its quota
+cache identity; generic OAuth pause still suppresses per-account probes.
+
 Kiro's account quota cache persists quota and an optional exhaustion verdict under one
 opaque account key and a non-secret login identity. Hydration admits only matching live
 accounts and bounds quota and verdict independently by reset and ten-minute TTL; a failed
