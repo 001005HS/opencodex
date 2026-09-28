@@ -408,6 +408,16 @@ export async function prepareResponsesTransport(
     if (selection.reason === "all-cooled") {
       throw new AnthropicAccountCooldownError(getAnthropicPoolRetryAfterSeconds(now, anthropicRouteDecision), anthropicRouteDecision?.position);
     }
+    // No usable credential is an authentication refusal, not failed host reachability.
+    // Keep it distinct from the explicit all-paused and all-cooled policy above.
+    if (!selection.accountId || !getEligibleAnthropicAccounts(now).includes(selection.accountId)) {
+      const active = getAccountSet("anthropic")?.activeAccountId;
+      // Pool-off fresh admission resolves the active credential first; retain its pause
+      // refusal when unusable survivors left that paused account selected.
+      if (!isAnthropicAccountPoolEnabled(config) && active
+        && getAccountCredentialWithStatus("anthropic", active)?.paused) throw new OAuthAccountPausedError();
+      throw new OAuthLoginRequiredError("anthropic");
+    }
     return selection.accountId;
   };
   const refreshDispatchAdapter = async (requestParsed: OcxParsedRequest): Promise<ProviderAdapter> => {

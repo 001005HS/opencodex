@@ -389,6 +389,9 @@ export async function prepareAdapterExchange(
     if (refusal instanceof OAuthAccountPausedError) {
       return formatErrorResponse(403, "permission_error", publicOAuthAuthenticationErrorMessage(refusal));
     }
+    if (refusal instanceof OAuthLoginRequiredError) {
+      return formatErrorResponse(401, "authentication_error", publicOAuthAuthenticationErrorMessage(refusal));
+    }
     if (refusal instanceof AnthropicAccountCooldownError) {
       return formatErrorResponse(429, "rate_limit_error", refusal.message,
         refusal.retryAfterSeconds === null ? undefined : { retryAfter: String(refusal.retryAfterSeconds) });
@@ -602,6 +605,9 @@ export async function prepareAdapterExchange(
         const refusal = err instanceof UpstreamRetryEvidenceError ? err.cause : err;
         if (refusal instanceof OAuthAccountPausedError) {
           return { failed: formatErrorResponse(403, "permission_error", publicOAuthAuthenticationErrorMessage(refusal)) };
+        }
+        if (refusal instanceof OAuthLoginRequiredError) {
+          return { failed: formatErrorResponse(401, "authentication_error", publicOAuthAuthenticationErrorMessage(refusal)) };
         }
         if (refusal instanceof AnthropicAccountCooldownError) {
           return { failed: formatErrorResponse(429, "rate_limit_error", refusal.message,

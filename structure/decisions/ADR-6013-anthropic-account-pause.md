@@ -20,6 +20,9 @@
   remain distinct from login errors.
   Cooldown refusals carry the route position and retry seconds across pacing and dispatch,
   including disabled proactive pools; they never count as an upstream reachability failure.
+  If only reauthentication-required or unusable credentials remain after pause, dispatch
+  matches fresh admission: 401 with pooling enabled, or the existing 403 paused-active
+  refusal when pooling is disabled. Neither refusal changes account or host health.
 - Why this approach: One authoritative row avoids config/auth split-write races and automatic
   cleanup follows account deletion. A UI-only toggle would still allow affinity, pool-off
   failover or a pre-wait bearer to select the paused account.

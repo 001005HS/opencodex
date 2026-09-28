@@ -4,9 +4,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { acquireOwnedSpendHome } from "../../helpers/owned-spend-home";
 import { removeTreeWithRetry } from "../../helpers/remove-tree";
-import { clearAnthropicAccountPoolState, bindAnthropicSessionAffinity, getAnthropicPoolAccessSnapshot, getAnthropicPoolRetryAfterSeconds, promoteAnthropicActiveAccount, resolveAnthropicAccountForSession, rotateAnthropicAccountOn429 } from "../../../src/oauth/anthropic-routing";
+import { clearAnthropicAccountPoolState, bindAnthropicSessionAffinity, getAnthropicAccountHealthSnapshot, getAnthropicPoolAccessSnapshot, getAnthropicPoolRetryAfterSeconds, promoteAnthropicActiveAccount, resolveAnthropicAccountForSession, rotateAnthropicAccountOn429 } from "../../../src/oauth/anthropic-routing";
 import { parseAnthropicModelRoutes, resolveAnthropicModelRoute } from "../../../src/oauth/anthropic-model-routes";
-import { captureOAuthAccountSelection, getAccountSet, saveCredential, setAccountPaused, setActiveAccount } from "../../../src/oauth/store";
+import { captureOAuthAccountSelection, getAccountSet, markAccountNeedsReauth, replaceProviderAccountSet, saveAccountCredential, saveCredential, setAccountPaused, setActiveAccount } from "../../../src/oauth/store";
+import { clearUpstreamHostHealth, getUpstreamHostHealth, upstreamHostHealthKey } from "../../../src/codex/upstream-host-health";
 import { providerRequestPacingStatus, resetProviderRequestPacingForTest, waitForProviderRequestSlot } from "../../../src/providers/request-pacing";
 import { clearAccountQuotaCache, setCachedProviderAccountQuotaForTests } from "../../../src/providers/quota";
 import { clearResponseStateForTests } from "../../../src/responses/state";
@@ -27,10 +28,12 @@ beforeEach(() => {
   releaseSpend = acquireOwnedSpendHome();
   sends = [];
   clearAnthropicAccountPoolState();
+  clearUpstreamHostHealth();
   clearAccountQuotaCache();
   clearResponseStateForTests();
 });
 afterEach(() => {
+  clearUpstreamHostHealth();
   resetProviderRequestPacingForTest();
   releaseSpend();
   clearAnthropicAccountPoolState();
@@ -148,6 +151,51 @@ test.each([true, false])("pause while queued for pacing never sends the cached b
 
 for (const adapter of ["anthropic", "openai-responses"] as const) {
   for (const enabled of [true, false]) {
+    for (const remaining of ["needs-reauth", "unusable"] as const) {
+      test(`${adapter}: pause with ${remaining} survivors during pacing matches fresh admission, pool enabled=${enabled}`, async () => {
+        const ids = await seed();
+        await setAccountPaused("anthropic", ids[2]!, true);
+        const cfg = config(ids, () => answer());
+        cfg.anthropicAccountPool = { enabled, routes: [{ name: "private-auth-scope", match: "claude-*", accounts: [ids[0]!, ids[1]!] }] };
+        cfg.providers.anthropic!.adapter = adapter;
+        cfg.providers.anthropic!.requestPacing = { enabled: true, maxConcurrentRequests: 1 };
+        const hostKey = upstreamHostHealthKey("anthropic", "anthropic-routes.test");
+        const slot = await waitForProviderRequestSlot("anthropic", cfg.providers.anthropic!, "claude-sonnet-4-5");
+        const pending = post(cfg);
+        let rosterBeforeDispatch: ReturnType<typeof getAccountSet>;
+        try {
+          for (let i = 0; i < 100 && providerRequestPacingStatus("anthropic", cfg.providers.anthropic!).queued === 0; i++) {
+            await new Promise(resolve => setTimeout(resolve, 5));
+          }
+          expect(providerRequestPacingStatus("anthropic", cfg.providers.anthropic!).queued).toBe(1);
+          if (remaining === "needs-reauth") await markAccountNeedsReauth("anthropic", ids[1]!, true);
+          else {
+            const credential = getAccountSet("anthropic")!.accounts.find(row => row.id === ids[1])!.credential;
+            await saveAccountCredential("anthropic", ids[1]!, { ...credential, source: "local-cli", expires: 0 });
+          }
+          await setAccountPaused("anthropic", ids[0]!, true);
+          if (remaining === "unusable") {
+            // A persisted background local-CLI slot must not adopt the foreground CLI identity.
+            await replaceProviderAccountSet("anthropic", { ...getAccountSet("anthropic")!, activeAccountId: ids[0]! });
+          }
+          rosterBeforeDispatch = getAccountSet("anthropic");
+          expect(getUpstreamHostHealth(hostKey)).toBeNull();
+        } finally { slot.release(); }
+        const response = await pending;
+        const initial = await post(cfg);
+        expect(initial.status).toBe(enabled ? 401 : 403);
+        expect(response.status).toBe(initial.status);
+        const body = await response.json() as { error: { type: string; message: string } };
+        const initialBody = await initial.json() as { error: { type: string } };
+        expect(body.error.type).toBe(initialBody.error.type);
+        expect(body.error.message).not.toContain("private-auth-scope");
+        expect(sends).toEqual([]);
+        expect(getUpstreamHostHealth(hostKey)).toBeNull();
+        expect(ids.map(id => getAnthropicAccountHealthSnapshot(id))).toEqual([null, null, null]);
+        expect(getAccountSet("anthropic")).toEqual(rosterBeforeDispatch!);
+      });
+    }
+
     test(`${adapter}: a pacing-time pause skips a cooled successor for a healthy account, pool enabled=${enabled}`, async () => {
       const ids = await seed();
       const cfg = config(ids, () => answer());

@@ -15,7 +15,7 @@ is off. All-paused requests return 403 with resume guidance. Quorum is invalidat
 and resume; a sent account paused before its 429 may still recover on its sole unpaused
 successor. Credential resolution, refresh-lock acquisition, selection commit and physical
 dispatch recheck live eligibility after asynchronous waits. Adapter and passthrough dispatch
-preserve typed 403 pause and 429 cooldown refusals after pacing, including pool-off recovery;
+preserve typed 401 authentication, 403 pause and 429 cooldown refusals after pacing, including pool-off recovery;
 they do not report local rejection as 502. Only cooled usable survivors of a strict route
 produce its scoped 429 and Retry-After, not a login error. An already-dispatched refresh
 retains a successful rotated credential without unpausing; a late failure cannot mark the
