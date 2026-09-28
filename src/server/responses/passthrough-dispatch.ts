@@ -138,6 +138,7 @@ import { refreshPoolForwardAuth, refreshNativeMainForwardAuth, withClaudeNativeS
 import { bindRouteReasoningReplayScope } from "./core-replay";
 import type { OAuthAccessSnapshot } from "../../oauth";
 import { OAuthAccountPausedError, publicOAuthAuthenticationErrorMessage } from "../../oauth";
+import { AnthropicAccountCooldownError } from "../../oauth/anthropic-routing";
 import { resolveCopilotApiBaseUrl } from "../../oauth/github-copilot";
 import {
   hasEligibleGenericOAuthFailoverTarget,
@@ -884,10 +885,14 @@ export async function preparePassthroughExchange(
       const refusal = unwrapUpstreamRetryEvidenceError(err);
       // Pacing may outlive the selected account's admission. No fetch occurred, so do
       // not turn an operator pause into a 502 or charge it to host/account health.
-      if (refusal instanceof OAuthAccountPausedError) {
+      if (refusal instanceof OAuthAccountPausedError || refusal instanceof AnthropicAccountCooldownError) {
         releaseUpstreamHostAdmission(nativeHostState.lease);
         nativeHostState.lease = null;
         releaseCodexAuthContextProbeLease(admissionState.authCtx);
+        if (refusal instanceof AnthropicAccountCooldownError) {
+          return formatErrorResponse(429, "rate_limit_error", refusal.message,
+            refusal.retryAfterSeconds === null ? undefined : { retryAfter: String(refusal.retryAfterSeconds) });
+        }
         return formatErrorResponse(403, "permission_error", publicOAuthAuthenticationErrorMessage(refusal));
       }
       const localRefusal = mapCodexAuthContextErrorToResponse(refusal, {

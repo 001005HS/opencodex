@@ -18,6 +18,8 @@
   Keep typed local refusals across adapter/passthrough error projection after pacing, and
   classify routed cooldown using only usable unpaused members so resume and retry guidance
   remain distinct from login errors.
+  Cooldown refusals carry the route position and retry seconds across pacing and dispatch,
+  including disabled proactive pools; they never count as an upstream reachability failure.
 - Why this approach: One authoritative row avoids config/auth split-write races and automatic
   cleanup follows account deletion. A UI-only toggle would still allow affinity, pool-off
   failover or a pre-wait bearer to select the paused account.

@@ -148,6 +148,57 @@ test.each([true, false])("pause while queued for pacing never sends the cached b
 
 for (const adapter of ["anthropic", "openai-responses"] as const) {
   for (const enabled of [true, false]) {
+    test(`${adapter}: a pacing-time pause skips a cooled successor for a healthy account, pool enabled=${enabled}`, async () => {
+      const ids = await seed();
+      const cfg = config(ids, () => answer());
+      cfg.anthropicAccountPool = { enabled, routes: [{ name: "all", match: "claude-*", accounts: ids }] };
+      cfg.providers.anthropic!.adapter = adapter;
+      cfg.providers.anthropic!.requestPacing = { enabled: true, maxConcurrentRequests: 1 };
+      const slot = await waitForProviderRequestSlot("anthropic", cfg.providers.anthropic!, "claude-sonnet-4-5");
+      const pending = post(cfg);
+      try {
+        for (let i = 0; i < 100 && providerRequestPacingStatus("anthropic", cfg.providers.anthropic!).queued === 0; i++) {
+          await new Promise(resolve => setTimeout(resolve, 5));
+        }
+        expect(providerRequestPacingStatus("anthropic", cfg.providers.anthropic!).queued).toBe(1);
+        rotateAnthropicAccountOn429(cfg, ids[1]!, "60");
+        await setAccountPaused("anthropic", ids[0]!, true);
+      } finally { slot.release(); }
+      expect((await pending).status).toBe(200);
+      expect(sends).toHaveLength(1);
+      expect(sends[0]).toContain("synthetic-access-2");
+    });
+
+    test(`${adapter}: paused plus cooled accounts during pacing return scoped 429, pool enabled=${enabled}`, async () => {
+      const ids = await seed();
+      const cfg = config(ids, () => answer());
+      cfg.anthropicAccountPool = { enabled, routes: [{ name: "private-scope", match: "claude-*", accounts: [ids[0]!, ids[1]!] }] };
+      cfg.providers.anthropic!.adapter = adapter;
+      cfg.providers.anthropic!.requestPacing = { enabled: true, maxConcurrentRequests: 1 };
+      if (!enabled) await setAccountPaused("anthropic", ids[2]!, true);
+      const slot = await waitForProviderRequestSlot("anthropic", cfg.providers.anthropic!, "claude-sonnet-4-5");
+      const pending = post(cfg);
+      try {
+        for (let i = 0; i < 100 && providerRequestPacingStatus("anthropic", cfg.providers.anthropic!).queued === 0; i++) {
+          await new Promise(resolve => setTimeout(resolve, 5));
+        }
+        expect(providerRequestPacingStatus("anthropic", cfg.providers.anthropic!).queued).toBe(1);
+        rotateAnthropicAccountOn429(cfg, ids[1]!, "60");
+        // A shorter outsider cooldown must not change the strict route's Retry-After.
+        if (enabled) rotateAnthropicAccountOn429(cfg, ids[2]!, "5");
+        await setAccountPaused("anthropic", ids[0]!, true);
+      } finally { slot.release(); }
+      const response = await pending;
+      expect(response.status).toBe(429);
+      expect(Number(response.headers.get("retry-after"))).toBeGreaterThan(50);
+      expect(Number(response.headers.get("retry-after"))).toBeLessThanOrEqual(60);
+      const body = await response.json() as { error: { type: string; message: string } };
+      expect(body.error.type).toBe("rate_limit_error");
+      expect(body.error.message.includes("model route")).toBe(enabled);
+      expect(body.error.message).not.toContain("private-scope");
+      expect(sends).toEqual([]);
+    });
+
     test(`${adapter}: pausing every account during pacing returns 403, pool enabled=${enabled}`, async () => {
       const ids = await seed();
       const cfg = config(ids, () => answer());

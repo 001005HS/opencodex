@@ -58,6 +58,16 @@ export const ANTHROPIC_POOL_MAX_FAILOVERS_PER_REQUEST = 3;
 
 export type AnthropicAccountPoolConfig = NonNullable<OcxConfig["anthropicAccountPool"]>;
 
+/** Local admission refusal across async dispatch; never treat it as provider reachability evidence. */
+export class AnthropicAccountCooldownError extends Error {
+  constructor(readonly retryAfterSeconds: number | null, readonly routePosition?: number) {
+    super(routePosition === undefined
+      ? "All Anthropic OAuth accounts are temporarily rate-limited"
+      : "Anthropic OAuth accounts for this model route are temporarily rate-limited");
+    this.name = "AnthropicAccountCooldownError";
+  }
+}
+
 /**
  * Where a cooldown's length came from. Same vocabulary as `CodexCooldownSource`, because it
  * answers the same question for the same reason: `retry-after` is upstream answering THIS
@@ -358,9 +368,8 @@ export function getAnthropicPoolRetryAfterSeconds(now = Date.now(), decision: An
     && !getEligibleAnthropicAccounts(now).some(id => decision.accounts.includes(id));
   let earliest: number | null = null;
   for (const account of set.accounts) {
-    if (account.paused === true) continue;
+    if (account.paused === true || account.needsReauth === true || !isPoolCredentialUsable(account.id, now)) continue;
     if (decision && !fallbackExpanded && !decision.accounts.includes(account.id)) continue;
-    if (fallbackExpanded && (account.needsReauth === true || !isPoolCredentialUsable(account.id, now))) continue;
     const snap = getAnthropicAccountHealthSnapshot(account.id, now);
     if (!snap?.cooldownUntil) continue;
     if (earliest === null || snap.cooldownUntil < earliest) earliest = snap.cooldownUntil;
@@ -596,21 +605,21 @@ export function resolveAnthropicAccountForSession(
       : null;
   }
 
-  if (!isAnthropicAccountPoolEnabled(config)) {
-    const active = set.accounts.find(account => account.id === set.activeAccountId);
-    // Disabled proactive rotation does not grant permission to use an operator-paused slot.
-    return { accountId: active?.paused ? getEligibleAnthropicAccounts(now)[0] ?? null : set.activeAccountId, reason: "pool-disabled" };
-  }
-
   const eligible = routeCandidates(getEligibleAnthropicAccounts(now), decision);
-  if (decision && eligible.length === 0) {
+  if (eligible.length === 0) {
     // Pause, removal and reauthentication are not cooldown evidence. Classify only
     // usable members of this strict route (or the ordinary pool after fallback widens).
     const recoverable = set.accounts.filter(account =>
-      (decision.fallback || decision.accounts.includes(account.id))
+      (!decision || decision.fallback || decision.accounts.includes(account.id))
       && account.paused !== true && account.needsReauth !== true && isPoolCredentialUsable(account.id, now));
     const cooled = recoverable.length > 0 && recoverable.every(account => isCooled(account.id, now));
-    return { accountId: null, reason: cooled ? "all-cooled" : "none", routePosition: decision.position };
+    if (cooled || decision) return { accountId: null, reason: cooled ? "all-cooled" : "none", routePosition: decision?.position };
+  }
+
+  if (!isAnthropicAccountPoolEnabled(config)) {
+    const active = set.accounts.find(account => account.id === set.activeAccountId);
+    // Disabled proactive rotation does not authorize a paused slot or an entirely cooled pool.
+    return { accountId: active?.paused || isCooled(set.activeAccountId, now) ? eligible[0] ?? null : set.activeAccountId, reason: "pool-disabled" };
   }
 
   // A manual choice is a one-dispatch preference, not a lower-priority quota hint.
