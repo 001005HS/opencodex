@@ -10,12 +10,12 @@ import type { AdapterEvent, OcxAssistantMessage, OcxContentPart, OcxMessage, Ocx
 import { namespacedToolName } from "../types";
 import type { IncomingMeta, ProviderAdapter } from "./base";
 import { streamChatEventsWithResetRetry, devinStatedResetWaitMs, allocateCascadeId, CloudChatError, type ChatHistoryItem, type ToolDef } from "./devin/cloud-direct";
-import type { ContentPart } from "./devin/cloud-direct/chat";
+import type { CloudChatEvent, ContentPart } from "./devin/cloud-direct/chat";
 import { getCachedCatalog, type CacheEntry, type ModelCatalogEntry } from "./devin/cloud-direct/catalog";
 import { collapseDevinModelUid, devinFamiliesOf, devinFamilyBaseId, selectDevinFamilyMember, type DevinVariantRequest } from "./devin/live-models";
 import { buildNonOpenAIToolCatalogNudgeForTools } from "./tool-catalog-nudge";
 import { DEVIN_DEFAULT_API_SERVER, resolveDevinApiServer } from "../oauth/devin";
-import { isProviderIssuedThinkingSignature } from "../responses/reasoning-envelope";
+import { devinAssistantReasoning, encodeDevinSignature, hasAnthropicSignature } from "./devin/reasoning-signature";
 import { SendBudgetExhaustedError } from "../lib/upstream-retry";
 import { devinContextOverflowEvent, isDevinHistoryOverflow } from "./devin/context-overflow";
 
@@ -54,6 +54,49 @@ export function mergeDevinUsage(previous: OcxUsage, next: OcxUsage): OcxUsage {
  * the client hanging up.
  */
 const DEVIN_CLIENT_CLOSED_MESSAGE = "client closed request";
+
+/** Below the bridge's upstream stall deadline, so held reasoning never reads as a stall. */
+const HELD_REASONING_HEARTBEAT_MS = 15_000;
+/** Once either limit is crossed, forward the signed attempt and disable fallback. */
+const HELD_REASONING_MAX_EVENTS = 1_024;
+const HELD_REASONING_MAX_PAYLOAD_BYTES = 1024 * 1024;
+
+type DevinUsageEvent = Extract<CloudChatEvent, { kind: "usage" }>;
+
+function toOcxDevinUsage(event: DevinUsageEvent): OcxUsage {
+  const total = event.totalTokens ?? ((event.promptTokens ?? 0) + (event.completionTokens ?? 0));
+  return {
+    inputTokens: event.promptTokens ?? 0,
+    outputTokens: event.completionTokens ?? 0,
+    ...(total > 0 ? { totalTokens: total } : {}),
+    ...(event.cachedInputTokens !== undefined ? { cachedInputTokens: event.cachedInputTokens } : {}),
+    ...(event.cacheCreationInputTokens !== undefined ? { cacheCreationInputTokens: event.cacheCreationInputTokens } : {}),
+    ...(event.reasoningTokens !== undefined ? { reasoningOutputTokens: event.reasoningTokens } : {}),
+  };
+}
+
+function toCloudDevinUsage(usage: OcxUsage): DevinUsageEvent {
+  return {
+    kind: "usage",
+    promptTokens: usage.inputTokens,
+    completionTokens: usage.outputTokens,
+    totalTokens: usage.totalTokens,
+    cachedInputTokens: usage.cachedInputTokens,
+    cacheCreationInputTokens: usage.cacheCreationInputTokens,
+    reasoningTokens: usage.reasoningOutputTokens,
+  };
+}
+
+/** The retry's cumulative usage plus the refused attempt's final counts. */
+function addDevinUsage(event: DevinUsageEvent, prior: DevinUsageEvent): DevinUsageEvent {
+  const sum = (a?: number, b?: number) => (a === undefined && b === undefined ? undefined : (a ?? 0) + (b ?? 0));
+  const out: DevinUsageEvent = { ...event };
+  for (const key of ["promptTokens", "completionTokens", "totalTokens", "cachedInputTokens", "cacheCreationInputTokens", "reasoningTokens"] as const) {
+    const value = sum(event[key], prior[key]);
+    if (value !== undefined) out[key] = value;
+  }
+  return out;
+}
 
 /** Map a cloud-direct failure onto the structured fields the error event carries. */
 export function devinErrorClassification(error: unknown): { status?: number; errorType?: string; retryable?: boolean } {
@@ -452,45 +495,16 @@ function assistantText(message: OcxAssistantMessage): string {
     // Thinking stays out of the replayed TEXT: folding chain-of-thought into
     // assistant text sends it back as visible prior output, which the model
     // then treats as something it said to the user. It is replayed in its own
-    // field instead — see assistantThinking below.
+    // field instead — see devinAssistantReasoning.
     .map((part) => (part.type === "text" ? part.text : ""))
     .filter(Boolean)
     .join("\n");
 }
 
-/**
- * The assistant turn's own reasoning, for replay in ChatMessagePrompt #11.
- *
- * This adapter previously asserted that Cognition has no reasoning-replay
- * field and dropped the thinking outright, so a reasoning model restarted its
- * chain on every turn of a tool loop. The field exists: two independent
- * clients of the same service write #11 thinking with #12 signature and #18
- * signature_type on the assistant prompt.
- *
- * Field #12 attests the exact text at #11, and the wire has room for one pair.
- * Every block that carries text is replayed, so the chain stays intact; the
- * signature rides along only when the text being replayed IS the text it
- * attests, which is exactly the single-block case. Several independently signed
- * blocks send an unsigned prompt rather than pairing one block's attestation
- * with another block's words. A signature-only block attests encrypted thinking
- * that is not being replayed at all, so it is not one of these blocks and
- * cannot contribute the pair.
- */
-function assistantThinking(
-  message: OcxAssistantMessage,
-): { thinking?: string; signature?: string } {
-  const blocks = message.content.filter(
-    (part): part is Extract<typeof part, { type: "thinking" }> => part.type === "thinking",
-  ).filter(part => Boolean(part.thinking));
-  if (blocks.length === 0) return {};
-  const signature = blocks.length === 1 ? blocks[0]!.signature : undefined;
-  return {
-    thinking: blocks.map(part => part.thinking).join("\n"),
-    ...(isProviderIssuedThinkingSignature(signature) ? { signature } : {}),
-  };
-}
-
-export function mapOcxMessagesToDevin(parsed: OcxParsedRequest): ChatHistoryItem[] {
+export function mapOcxMessagesToDevin(
+  parsed: OcxParsedRequest,
+  options: { withholdAnthropicSignatures?: boolean } = {},
+): ChatHistoryItem[] {
   const items: ChatHistoryItem[] = [];
   // Cognition is not an OpenAI host, and this adapter does advertise a real
   // client tool catalog (proto #10 via `mapOcxToolsToDevin`), so the same
@@ -509,13 +523,17 @@ export function mapOcxMessagesToDevin(parsed: OcxParsedRequest): ChatHistoryItem
   if (system) items.push({ role: "system", content: system });
 
   for (const message of parsed.context.messages) {
-    const mapped = mapOneMessage(message);
+    const mapped = mapOneMessage(message, parsed.modelId, options);
     if (mapped) items.push(mapped);
   }
   return items;
 }
 
-function mapOneMessage(message: OcxMessage): ChatHistoryItem | undefined {
+function mapOneMessage(
+  message: OcxMessage,
+  modelId: string,
+  options: { withholdAnthropicSignatures?: boolean },
+): ChatHistoryItem | undefined {
   if (message.role === "user" || message.role === "developer") {
     const content = mapOcxContentToWire(message.content);
     // An image with no caption text is a complete user message on its own.
@@ -527,10 +545,10 @@ function mapOneMessage(message: OcxMessage): ChatHistoryItem | undefined {
   if (message.role === "assistant") {
     const toolCalls = assistantToolCalls(message);
     const text = assistantText(message);
-    const reasoning = assistantThinking(message);
+    const reasoning = devinAssistantReasoning(message, modelId, options.withholdAnthropicSignatures === true);
     // A turn that produced only reasoning is still worth replaying: dropping it
     // is what makes the next turn re-derive the same chain.
-    if (!text && toolCalls.length === 0 && !reasoning.thinking) return undefined;
+    if (!text && toolCalls.length === 0 && !reasoning.thinking && !reasoning.signature) return undefined;
     return {
       role: "assistant",
       content: text || "",
@@ -746,7 +764,15 @@ export function createDevinAdapter(
         // An admitted HTTP turn owns globally shared capacity until this call
         // emits. Without an explicit wait allowance, preserve the typed reset
         // delay in generated diagnostic wording and return immediately.
-        for await (const event of streamChatEventsWithResetRetry({
+        const signedMessages = mapOcxMessagesToDevin(parsed);
+        // A Claude signature is replayed because it is what carries the reasoning into this
+        // turn, but Cognition streams Claude's thinking as a summary the signature does not
+        // cover, and some replays are refused with invalid_argument before any output. That
+        // refusal is retried once with the Anthropic signatures withheld and the text kept.
+        const unsignedMessages = hasAnthropicSignature(signedMessages, parsed.modelId)
+          ? mapOcxMessagesToDevin(parsed, { withholdAnthropicSignatures: true })
+          : undefined;
+        const request = (messages: ChatHistoryItem[]) => streamChatEventsWithResetRetry({
           apiKey,
           apiServerUrl: host,
           modelUid,
@@ -770,7 +796,80 @@ export function createDevinAdapter(
             onPhysicalSend: incoming.onPhysicalSend,
             onRecoveryWithheld: incoming.onRecoveryWithheld,
           },
-        })) {
+        });
+        async function* withSignatureFallback() {
+          if (!unsignedMessages) {
+            yield* request(signedMessages);
+            return;
+          }
+          // Events from the signed attempt are held until its outcome is known: a refusal
+          // after reasoning would otherwise leave the client with the refused attempt's
+          // reasoning and signature, and the next turn would replay that signature against
+          // the retry's thinking.
+          const held: CloudChatEvent[] = [];
+          // Usage is still real: the refused attempt was processed, so its final counts are
+          // added to every usage frame of the retry (frames are cumulative per request).
+          let refusedUsage: OcxUsage | undefined;
+          let visible = false;
+          let heldPayloadBytes = 0;
+          // The iterator may pause before a trailer. A timer feeds the bridge during that
+          // pause without starting another upstream read or marking replay unsafe.
+          const heartbeatTimer = setInterval(() => {
+            if (!visible) emit({ type: "heartbeat" });
+          }, HELD_REASONING_HEARTBEAT_MS);
+          try {
+            for await (const event of request(signedMessages)) {
+              // Only visible output makes a retry unsafe. Live, the refusal often lands after the
+              // model has streamed its reasoning, its signature and a finish frame, and nothing else.
+              if (!visible && (event.kind === "text" || event.kind === "tool_call_start" || event.kind === "tool_call_args")) {
+                visible = true;
+                clearInterval(heartbeatTimer);
+                yield* held.splice(0);
+              }
+              if (visible) {
+                yield event;
+                continue;
+              }
+              held.push(event);
+              if (event.kind === "usage") {
+                const next = toOcxDevinUsage(event);
+                refusedUsage = refusedUsage ? mergeDevinUsage(refusedUsage, next) : next;
+              }
+              if (event.kind === "reasoning") heldPayloadBytes += event.text.length * 2;
+              if (event.kind === "reasoning_signature") heldPayloadBytes += event.signature.length * 2;
+              if (held.length > HELD_REASONING_MAX_EVENTS || heldPayloadBytes > HELD_REASONING_MAX_PAYLOAD_BYTES) {
+                visible = true;
+                clearInterval(heartbeatTimer);
+                yield* held.splice(0);
+              }
+            }
+          } catch (error) {
+            clearInterval(heartbeatTimer);
+            if (visible || !(error instanceof CloudChatError && error.code === "invalid_argument")) {
+              yield* held.splice(0);
+              throw error;
+            }
+            // Emitted first so the counts survive a retry that reports no usage or fails early.
+            const cumulativeRefusedUsage = refusedUsage ? toCloudDevinUsage(refusedUsage) : undefined;
+            if (cumulativeRefusedUsage) yield cumulativeRefusedUsage;
+            try {
+              for await (const event of request(unsignedMessages)) {
+                yield event.kind === "usage" && cumulativeRefusedUsage ? addDevinUsage(event, cumulativeRefusedUsage) : event;
+              }
+            } catch (retryError) {
+              if (retryError instanceof SendBudgetExhaustedError) {
+                incoming.onRecoveryWithheld?.({ reason: "retry-send-budget" });
+                throw error;
+              }
+              throw retryError;
+            }
+            return;
+          } finally {
+            clearInterval(heartbeatTimer);
+          }
+          yield* held.splice(0);
+        }
+        for await (const event of withSignatureFallback()) {
           if (incoming.abortSignal?.aborted) {
             // Emitting nothing here left the bridge to synthesize adapter_eof.
             // Say what happened instead, the way the other runTurn-only adapter
@@ -792,7 +891,7 @@ export function createDevinAdapter(
           if (event.kind === "reasoning_signature") {
             // Carried back out so the next turn can replay it in the prompt's
             // signature field; an unsigned replay is what the service ignores.
-            emit({ type: "thinking_signature", signature: event.signature });
+            emit({ type: "thinking_signature", signature: encodeDevinSignature(event.signature, event.signatureType) });
             continue;
           }
           if (event.kind === "tool_call_start") {
@@ -820,15 +919,7 @@ export function createDevinAdapter(
             continue;
           }
           if (event.kind === "usage") {
-            const total = event.totalTokens ?? ((event.promptTokens ?? 0) + (event.completionTokens ?? 0));
-            const next: OcxUsage = {
-              inputTokens: event.promptTokens ?? 0,
-              outputTokens: event.completionTokens ?? 0,
-              ...(total > 0 ? { totalTokens: total } : {}),
-              ...(event.cachedInputTokens !== undefined ? { cachedInputTokens: event.cachedInputTokens } : {}),
-              ...(event.cacheCreationInputTokens !== undefined ? { cacheCreationInputTokens: event.cacheCreationInputTokens } : {}),
-              ...(event.reasoningTokens !== undefined ? { reasoningOutputTokens: event.reasoningTokens } : {}),
-            };
+            const next = toOcxDevinUsage(event);
             // Merge rather than replace. A turn can carry more than one usage
             // frame, and the counters are cumulative, so a later partial frame
             // that omits a field used to zero a count the earlier frame had
