@@ -81,3 +81,9 @@ PR links are recorded in `090_closeout.md`.
    drops its work, recording a `cancelled` event, once the owner is closed. A
    test times out a flush, releases the owner, then advances the retry timer and
    asserts that no config write occurs.
+3. **Flush ordering (A round 3, Medium, folded).** A normal `flush()` first
+   drains the pending save (it awaits the in-flight write and runs any queued
+   one), and only then closes the owner. If the bounded wait times out, it
+   closes the owner at that point, and the generation fence drops every later
+   retry. Tests cover both paths: normal stop with a pending save persists it,
+   and a timed-out stop writes nothing afterwards.
