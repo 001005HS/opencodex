@@ -57,3 +57,35 @@ then the decade doc. Concretely:
 - 050: one per-request auth-refusal flag is shared by 401 and 403 and set before
   rotation. It requires the three-account 403 chain and 401-then-403 tests, plus
   the `oauth-account-403` roster, Logs and locale work.
+
+## WP1 audit fold-back (GO-WITH-FIXES, blockers=3) and coordinator criteria
+
+1. **Plan source for executors (High, folded).** Lane worktrees predate the
+   plan commits. Each executor packet pins the plan with
+   `git -C /Users/jun/.codex/worktrees/cbaa/opencodex show <sha>:devlog/_plan/260928_rt5_account_pool/<doc>`,
+   using the commit that contains this section. Executors read the plan and
+   never write it.
+2. **Lane-specific gates (Medium, folded).** Acceptance criterion 3 also covers
+   every extra verifier the decade doc names: for 050, `bun run lint:gui` and
+   `bun run build:gui`; for 040, `bun run skill:surface:check` plus the CLI
+   parity and skill tests; for 010 and 020, the docs-site build when MDX or docs
+   pages change (`cd docs-site && bun run build`); plus the explicit
+   source-oracle and layout tests each doc lists.
+3. **Quota union (Medium, folded).** At WP1 C, a scratch worktree merges
+   quota-backoff, then main-lock, then low-quota onto `dev`. It runs
+   `bun run typecheck` and the union of the three lanes' focused quota, pause
+   and hard-lock tests. A conflict or failure there becomes a lane fix before
+   push.
+
+Coordinator criteria (2026-09-28), which apply in WP2. Before a PR counts as
+done:
+
+- Any CHANGES_REQUESTED review from a listed maintainer (for example
+  @Ingwannu) is fixed and answered on the thread.
+- Correct findings from the Codex review bot (`chatgpt-codex-connector`) are
+  fixed.
+- PR-triggered jobs, including `desktop shell` and macOS legs when paths
+  trigger them, finish green.
+
+CodeRabbit stays ignored, and the lane never dispatches the manual
+`workflow_dispatch` cross-platform run.
