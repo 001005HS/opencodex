@@ -23,6 +23,16 @@
   If only reauthentication-required or unusable credentials remain after pause, dispatch
   matches fresh admission: 401 with pooling enabled, or the existing 403 paused-active
   refusal when pooling is disabled. Neither refusal changes account or host health.
+  Native Messages uses the same dispatch eligibility resolver, checks cooldown after each
+  await, and preserves typed 401/403/429 responses. Its existing 409 remains reserved for a
+  healthy roster becoming pooled and requiring the bridge lane, or repeated selection races.
+- Pool-off policy evidence: #6013's accepted contract retains reactive 429 successors with
+  pooling disabled. The existing `anthropicAccountPool.enabled` reference likewise gates
+  only proactive routing, not 429 recovery. Cooldown is recorded from an upstream 429; using
+  a healthy successor for a paused or already-cooled active account is recovery, not quota
+  rotation. A healthy active account remains selected regardless of quota/strategy settings.
+  Recovery proposals say `only-eligible`; native request logs carry the committed account's
+  ordinal rather than a provider-only label. The native/bridge pacing matrix pins this policy.
 - Why this approach: One authoritative row avoids config/auth split-write races and automatic
   cleanup follows account deletion. A UI-only toggle would still allow affinity, pool-off
   failover or a pre-wait bearer to select the paused account.

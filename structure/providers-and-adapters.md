@@ -14,13 +14,13 @@ manual, affinity, model-route and reactive 429 candidates, including when proact
 is off. All-paused requests return 403 with resume guidance. Quorum is invalidated on pause
 and resume; a sent account paused before its 429 may still recover on its sole unpaused
 successor. Credential resolution, refresh-lock acquisition, selection commit and physical
-dispatch recheck live eligibility after asynchronous waits. Adapter and passthrough dispatch
+dispatch recheck live eligibility after asynchronous waits. Responses and native Messages
 preserve typed 401 authentication, 403 pause and 429 cooldown refusals after pacing, including pool-off recovery;
 they do not report local rejection as 502. Only cooled usable survivors of a strict route
 produce its scoped 429 and Retry-After, not a login error. An already-dispatched refresh
 retains a successful rotated credential without unpausing; a late failure cannot mark the
 paused row for reauthentication. Token Guardian and quota probes use their existing pause
-guards.
+guards. Pool-off keeps a healthy active account; pause/prior-429 recovery uses `only-eligible`, and logs name the committed account.
 
 > Decision record: [ADR-6013](decisions/ADR-6013-anthropic-account-pause.md)
 

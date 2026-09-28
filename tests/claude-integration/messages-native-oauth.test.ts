@@ -12,8 +12,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { saveConfig } from "../../src/config";
 import { ANTHROPIC_OAUTH_BETA, CLAUDE_CODE_SYSTEM_INSTRUCTION } from "../../src/oauth/anthropic";
-import { clearAnthropicAccountPoolState, forgetAnthropicFailoverQuorum } from "../../src/oauth/anthropic-routing";
-import { getAccountSet, markAccountNeedsReauth, saveCredential, setAccountPaused, setActiveAccount } from "../../src/oauth/store";
+import { clearAnthropicAccountPoolState, forgetAnthropicFailoverQuorum, formatAnthropicProviderForLog, getAnthropicAccountHealthSnapshot, rotateAnthropicAccountOn429 } from "../../src/oauth/anthropic-routing";
+import { getAccountSet, markAccountNeedsReauth, replaceProviderAccountSet, saveAccountCredential, saveCredential, setAccountPaused, setActiveAccount } from "../../src/oauth/store";
+import { clearUpstreamHostHealth, getUpstreamHostHealth, upstreamHostHealthKey } from "../../src/codex/upstream-host-health";
 import { handleClaudeMessages } from "../../src/server/claude-messages";
 import { getRequestLogEntries } from "../../src/server/request-log";
 import { providerRequestPacingStatus, resetProviderRequestPacingForTest, waitForProviderRequestSlot } from "../../src/providers/request-pacing";
@@ -50,11 +51,13 @@ beforeEach(() => {
     throw new Error("unexpected global fetch in the native OAuth Messages test");
   }) as unknown as typeof fetch;
   clearAnthropicAccountPoolState();
+  clearUpstreamHostHealth();
   forgetAnthropicFailoverQuorum();
   releaseSpendHome = acquireOwnedSpendHome();
 });
 
 afterEach(() => {
+  clearUpstreamHostHealth();
   resetProviderRequestPacingForTest();
   releaseSpendHome?.();
   releaseSpendHome = undefined;
@@ -171,6 +174,68 @@ async function send(config: OcxConfig, body: Record<string, unknown>) {
 }
 
 describe("managed native Messages over Anthropic OAuth", () => {
+  for (const native of [true, false]) for (const enabled of [true, false]) {
+    for (const state of ["needs-reauth", "unusable", "cooled", "paused-cooled", "healthy"] as const) {
+      test(`Messages native=${native}, pool=${enabled}: pacing ${state} preserves fresh admission`, async () => {
+        const ids = await seed(2);
+        await markAccountNeedsReauth("anthropic", ids[1]!, true);
+        forgetAnthropicFailoverQuorum();
+        const cfg = fixtureConfig({ oauthSwitch: native });
+        cfg.anthropicAccountPool = { enabled };
+        cfg.providers.anthropic!.requestPacing = { enabled: true, maxConcurrentRequests: 1 };
+        const slot = await waitForProviderRequestSlot("anthropic", cfg.providers.anthropic!, "claude-sonnet-4-5");
+        const pending = send(cfg, { ...BODY, stream: false });
+        let setupFailed = false;
+        let setupError: unknown;
+        let health: ReturnType<typeof getAnthropicAccountHealthSnapshot>[] = [];
+        let roster: ReturnType<typeof getAccountSet>;
+        try {
+          for (let i = 0; i < 100 && providerRequestPacingStatus("anthropic", cfg.providers.anthropic!).queued === 0; i++) {
+            await new Promise(resolve => setTimeout(resolve, 5));
+          }
+          expect(providerRequestPacingStatus("anthropic", cfg.providers.anthropic!).queued).toBe(1);
+          const coolingConfig = { ...cfg, anthropicAccountPool: { enabled: true } };
+          if (state === "cooled") rotateAnthropicAccountOn429(coolingConfig, ids[0]!, "60");
+          else {
+            await markAccountNeedsReauth("anthropic", ids[1]!, false);
+            await setAccountPaused("anthropic", ids[0]!, true);
+            if (state === "needs-reauth") await markAccountNeedsReauth("anthropic", ids[1]!, true);
+            if (state === "paused-cooled") rotateAnthropicAccountOn429(coolingConfig, ids[1]!, "60");
+            if (state === "unusable") {
+              await saveAccountCredential("anthropic", ids[1]!, { ...credential(1), source: "local-cli", expires: 0 });
+              await replaceProviderAccountSet("anthropic", { ...getAccountSet("anthropic")!, activeAccountId: ids[0]! });
+            }
+          }
+          health = ids.map(id => getAnthropicAccountHealthSnapshot(id));
+          roster = getAccountSet("anthropic");
+        } catch (error) { setupFailed = true; setupError = error; }
+        finally { slot.release(); if (setupFailed) await pending.catch(() => undefined); }
+        if (setupFailed) throw setupError;
+        const result = await pending;
+        const initial = await send(cfg, { ...BODY, stream: false });
+        const expected = state === "healthy" ? 200 : state === "cooled" || state === "paused-cooled" ? 429
+          : state === "unusable" && !enabled ? 403 : 401;
+        expect(initial.response.status).toBe(expected);
+        expect(result.response.status).toBe(initial.response.status);
+        if (expected !== 200) {
+          expect(JSON.parse(result.text).error.type).toBe(JSON.parse(initial.text).error.type);
+          expect(sent).toEqual([]);
+          expect(getAccountSet("anthropic")).toEqual(roster!);
+        } else {
+          expect(sent).toHaveLength(2);
+          expect(sent.every(entry => entry.headers.get("authorization") === `Bearer ${credential(1).access}`)).toBe(true);
+          expect(result.row.provider).toBe(formatAnthropicProviderForLog("anthropic", ids[1]));
+        }
+        if (expected === 429) {
+          expect(Number(result.response.headers.get("retry-after"))).toBeGreaterThan(50);
+          expect(Number(result.response.headers.get("retry-after"))).toBeLessThanOrEqual(60);
+        }
+        expect(ids.map(id => getAnthropicAccountHealthSnapshot(id))).toEqual(health);
+        expect(getUpstreamHostHealth(upstreamHostHealthKey("anthropic", "api.anthropic.com"))).toBeNull();
+      });
+    }
+  }
+
   test("a singleton paused during native pacing returns 403 without dispatch", async () => {
     const [id] = await seed(1);
     const cfg = fixtureConfig();

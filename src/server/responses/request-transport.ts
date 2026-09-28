@@ -15,7 +15,7 @@ import type { AdapterEvent, OcxParsedRequest, OcxProviderConfig, OcxUsage } from
 import type { AnthropicAccountSelectionReason } from "../../oauth/anthropic-routing";
 import { resolveAnthropicModelRoute, routeCandidates, type AnthropicRouteDecision } from "../../oauth/anthropic-model-routes";
 import {
-  AnthropicAccountCooldownError,
+  resolveAnthropicDispatchAccountId,
   isAnthropicAccountPoolEnabled,
   getAnthropicPoolAccessSnapshot,
   getAnthropicAccountHealthSnapshot,
@@ -400,26 +400,6 @@ export async function prepareResponsesTransport(
     }
     return resolved;
   };
-  const resolveAnthropicDispatchAccount = (): string | null => {
-    if (route.providerName !== "anthropic") return null;
-    const now = Date.now();
-    const selection = resolveAnthropicAccountForSession(anthropicSessionKey, config, now, anthropicRouteDecision);
-    if (selection.reason === "paused") throw new OAuthAccountPausedError();
-    if (selection.reason === "all-cooled") {
-      throw new AnthropicAccountCooldownError(getAnthropicPoolRetryAfterSeconds(now, anthropicRouteDecision), anthropicRouteDecision?.position);
-    }
-    // No usable credential is an authentication refusal, not failed host reachability.
-    // Keep it distinct from the explicit all-paused and all-cooled policy above.
-    if (!selection.accountId || !getEligibleAnthropicAccounts(now).includes(selection.accountId)) {
-      const active = getAccountSet("anthropic")?.activeAccountId;
-      // Pool-off fresh admission resolves the active credential first; retain its pause
-      // refusal when unusable survivors left that paused account selected.
-      if (!isAnthropicAccountPoolEnabled(config) && active
-        && getAccountCredentialWithStatus("anthropic", active)?.paused) throw new OAuthAccountPausedError();
-      throw new OAuthLoginRequiredError("anthropic");
-    }
-    return selection.accountId;
-  };
   const refreshDispatchAdapter = async (requestParsed: OcxParsedRequest): Promise<ProviderAdapter> => {
     if (route.provider.authMode === "oauth") {
       // Pacing may outlive admission. Preserve local pause/cooldown reasons even when
@@ -427,11 +407,11 @@ export async function prepareResponsesTransport(
       let candidate = servingOAuthSnapshot;
       if (route.providerName === "anthropic") {
         oauthSelection = captureOAuthAccountSelection(route.providerName);
-        const accountId = resolveAnthropicDispatchAccount();
-        candidate = accountId ? await getAnthropicPoolAccessSnapshot(accountId) : undefined;
+        const accountId = await resolveAnthropicDispatchAccountId(config, anthropicSessionKey, anthropicRouteDecision);
+        candidate = await getAnthropicPoolAccessSnapshot(accountId);
       }
       if (!candidate || !await applyFailoverSnapshot(candidate, requestParsed)) {
-        resolveAnthropicDispatchAccount();
+        if (route.providerName === "anthropic") await resolveAnthropicDispatchAccountId(config, anthropicSessionKey, anthropicRouteDecision);
         throw new Error("OAuth account selection changed before dispatch");
       }
     } else {

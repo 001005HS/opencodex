@@ -619,7 +619,10 @@ export function resolveAnthropicAccountForSession(
   if (!isAnthropicAccountPoolEnabled(config)) {
     const active = set.accounts.find(account => account.id === set.activeAccountId);
     // Disabled proactive rotation does not authorize a paused slot or an entirely cooled pool.
-    return { accountId: active?.paused || isCooled(set.activeAccountId, now) ? eligible[0] ?? null : set.activeAccountId, reason: "pool-disabled" };
+    if (active?.paused || isCooled(set.activeAccountId, now)) {
+      return { accountId: eligible[0] ?? null, reason: eligible.length > 0 ? "only-eligible" : "none" };
+    }
+    return { accountId: set.activeAccountId, reason: "pool-disabled" };
   }
 
   // A manual choice is a one-dispatch preference, not a lower-priority quota hint.
@@ -716,6 +719,29 @@ export function resolveAnthropicAccountForSession(
   }
 
   return { accountId, reason, routePosition: decision?.position };
+}
+
+/** Shared local refusal policy for Responses and native Messages after asynchronous waits. */
+export async function resolveAnthropicDispatchAccountId(
+  config: OcxConfig,
+  sessionKey: string | null = null,
+  decision: AnthropicRouteDecision | null = null,
+): Promise<string> {
+  const now = Date.now();
+  const selection = resolveAnthropicAccountForSession(sessionKey, config, now, decision);
+  if (selection.reason === "all-cooled") {
+    throw new AnthropicAccountCooldownError(getAnthropicPoolRetryAfterSeconds(now, decision), decision?.position);
+  }
+  if (selection.reason === "paused" || !selection.accountId || !getEligibleAnthropicAccounts(now).includes(selection.accountId)) {
+    const { OAuthAccountPausedError, OAuthLoginRequiredError } = await import("./index");
+    const active = getAccountSet(PROVIDER)?.activeAccountId;
+    // Pool-off fresh admission resolves the active credential first. Preserve that
+    // paused-active refusal when no usable survivor could take over from it.
+    if (selection.reason === "paused" || (!isAnthropicAccountPoolEnabled(config) && active
+      && getAccountCredentialWithStatus(PROVIDER, active)?.paused)) throw new OAuthAccountPausedError();
+    throw new OAuthLoginRequiredError(PROVIDER);
+  }
+  return selection.accountId;
 }
 
 export function bindAnthropicSessionAffinity(
