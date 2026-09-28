@@ -1,5 +1,8 @@
 # Providers And Adapters
 
+For Anthropic OAuth, `src/oauth/anthropic-routing.ts` applies the first matching `anthropicAccountPool.routes` rule to every eligible pick. The declared account order is stable while its candidates remain eligible; active, manual, affinity, quota and strategy preferences only choose inside that set. An explicit fallback widens an empty route to the ordinary pool, and fill-first then advances in ordinary pool order from the active account. A missing eligible route fails locally without that fallback. The rules are operator allowlists, not provider entitlement evidence. Request logs use `route:#<n>` for the 1-based rule position, not the operator name.
+
+
 The coding-agent stream parser buffers each tool-use block by its content-block index
 and emits a complete start/delta/end sequence on closure. Distinct indices can interleave.
 For the CodeBuddy capture-only bridge, the init handshake is checked before buffering.
