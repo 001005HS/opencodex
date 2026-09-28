@@ -177,13 +177,24 @@ describe("managed native Messages over Anthropic OAuth", () => {
     cfg.providers.anthropic!.requestPacing = { enabled: true, maxConcurrentRequests: 1 };
     const slot = await waitForProviderRequestSlot("anthropic", cfg.providers.anthropic!, "claude-sonnet-4-5");
     const pending = send(cfg, { ...BODY, stream: false });
+    let setupFailed = false;
+    let setupError: unknown;
     try {
       for (let i = 0; i < 100 && providerRequestPacingStatus("anthropic", cfg.providers.anthropic!).queued === 0; i++) {
         await new Promise(resolve => setTimeout(resolve, 5));
       }
       expect(providerRequestPacingStatus("anthropic", cfg.providers.anthropic!).queued).toBe(1);
       await setAccountPaused("anthropic", id!, true);
-    } finally { slot.release(); }
+    } catch (error) {
+      setupFailed = true;
+      setupError = error;
+    } finally {
+      slot.release();
+      // A failed queue assertion must not leave this request running into afterEach. Drain it,
+      // but keep the assertion as the useful failure if teardown also rejects.
+      if (setupFailed) await pending.catch(() => undefined);
+    }
+    if (setupFailed) throw setupError;
     const { response, text } = await pending;
     expect(response.status).toBe(403);
     expect(text).toContain("Resume");
