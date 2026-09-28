@@ -14,3 +14,7 @@ and asked for a sanitized current-`dev` reproduction. None exists, and this lane
 provider credential that shows the 400. A provider-scoped fix needs that reproduction first.
 
 Disposition: no PR; reported to the coordinator as dropped with this reason.
+
+Confirmed 2026-09-28 by the lane's architect (D2) and the roadmap audit reviewer, both
+reading the current guard and passthrough test. The source PR stays open and untouched; this
+lane does not comment on or close contributor PRs.
