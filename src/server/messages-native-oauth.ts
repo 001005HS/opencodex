@@ -114,7 +114,7 @@ export function nativeOAuthBindingIsCurrent(binding: NativeOAuthBinding): boolea
   const row = getAccountCredentialWithStatus(PROVIDER, binding.snapshot.accountId);
   return selected?.accountId === binding.selection.accountId
     && selected?.revision === binding.selection.revision
-    && !!row && !row.needsReauth && row.credential.expires > Date.now()
+    && !!row && !row.paused && !row.needsReauth && row.credential.expires > Date.now()
     && credentialGeneration(row.credential) === binding.snapshot.generation;
 }
 

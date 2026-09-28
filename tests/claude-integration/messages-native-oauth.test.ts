@@ -13,9 +13,10 @@ import { join } from "node:path";
 import { saveConfig } from "../../src/config";
 import { ANTHROPIC_OAUTH_BETA, CLAUDE_CODE_SYSTEM_INSTRUCTION } from "../../src/oauth/anthropic";
 import { clearAnthropicAccountPoolState, forgetAnthropicFailoverQuorum } from "../../src/oauth/anthropic-routing";
-import { getAccountSet, markAccountNeedsReauth, saveCredential, setActiveAccount } from "../../src/oauth/store";
+import { getAccountSet, markAccountNeedsReauth, saveCredential, setAccountPaused, setActiveAccount } from "../../src/oauth/store";
 import { handleClaudeMessages } from "../../src/server/claude-messages";
 import { getRequestLogEntries } from "../../src/server/request-log";
+import { providerRequestPacingStatus, resetProviderRequestPacingForTest, waitForProviderRequestSlot } from "../../src/providers/request-pacing";
 import type { OcxConfig, OcxProviderConfig } from "../../src/types";
 import { acquireOwnedSpendHome } from "../helpers/owned-spend-home";
 import { removeTreeWithRetry } from "../helpers/remove-tree";
@@ -54,6 +55,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  resetProviderRequestPacingForTest();
   releaseSpendHome?.();
   releaseSpendHome = undefined;
   try {
@@ -169,6 +171,34 @@ async function send(config: OcxConfig, body: Record<string, unknown>) {
 }
 
 describe("managed native Messages over Anthropic OAuth", () => {
+  test("a singleton paused during native pacing returns 403 without dispatch", async () => {
+    const [id] = await seed(1);
+    const cfg = fixtureConfig();
+    cfg.providers.anthropic!.requestPacing = { enabled: true, maxConcurrentRequests: 1 };
+    const slot = await waitForProviderRequestSlot("anthropic", cfg.providers.anthropic!, "claude-sonnet-4-5");
+    const pending = send(cfg, { ...BODY, stream: false });
+    try {
+      for (let i = 0; i < 100 && providerRequestPacingStatus("anthropic", cfg.providers.anthropic!).queued === 0; i++) {
+        await new Promise(resolve => setTimeout(resolve, 5));
+      }
+      expect(providerRequestPacingStatus("anthropic", cfg.providers.anthropic!).queued).toBe(1);
+      await setAccountPaused("anthropic", id!, true);
+    } finally { slot.release(); }
+    const { response, text } = await pending;
+    expect(response.status).toBe(403);
+    expect(text).toContain("Resume");
+    expect(sent).toEqual([]);
+  });
+
+  test("an operator-paused singleton returns 403 and never sends", async () => {
+    const [id] = await seed(1);
+    await setAccountPaused("anthropic", id!, true);
+    const { response, text } = await send(fixtureConfig(), { ...BODY, stream: false });
+    expect(response.status).toBe(403);
+    expect(text).toContain("Resume");
+    expect(sent).toEqual([]);
+  });
+
   test("sends with the selected account's token and the OAuth shape, never the caller's credential", async () => {
     await seed(1);
     const { response, text, row } = await send(fixtureConfig(), { ...BODY, stream: true });

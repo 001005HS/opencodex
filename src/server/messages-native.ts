@@ -59,7 +59,7 @@ import {
   transientRetryPolicyFor,
 } from "../providers/key-failover";
 import { stampApiKeyAccountLabel, stampOAuthAccountLabel } from "../providers/label";
-import { publicOAuthAuthenticationErrorMessage } from "../oauth";
+import { OAuthAccountPausedError, publicOAuthAuthenticationErrorMessage } from "../oauth";
 import { hasAnthropicFailoverQuorum } from "../oauth/anthropic-routing";
 import { resolveProtocolSettings } from "../protocols/settings";
 import { addProtocolEntryReason, markProtocolBlocked } from "../protocols/trace";
@@ -367,6 +367,7 @@ export async function handleNativeMessages(options: HandleNativeMessagesOptions)
       upstream.abort();
       if (req.signal.aborted) return fail(499, "Client cancelled request", "api_error");
       if (error instanceof NativeOAuthSelectionChangedError) return fail(409, error.message, "api_error");
+      if (error instanceof OAuthAccountPausedError) return fail(403, publicOAuthAuthenticationErrorMessage(error), "permission_error");
       return fail(401, publicOAuthAuthenticationErrorMessage(error), "authentication_error");
     }
   } else {
@@ -463,7 +464,8 @@ export async function handleNativeMessages(options: HandleNativeMessagesOptions)
               if (!nativeOAuthBindingIsCurrent(oauthBinding)) {
                 try {
                   oauthBinding = await resolveNativeOAuthBinding(config);
-                } catch {
+                } catch (error) {
+                  if (error instanceof OAuthAccountPausedError) throw error;
                   throw new NativeOAuthSelectionChangedError();
                 }
                 rebuildFor(oauthProvider(oauthBinding));
@@ -570,6 +572,7 @@ export async function handleNativeMessages(options: HandleNativeMessagesOptions)
       return refusal;
     }
     if (sendError instanceof NativeOAuthSelectionChangedError) return fail(409, sendError.message, "api_error");
+    if (sendError instanceof OAuthAccountPausedError) return fail(403, publicOAuthAuthenticationErrorMessage(sendError), "permission_error");
     if (sendError instanceof NativeOpaqueStateRefusal) {
       logCtx.errorCode = "unsupported_feature";
       return fail(400, sendError.message, "invalid_request_error", "unsupported_feature");
