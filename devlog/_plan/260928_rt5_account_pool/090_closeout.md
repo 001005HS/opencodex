@@ -6,11 +6,11 @@ its current head; "dropped" names the reason.
 
 | Item | Outcome | PR | Head | Ubuntu CI | Notes |
 |---|---|---|---|---|---|
-| #6154 quota query backoff (fixes #6153) | open PR | #6179 | b531355702 | see CI | carry+fix, credit Terry Tan; Codex findings (post-reset key, hard-lock deadline) fixed |
-| #5831 stale main lock, two-window WHAM | split: fence PR #6183 (stacked on #6179) + held draft #6188 (stacked on #6183) | #6183 / #6188 | 81b3ee04fa / 09a756487a | see CI | owner review: parser exception held for provider confirmation; account list shows published cache |
-| #5099 Antigravity 403 validation rotation | open PR (draft) | #6180 | 761f3b1cfd | tests green; enforce-target needs screenshot | coordinator: capture Logs label or apply gui-screenshot-waived (no-local-runs rule) |
-| #5561 Anthropic model routes | open PR | #6181 | 8a6c7952fe | see CI | coordinator finding (route names in client errors) and Codex fallback Retry-After finding fixed |
-| #5956 low-quota protection (refs #5649) | open PR | #6182 | 3545ec36e0 | see CI | coordinator security review: per-server ledger, honest logged status |
+| #6154 quota query backoff (fixes #6153) | merged | #6179 | 34de6063a9 (dev) | green | carry+fix, credit Terry Tan; #6154 and #6153 closed by coordinator |
+| #5831 stale main lock, two-window WHAM | fence PR #6183 (base dev) + held draft #6188 (stacked) | #6183 / #6188 | d39cd0e162 / b8df28e51b | see CI | parser exception held for provider confirmation; #5831 closure left to maintainers |
+| #5099 Antigravity 403 validation rotation | merged | #6180 | 2b81455a87 (dev) | green | narrow slice; health store/probes deferred; #5099 closed with credit |
+| #5561 Anthropic model routes | merged | #6181 | dev (issue closed) | green | follow-ups (affinity preservation, GET validation) on codex/rt5-account-pool-followups |
+| #5956 low-quota protection (refs #5649) | open PR | #6182 | d57bd9bb2f | see CI | coordinator security fixes + two Codex findings fixed |
 
 ## Deferred
 
@@ -21,3 +21,6 @@ its current head; "dropped" names the reason.
   authority, invalidation and security review (see 050).
 - #5649 OS desktop notification: out of this backend-only train; the #5956
   slice ships a log line and an authenticated events API.
+
+
+Follow-up branch `codex/rt5-account-pool-followups` carries the non-blocking notes the coordinator recorded on #6179 (nonterminal 401/403 recovery cadence, epoch success clearing the stale shared deadline) and #6181 (affinity preservation across routes, validated settings GETs). Its PR opens after #6182 lands.
