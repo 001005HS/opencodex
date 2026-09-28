@@ -604,16 +604,12 @@ export function resolveAnthropicAccountForSession(
 
   const eligible = routeCandidates(getEligibleAnthropicAccounts(now), decision);
   if (decision && eligible.length === 0) {
-    let cooled: boolean;
-    if (decision.fallback) {
-      // A removed route member is not a candidate, but fallback can still use the
-      // ordinary pool once those accounts recover. Only usable stored accounts count.
-      const ordinary = set.accounts.filter(account =>
-        account.paused !== true && account.needsReauth !== true && isPoolCredentialUsable(account.id, now));
-      cooled = ordinary.length > 0 && ordinary.every(account => isCooled(account.id, now));
-    } else {
-      cooled = decision.accounts.every(id => set.accounts.some(account => account.id === id && isCooled(id, now)));
-    }
+    // Pause, removal and reauthentication are not cooldown evidence. Classify only
+    // usable members of this strict route (or the ordinary pool after fallback widens).
+    const recoverable = set.accounts.filter(account =>
+      (decision.fallback || decision.accounts.includes(account.id))
+      && account.paused !== true && account.needsReauth !== true && isPoolCredentialUsable(account.id, now));
+    const cooled = recoverable.length > 0 && recoverable.every(account => isCooled(account.id, now));
     return { accountId: null, reason: cooled ? "all-cooled" : "none", routePosition: decision.position };
   }
 

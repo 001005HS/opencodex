@@ -400,6 +400,12 @@ export async function prepareResponsesTransport(
   const refreshDispatchAdapter = async (requestParsed: OcxParsedRequest): Promise<ProviderAdapter> => {
     if (route.provider.authMode === "oauth") {
       if (!servingOAuthSnapshot || !await applyFailoverSnapshot(servingOAuthSnapshot, requestParsed)) {
+        // An explicit route may reject its stale proposal before resolving a new bearer.
+        // Preserve a local pause refusal instead of misclassifying it as a transport error.
+        if (route.providerName === "anthropic"
+          && resolveAnthropicAccountForSession(anthropicSessionKey, config, Date.now(), anthropicRouteDecision).reason === "paused") {
+          throw new OAuthAccountPausedError();
+        }
         throw new Error("OAuth account selection changed before dispatch");
       }
     } else {

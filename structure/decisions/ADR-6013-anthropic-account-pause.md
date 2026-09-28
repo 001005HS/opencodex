@@ -15,6 +15,9 @@
   mutation, endpoint and translated controls. Filter Anthropic eligibility at each selector
   and validate live pause state at credential, commit and physical-send boundaries. Persist
   successful in-flight refresh rotation, but leave paused health unchanged on late failure.
+  Keep typed local refusals across adapter/passthrough error projection after pacing, and
+  classify routed cooldown using only usable unpaused members so resume and retry guidance
+  remain distinct from login errors.
 - Why this approach: One authoritative row avoids config/auth split-write races and automatic
   cleanup follows account deletion. A UI-only toggle would still allow affinity, pool-off
   failover or a pre-wait bearer to select the paused account.

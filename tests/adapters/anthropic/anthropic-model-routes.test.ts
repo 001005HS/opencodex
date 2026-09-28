@@ -146,6 +146,45 @@ test.each([true, false])("pause while queued for pacing never sends the cached b
   expect(sends[0]).not.toContain("synthetic-access-0");
 });
 
+for (const adapter of ["anthropic", "openai-responses"] as const) {
+  for (const enabled of [true, false]) {
+    test(`${adapter}: pausing every account during pacing returns 403, pool enabled=${enabled}`, async () => {
+      const ids = await seed();
+      const cfg = config(ids, () => answer());
+      cfg.anthropicAccountPool!.enabled = enabled;
+      cfg.providers.anthropic!.adapter = adapter;
+      cfg.providers.anthropic!.requestPacing = { enabled: true, maxConcurrentRequests: 1 };
+      const slot = await waitForProviderRequestSlot("anthropic", cfg.providers.anthropic!, "claude-sonnet-4-5");
+      const pending = post(cfg);
+      try {
+        for (let i = 0; i < 100 && providerRequestPacingStatus("anthropic", cfg.providers.anthropic!).queued === 0; i++) {
+          await new Promise(resolve => setTimeout(resolve, 5));
+        }
+        expect(providerRequestPacingStatus("anthropic", cfg.providers.anthropic!).queued).toBe(1);
+        for (const id of ids) await setAccountPaused("anthropic", id, true);
+      } finally { slot.release(); }
+      const response = await pending;
+      expect(response.status).toBe(403);
+      expect(await response.json()).toMatchObject({ error: { type: "permission_error", message: expect.stringContaining("Resume") } });
+      expect(sends).toEqual([]);
+    });
+  }
+}
+
+test("strict route with paused and cooled members returns 429 from its remaining usable member", async () => {
+  const ids = await seed();
+  const cfg = config(ids, () => answer());
+  const decision = resolveAnthropicModelRoute(cfg, "claude-sonnet-4-5").decision!;
+  await setAccountPaused("anthropic", ids[1]!, true);
+  rotateAnthropicAccountOn429(cfg, ids[2]!, "60", null, Date.now(), null, decision);
+  expect(resolveAnthropicAccountForSession("", cfg, Date.now(), decision).reason).toBe("all-cooled");
+  const response = await post(cfg);
+  expect(response.status).toBe(429);
+  expect(Number(response.headers.get("retry-after"))).toBeGreaterThan(0);
+  expect(Number(response.headers.get("retry-after"))).toBeLessThanOrEqual(60);
+  expect(sends).toEqual([]);
+});
+
 test("matched route excludes active outsider before an upstream send", async () => {
   const ids = await seed();
   const cfg = config(ids, () => answer());
