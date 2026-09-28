@@ -961,6 +961,26 @@ export const clientConnectionSchema = z.object({
 export const codexPoolSchema = z.object({
   excludedPlans: z.array(z.string().trim().min(1)).optional(),
   startIdleWindows: z.boolean().optional(),
+  lowQuotaProtection: z.object({
+    enabled: z.boolean(),
+    threshold: z.number().finite().min(1).max(100),
+    actions: z.object({
+      pause: z.boolean(),
+      notify: z.boolean(),
+    }).strict(),
+    windows: z.object({
+      short: z.boolean(),
+      weekly: z.boolean(),
+    }).strict(),
+  }).strict().superRefine((policy, ctx) => {
+    if (!policy.enabled) return;
+    if (!policy.actions.pause && !policy.actions.notify) {
+      ctx.addIssue({ code: "custom", path: ["actions"], message: "enabled low-quota protection needs an action" });
+    }
+    if (!policy.windows.short && !policy.windows.weekly) {
+      ctx.addIssue({ code: "custom", path: ["windows"], message: "enabled low-quota protection needs a window" });
+    }
+  }).optional(),
 }).strict();
 
 /**
