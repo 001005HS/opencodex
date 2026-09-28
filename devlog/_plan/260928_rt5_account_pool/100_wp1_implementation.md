@@ -89,3 +89,25 @@ done:
 
 CodeRabbit stays ignored, and the lane never dispatches the manual
 `workflow_dispatch` cross-platform run.
+
+## Maintainer rule change (2026-09-28): no local tests
+
+The coordinator relayed a user order: no local `bun test`, `bun run test`,
+`test:changed`, `typecheck`, GUI or docs builds, or verification proxies. PR CI
+on GitHub is the only test evidence. The lane stopped its own in-flight
+`test:changed` runs. `pkill -f 'bun scripts/test.ts'` was machine-wide and may
+also have ended other lanes' runs, which the same order forbids anyway.
+Acceptance criterion 3 now reads "exits 0 in PR CI". Local checks are limited to
+`structure:check`, `privacy:scan` and `git diff --check`. Each PR's
+Verification section states that local tests were skipped by maintainer
+instruction and that CI is the evidence. The WP1 C gate and the quota-union
+check use the CI results of the pushed branches, plus a local `git merge-tree`
+for conflicts.
+
+Build-time scope expansions:
+
+- quota-backoff: `codex-auth-api.test.ts` is added to scope. Same-key concurrent
+  callers join the in-flight read and share its settled outcome, so exactly one
+  dispatch occurs and fresh proof still reaches the post-reset path.
+- antigravity: `src/lib/request-failure-model.ts` maps `oauth-account-403` to
+  `credential-rejected`. Other exhaustive roster consumers are checked too.
