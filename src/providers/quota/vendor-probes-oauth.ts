@@ -1,7 +1,7 @@
 import { effectiveCodexAuthAccountId, fetchMainAccountInfoSnapshot, listCodexAuthAccountsSnapshot } from "../../codex/auth-api";
 import { MAIN_CODEX_ACCOUNT_ID } from "../../codex/main-account";
 import { getValidAccessToken } from "../../oauth";
-import { getAccountCredential, getAccountSet } from "../../oauth/store";
+import { captureOAuthAccountSelection, getAccountCredential, getAccountCredentialWithStatus, getAccountSet } from "../../oauth/store";
 import { hydrateKiroAccountState, persistKiroAccountState } from "../kiro-account-state-disk";
 import { kiroProbeCurrent, kiroProbeIdentity } from "./kiro-account-probe";
 import { fetchMuseKeyQuotaSnapshot } from "../muse-key-quota";
@@ -339,7 +339,8 @@ export async function fetchAnthropicUsageQuota(accessToken: string): Promise<Pro
 export async function fetchAnthropicQuota(provider: string): Promise<ProviderQuotaReport | null> {
   // Capture the account we intend to probe before awaiting — a mid-flight active
   // switch must not seed the wrong account's cache with this response.
-  const probedAccountId = getAccountSet("anthropic")?.activeAccountId;
+  const selection = captureOAuthAccountSelection("anthropic");
+  const probedAccountId = selection?.accountId;
   const probedAccountKey = probedAccountId ? accountCacheKey("anthropic", probedAccountId) : null;
   const writerGeneration = captureConfigGeneration();
   let accessToken: string;
@@ -348,6 +349,10 @@ export async function fetchAnthropicQuota(provider: string): Promise<ProviderQuo
   } catch {
     return null;
   }
+  const row = probedAccountId ? getAccountCredentialWithStatus("anthropic", probedAccountId) : null;
+  if (!row || row.paused || row.needsReauth || row.credential.access !== accessToken
+    || captureOAuthAccountSelection("anthropic")?.revision !== selection?.revision
+    || getAccountSet("anthropic")?.activeAccountId !== probedAccountId) return null;
   const quota = await fetchAnthropicUsageQuota(accessToken);
   if (!quota) return null;
   // Share the active-account probe with the per-account cache so Providers-page
