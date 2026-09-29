@@ -21,7 +21,7 @@ produce its scoped 429 and Retry-After, not a login error. An already-dispatched
 retains a successful rotated credential without unpausing; a late failure cannot mark the
 paused row for reauthentication. Token Guardian and Anthropic quota probes recheck live
 pause, selection and bearer ownership after token resolution and before each usage send;
-a newly paused account makes no auxiliary request. Pool-off keeps a healthy active account;
+a newly paused account makes no auxiliary request. An account switch during a usage probe still seeds the probed account's quota cache but suppresses its stale provider report and reset observation. Pool-off keeps a healthy active account;
 pause/prior-429 recovery uses `only-eligible`, and logs name the committed account.
 
 > Decision record: [ADR-6013](../decisions/ADR-6013-anthropic-account-pause.md)

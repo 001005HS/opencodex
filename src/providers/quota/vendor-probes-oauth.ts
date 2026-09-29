@@ -18,6 +18,7 @@ import { aggregateCodexPoolCapacity, CODEX_CAPACITY_MAX_QUOTA_AGE_MS, type Codex
 import { asRecord, normalizePercent, normalizeResetAt, readQuotaJson, REQUEST_TIMEOUT_MS, toFiniteNumber } from "../quota-wire";
 import { providerCodexAccountMode } from "../registry";
 import {
+  accountReportCurrent,
   TERMINAL_QUOTA_FAILURE,
   hasQuotaRows,
   providerLabel,
@@ -363,7 +364,11 @@ export async function fetchAnthropicQuota(provider: string): Promise<ProviderQuo
       accountQuotaCache.set(probedAccountKey, { ts: Date.now(), quota });
     }
   }
-  return report(provider, "anthropic:oauth-usage", quota);
+  const result = report(provider, "anthropic:oauth-usage", quota);
+  if (result && probedAccountId) {
+    accountReportCurrent.set(result, () => getAccountSet("anthropic")?.activeAccountId === probedAccountId);
+  }
+  return result;
 }
 
 /**
