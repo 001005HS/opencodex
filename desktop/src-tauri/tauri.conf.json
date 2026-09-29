@@ -22,7 +22,8 @@
       "binaries/ocx"
     ],
     "resources": {
-      "resources/gui/dist": "gui/dist"
+      "resources/gui/dist": "gui/dist",
+      "resources/keyring": "keyring"
     },
     "icon": [
       "icons/icon.icns",
