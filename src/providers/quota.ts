@@ -420,7 +420,6 @@ async function fetchAccountQuota(
   if (explicitAccountReader(provider)) return fetchExplicitAccountQuota(provider, accountId, forceRefresh, providerConfig);
   if (provider === "anthropic" || provider === "kiro") hydrateAccountQuotaCache();
   const key = accountCacheKey(provider, accountId);
-  const selectionRevision = provider === "anthropic" ? getAccountSet(provider)?.selectionRevision : undefined;
   const writerGeneration = captureConfigGeneration();
   const kiroIdentity = provider === "kiro" ? kiroProbeIdentity(accountId) : undefined;
   const cachedCandidate = accountQuotaCache.get(key);
@@ -491,7 +490,7 @@ async function fetchAccountQuota(
           if (result.kind === "unavailable") quotaFailure = result.failure;
         } else if (provider === "anthropic") {
           const result = await probeAnthropicQuotaWithRecovery(accountId, token,
-            fresh => { assertAnthropicQuotaSendAllowed(accountId, token, selectionRevision); return fetchAnthropicUsageQuota(token, fresh); },
+            fresh => { assertAnthropicQuotaSendAllowed(accountId, token); return fetchAnthropicUsageQuota(token, fresh); },
             () => mayCommitAccountQuotaKey(key, writerGeneration));
           if (result && !result.isCurrent()) throw new AnthropicQuotaProbeOwnershipError("anthropic quota probe lost publication ownership");
           quota = result?.quota ?? null;

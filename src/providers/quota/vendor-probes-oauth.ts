@@ -363,7 +363,7 @@ export async function fetchAnthropicQuota(provider: string): Promise<ProviderQuo
   let anthropicCurrent: (() => boolean) | undefined;
   try {
     const result = await probeAnthropicQuotaWithRecovery(probedAccountId, accessToken,
-      fresh => { assertAnthropicQuotaSendAllowed(probedAccountId, accessToken, selection?.revision, true); return fetchAnthropicUsageQuota(accessToken, fresh); },
+      fresh => { assertAnthropicQuotaSendAllowed(probedAccountId, accessToken); return fetchAnthropicUsageQuota(accessToken, fresh); },
       () => mayCommitAccountQuotaKey(probedAccountKey, writerGeneration));
     if (result && !result.isCurrent()) return null;
     quota = result?.quota ?? null;
@@ -382,7 +382,9 @@ export async function fetchAnthropicQuota(provider: string): Promise<ProviderQuo
     }
   }
   const quotaReport = report(provider, "anthropic:oauth-usage", quota);
-  if (quotaReport && anthropicCurrent) accountReportCurrent.set(quotaReport, anthropicCurrent);
+  if (quotaReport && anthropicCurrent) {
+    accountReportCurrent.set(quotaReport, () => anthropicCurrent() && getAccountSet("anthropic")?.activeAccountId === probedAccountId);
+  }
   return quotaReport;
 }
 
