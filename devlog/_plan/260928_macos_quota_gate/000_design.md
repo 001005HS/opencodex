@@ -37,9 +37,9 @@ Baseline: `09f8e5ebfee1cf594181dfa8e29befa0bae7e06e` (`dev`).
 3. [#6079](https://github.com/lidge-jun/opencodex/pull/6079), reviewed head
    `4c6f745eb6dbc1dc9df95b2a5c34e75099655797`, is an open Windows-only draft. Its body
    separately documents Electron net.fetch attribution on Windows 26.924.2738.0 and
-   the macOS limitation. `usage-policy.ts:26-48` controls two WHAM booleans, not the
+   the macOS limitation. `src/codex/desktop-compatibility/usage-policy.ts:26-48` controls two WHAM booleans, not the
    selected provider. Conversation initialization passes unchanged. Natural-exhaustion
-   recovery is still unverified. `runtime-ownership.ts:15-27` binds exact PAC URL to
+   recovery is still unverified. `src/codex/desktop-compatibility/runtime-ownership.ts:15-27` binds exact PAC URL to
    a process-local runtime generation; this is useful lifecycle precedent, not a macOS fix.
 4. Baseline `src/codex/desktop-app/darwin.ts:25-66,174-195,249-260` discovers the
    bundle by identifier/realpath, scopes processes to the current uid, and relaunches
@@ -175,6 +175,12 @@ it may not return `independent` from an unfenced preview. Every member of either
 must itself have a final `independent` funding classification. A `chatgpt`, `mixed` or
 `unknown` member makes the entire reservation ineligible for independent admission,
 even if another member of the closure is independently funded.
+
+A 3xx response is terminal for admission: the reservation contract never fetches a
+`Location` and never treats a redirect destination as admitted. If redirects are ever
+supported, each resolved `Location` is a new immutable target that must pass the full
+funding classification, closure, generation, TLS and credential-attachment checks
+before dispatch.
 
 `previewRouteModel()` remains inspection-only. Current source explicitly defines it
 as capability inspection without combo selection state (`src/router.ts:987-990`), and
