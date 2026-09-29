@@ -341,11 +341,14 @@ describe("fetchProviderAccountQuotas", () => {
 
     let releaseUsage!: () => void;
     const usageGate = new Promise<void>(resolve => { releaseUsage = resolve; });
+    let usageStarted!: () => void;
+    const sent = new Promise<void>(resolve => { usageStarted = resolve; });
     let usageCalls = 0;
     globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
       const auth = new Headers(init?.headers).get("authorization") ?? "";
       if (auth.endsWith("token-first")) {
         usageCalls += 1;
+        usageStarted();
         await usageGate;
         return new Response(usageBody(70, 15), { status: 200 });
       }
@@ -364,6 +367,7 @@ describe("fetchProviderAccountQuotas", () => {
       },
     };
     const reportPromise = fetchProviderQuotaReports(config, true);
+    await sent;
     // Switch active mid-flight before Anthropic responds.
     await setActiveAccount("anthropic", second!.id);
     releaseUsage();
