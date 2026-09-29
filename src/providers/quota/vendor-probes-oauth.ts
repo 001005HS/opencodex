@@ -350,9 +350,9 @@ export async function fetchAnthropicQuota(provider: string): Promise<ProviderQuo
     return null;
   }
   const row = probedAccountId ? getAccountCredentialWithStatus("anthropic", probedAccountId) : null;
-  if (!row || row.paused || row.needsReauth || row.credential.access !== accessToken
-    || captureOAuthAccountSelection("anthropic")?.revision !== selection?.revision
-    || getAccountSet("anthropic")?.activeAccountId !== probedAccountId) return null;
+  // Pause, reauth and a replaced token stop the send; an active-account switch does not, because
+  // the reading is attributed to probedAccountId and still seeds that account's row.
+  if (!row || row.paused || row.needsReauth || row.credential.access !== accessToken) return null;
   const quota = await fetchAnthropicUsageQuota(accessToken);
   if (!quota) return null;
   // Share the active-account probe with the per-account cache so Providers-page

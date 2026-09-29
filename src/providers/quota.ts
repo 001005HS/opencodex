@@ -424,7 +424,6 @@ async function fetchAccountQuota(
   if (explicitAccountReader(provider)) return fetchExplicitAccountQuota(provider, accountId, forceRefresh, providerConfig);
   if (provider === "anthropic" || provider === "kiro") hydrateAccountQuotaCache();
   const key = accountCacheKey(provider, accountId);
-  const selectionRevision = provider === "anthropic" ? getAccountSet(provider)?.selectionRevision : undefined;
   const writerGeneration = captureConfigGeneration();
   const kiroIdentity = provider === "kiro" ? kiroProbeIdentity(accountId) : undefined;
   const cachedCandidate = accountQuotaCache.get(key);
@@ -469,7 +468,7 @@ async function fetchAccountQuota(
           if (result.kind === "unavailable") quotaFailure = result.failure;
         } else if (provider === "anthropic") {
           const row = getAccountCredentialWithStatus(provider, accountId);
-          if (!row || row.paused || row.needsReauth || row.credential.access !== token || getAccountSet(provider)?.selectionRevision !== selectionRevision) return { ts: Date.now(), quota: null, unavailable: true };
+          if (!row || row.paused || row.needsReauth || row.credential.access !== token) return { ts: Date.now(), quota: null, unavailable: true };
           quota = await fetchAnthropicUsageQuota(token);
         } else {
           return { ts: Date.now(), quota: null, unavailable: true };
