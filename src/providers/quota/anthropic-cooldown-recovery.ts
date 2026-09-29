@@ -83,11 +83,16 @@ export async function probeAnthropicQuotaWithRecovery(
 ): Promise<AnthropicQuotaRecoveryResult | null> {
   const probe = await captureAnthropicCooldownRecoveryProbe(accountId, accessToken);
   if (!probe) throw new AnthropicQuotaProbeOwnershipError("anthropic quota probe lost credential ownership");
-  const quota = await read(probe.requiresFreshDispatch);
-  if (!quota) return null;
+  let quota: ProviderQuota | null;
+  try { quota = await read(probe.requiresFreshDispatch); }
+  catch (error) {
+    if (!probe.isCurrent() || !mayPublish()) throw new AnthropicQuotaProbeOwnershipError("anthropic quota probe failure is stale");
+    throw error;
+  }
   if (!probe.isCurrent() || !mayPublish()) {
     throw new AnthropicQuotaProbeOwnershipError("anthropic quota probe result is stale");
   }
+  if (!quota) return null;
   const settlement = probe.settle(quota);
   if (settlement === "superseded") {
     throw new AnthropicQuotaProbeOwnershipError("anthropic quota probe lost cooldown ownership");

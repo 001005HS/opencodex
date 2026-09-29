@@ -335,8 +335,7 @@ export async function fetchAnthropicUsageQuota(
 ): Promise<ProviderQuota | null> {
   // Recovery evidence must be requested after the claimed cooldown. Joining an older request
   // can return after the 429 while still describing provider state from before that refusal.
-  if (requireFreshDispatch) return readAnthropicUsageQuota(accessToken);
-  const joinable = anthropicUsageInflight.get(accessToken);
+  const joinable = requireFreshDispatch ? undefined : anthropicUsageInflight.get(accessToken);
   if (joinable) return joinable;
 
   const probe = readAnthropicUsageQuota(accessToken).finally(() => {
@@ -379,8 +378,8 @@ export async function fetchAnthropicQuota(provider: string): Promise<ProviderQuo
   // loads do not double-hit Anthropic's rate-limited usage endpoint.
   if (probedAccountId && probedAccountKey) {
     const stillOwnsToken = getAccountCredential("anthropic", probedAccountId)?.access === accessToken;
-    if (stillOwnsToken && mayCommitAccountQuotaKey(probedAccountKey, writerGeneration)) {
-      accountQuotaCache.set(probedAccountKey, { ts: Date.now(), quota });
+    if (stillOwnsToken && anthropicCurrent?.() && mayCommitAccountQuotaKey(probedAccountKey, writerGeneration)) {
+      accountQuotaCache.set(probedAccountKey, { ts: Date.now(), quota, isCurrent: anthropicCurrent });
     }
   }
   const quotaReport = report(provider, "anthropic:oauth-usage", quota);

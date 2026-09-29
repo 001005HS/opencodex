@@ -74,6 +74,7 @@ the [bounded ingestion contract](transports/inventory.md#bounded-response-ingest
 
 Anthropic model-scoped quota labels in `src/providers/quota/vendor-probes-oauth.ts` publish
 only canonical Fable, Opus, or Sonnet labels after removing terminal controls; unknown upstream display names are omitted.
+Anthropic usage flights replace older joinable transports when recovery requires a fresh read. `src/providers/quota/anthropic-cooldown-recovery.ts` fences successful, empty, and rejected results by credential and cooldown generation before cache publication. Live account quota entries retain that currentness predicate; routing and account-list readers reject a superseded entry before its TTL expires. Persisted and header-only observations carry no live probe predicate of their own.
 
 MiniMax and MiniMax CN Coding Plan quota in `src/providers/quota/vendor-probes-key.ts` uses the
 region-matched `/v1/api/openplatform/coding_plan/remains` endpoint. It publishes the `general`

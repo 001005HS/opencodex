@@ -11,6 +11,7 @@ import { getAccountSet, saveCredential } from "../../../src/oauth/store";
 import { clearAccountQuotaCache, fetchProviderAccountQuotas, getCachedProviderAccountQuota } from "../../../src/providers/quota";
 import { fetchAnthropicUsageQuota } from "../../../src/providers/quota/vendor-probes-oauth";
 import { setAnthropicQuotaAfterSettlementForTests } from "../../../src/providers/quota/anthropic-cooldown-recovery";
+import { accountCacheKey, accountQuotaCache } from "../../../src/providers/quota/account-cache";
 import type { OcxConfig } from "../../../src/types";
 import { removeTreeWithRetry } from "../../helpers/remove-tree";
 
@@ -232,5 +233,96 @@ describe("Anthropic reset-derived cooldown recovery", () => {
     expect(getAnthropicAccountHealthSnapshot(id)).toBeNull();
     finishOld(quotaResponse(100, 100));
     await oldProbe;
+  });
+
+  test("a post-recovery third flight cannot rejoin the pre-429 usage request", async () => {
+    const id = await seed();
+    let finishOld!: (response: Response) => void;
+    const oldResponse = new Promise<Response>(resolve => { finishOld = resolve; });
+    let finishThird!: (response: Response) => void;
+    const thirdResponse = new Promise<Response>(resolve => { finishThird = resolve; });
+    let calls = 0;
+    globalThis.fetch = (async () => {
+      calls += 1;
+      return calls === 1 ? oldResponse : calls === 2 ? quotaResponse(10, 20) : thirdResponse;
+    }) as typeof fetch;
+
+    const oldProbe = fetchProviderAccountQuotas("anthropic", true);
+    while (calls < 1) await Promise.resolve();
+    rotateAnthropicAccountOn429(config, id, null, null, Date.now(), rejected(Date.now() + 60 * 60_000));
+    await fetchProviderAccountQuotas("anthropic", true);
+    const thirdTransport = fetchAnthropicUsageQuota("access-old");
+    const thirdProbe = fetchProviderAccountQuotas("anthropic", true);
+    finishOld(quotaResponse(100, 100));
+    await oldProbe;
+    if (calls === 3) finishThird(quotaResponse(30, 40));
+    await thirdTransport;
+    const [third] = await thirdProbe;
+    expect(calls).toBe(3);
+    expect(third?.quota).toMatchObject({ fiveHourPercent: 30, weeklyPercent: 40 });
+    expect(getCachedProviderAccountQuota("anthropic", id)).toMatchObject({ fiveHourPercent: 30, weeklyPercent: 40 });
+  });
+
+  for (const failure of ["null", "reject"] as const) {
+    test(`superseded ${failure} cannot replace recovered cache availability or timestamp`, async () => {
+      const id = await seed();
+      let finishOld!: (response: Response) => void;
+      let rejectOld!: (reason: Error) => void;
+      const oldResponse = new Promise<Response>((resolve, reject) => { finishOld = resolve; rejectOld = reject; });
+      let calls = 0;
+      globalThis.fetch = (async () => {
+        calls += 1;
+        return calls === 1 ? oldResponse : quotaResponse(10, 20);
+      }) as typeof fetch;
+
+      const oldProbe = fetchProviderAccountQuotas("anthropic", true);
+      while (calls < 1) await Promise.resolve();
+      rotateAnthropicAccountOn429(config, id, null, null, Date.now(), rejected(Date.now() + 60 * 60_000));
+      await fetchProviderAccountQuotas("anthropic", true);
+      const recovered = accountQuotaCache.get(accountCacheKey("anthropic", id));
+      expect(recovered?.unavailable).toBeUndefined();
+      if (failure === "null") finishOld(new Response("busy", { status: 503 }));
+      else rejectOld(new Error("timeout"));
+      await oldProbe;
+
+      expect(accountQuotaCache.get(accountCacheKey("anthropic", id))).toBe(recovered);
+      expect(getCachedProviderAccountQuota("anthropic", id)).toMatchObject({ fiveHourPercent: 10, weeklyPercent: 20 });
+      const [cached] = await fetchProviderAccountQuotas("anthropic");
+      expect(cached?.unavailable).toBeUndefined();
+      expect(calls).toBe(2);
+    });
+  }
+
+  test("credential replacement invalidates a live success on routing and account reads", async () => {
+    const id = await seed();
+    let calls = 0;
+    globalThis.fetch = (async () => { calls += 1; return quotaResponse(calls === 1 ? 10 : 30, 20); }) as typeof fetch;
+    const [live] = await fetchProviderAccountQuotas("anthropic", true);
+    expect(live?.isCurrent?.()).toBe(true);
+    expect(getCachedProviderAccountQuota("anthropic", id)?.fiveHourPercent).toBe(10);
+
+    await saveCredential("anthropic", {
+      access: "access-new", refresh: "refresh-new", expires: Date.now() + 60 * 60_000,
+      accountId: "upstream-account", email: "recovery@example.test",
+    });
+    expect(live?.isCurrent?.()).toBe(false);
+    expect(getCachedProviderAccountQuota("anthropic", id)).toBeNull();
+    const [fresh] = await fetchProviderAccountQuotas("anthropic");
+    expect(calls).toBe(2);
+    expect(fresh?.quota?.fiveHourPercent).toBe(30);
+  });
+
+  test("a later cooldown invalidates live cached success before the account TTL", async () => {
+    const id = await seed();
+    let calls = 0;
+    globalThis.fetch = (async () => { calls += 1; return quotaResponse(calls === 1 ? 10 : 30, 20); }) as typeof fetch;
+    const [live] = await fetchProviderAccountQuotas("anthropic", true);
+    expect(live?.isCurrent?.()).toBe(true);
+    rotateAnthropicAccountOn429(config, id, null, null, Date.now(), rejected(Date.now() + 60 * 60_000));
+    expect(live?.isCurrent?.()).toBe(false);
+    expect(getCachedProviderAccountQuota("anthropic", id)).toBeNull();
+    const [fresh] = await fetchProviderAccountQuotas("anthropic");
+    expect(calls).toBe(2);
+    expect(fresh?.quota?.fiveHourPercent).toBe(30);
   });
 });
