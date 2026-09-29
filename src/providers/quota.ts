@@ -431,9 +431,12 @@ async function fetchAccountQuota(
     return provider === "anthropic" ? { ...cached, quota: normalizeAnthropicQuota(cached.quota, Date.now()) } : cached;
   }
   const flightKey = provider === "anthropic" ? anthropicCooldownFlightKey(key, accountId) : key;
+  const flightCurrent = () => provider !== "anthropic" || anthropicCooldownFlightKey(key, accountId) === flightKey;
   const joinable = accountQuotaInflight.get(flightKey);
   if (joinable) {
     const joined = await joinable;
+    const joinedCurrent = joined.isCurrent?.();
+    if (joinedCurrent === false || (!flightCurrent() && joinedCurrent !== true)) return { ts: Date.now(), quota: null, unavailable: true };
     return provider !== "kiro" || joined.identity === kiroIdentity
       ? joined : fetchAccountQuota(provider, accountId, true, providerConfig);
   }
@@ -447,6 +450,7 @@ async function fetchAccountQuota(
     };
     const diagnosticFields = () => quotaFailure && quotaFailureIsCurrent() ? { quotaFailure, quotaFailureIsCurrent } : {};
     const unavailable = (): AccountQuotaCacheEntry => {
+      if (!flightCurrent()) return { ts: Date.now(), quota: null, unavailable: true };
       const previous = accountQuotaCache.get(key);
       const retained = provider === "anthropic" && previous?.isCurrent?.() === false ? undefined : previous;
       const entry: AccountQuotaCacheEntry = {
@@ -474,6 +478,7 @@ async function fetchAccountQuota(
         quota = kiroSnapshot?.quota ?? null;
       } else {
         const token = await getTokenForAccountQuotaProbe(provider, accountId);
+        if (!flightCurrent()) throw new AnthropicQuotaProbeOwnershipError("anthropic quota flight is stale");
         if (provider === "google-antigravity") {
           // Per-account Gem/Cla windows (#1082). The project id is part of the stored
           // credential; without it the probe cannot be made, and that is "unavailable",

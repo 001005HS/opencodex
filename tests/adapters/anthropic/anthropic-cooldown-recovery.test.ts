@@ -7,7 +7,7 @@ import {
   getAnthropicAccountHealthSnapshot,
   rotateAnthropicAccountOn429,
 } from "../../../src/oauth/anthropic-routing";
-import { getAccountSet, saveCredential } from "../../../src/oauth/store";
+import { getAccountSet, saveAccountCredential, saveCredential } from "../../../src/oauth/store";
 import { clearAccountQuotaCache, fetchProviderAccountQuotas, getCachedProviderAccountQuota } from "../../../src/providers/quota";
 import { fetchAnthropicUsageQuota } from "../../../src/providers/quota/vendor-probes-oauth";
 import { setAnthropicQuotaAfterSettlementForTests } from "../../../src/providers/quota/anthropic-cooldown-recovery";
@@ -292,6 +292,43 @@ describe("Anthropic reset-derived cooldown recovery", () => {
       expect(calls).toBe(2);
     });
   }
+
+  test("an old token-resolution failure cannot replace a newer recovered quota entry", async () => {
+    const id = await seed();
+    await saveAccountCredential("anthropic", id, {
+      access: "access-expired", refresh: "refresh-old", expires: Date.now() - 60_000,
+      accountId: "upstream-account", email: "recovery@example.test",
+    });
+    let failRefresh!: (error: Error) => void;
+    let refreshStarted!: () => void;
+    const refreshPending = new Promise<Response>((_resolve, reject) => { failRefresh = reject; });
+    const started = new Promise<void>(resolve => { refreshStarted = resolve; });
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      if (String(input).includes("/v1/oauth/token")) { refreshStarted(); return refreshPending; }
+      return quotaResponse(10, 20);
+    }) as typeof fetch;
+
+    const older = fetchProviderAccountQuotas("anthropic", true);
+    await started;
+    await saveAccountCredential("anthropic", id, {
+      access: "access-recovered", refresh: "refresh-new", expires: Date.now() + 60 * 60_000,
+      accountId: "upstream-account", email: "recovery@example.test",
+    });
+    rotateAnthropicAccountOn429(config, id, null, null, Date.now(), rejected(Date.now() + 60 * 60_000));
+    const [newer] = await fetchProviderAccountQuotas("anthropic", true);
+    expect(newer?.unavailable).toBeUndefined();
+    const key = accountCacheKey("anthropic", id);
+    const recovered = accountQuotaCache.get(key);
+    expect(recovered?.quota).toMatchObject({ fiveHourPercent: 10, weeklyPercent: 20 });
+
+    failRefresh(new Error("old refresh failed"));
+    const [stale] = await older;
+    expect(stale?.unavailable).toBe(true);
+    expect(accountQuotaCache.get(key)).toBe(recovered);
+    expect(accountQuotaCache.get(key)?.ts).toBe(recovered?.ts);
+    const [cached] = await fetchProviderAccountQuotas("anthropic");
+    expect(cached?.unavailable).toBeUndefined();
+  });
 
   test("credential replacement invalidates a live success on routing and account reads", async () => {
     const id = await seed();
