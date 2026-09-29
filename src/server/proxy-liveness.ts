@@ -281,7 +281,7 @@ async function attestFencedIdentity(
   const challenge = (io.createChallengeFn ?? createLocalAttestationChallenge)();
   // One proof failure is definitive and never retried; a transport failure only means
   // the listener did not answer yet, so it gets the same bounded retry the identity
-  // probe uses ??"did not answer" is not "not ours" (#6198). The challenge is minted
+  // probe uses — "did not answer" is not "not ours" (#6198). The challenge is minted
   // once: a retried attempt proves the same fresh nonce, not a replayed proof.
   const sleepFn = io.sleepFn ?? ((ms: number) => new Promise<void>(r => setTimeout(r, ms)));
   const nowFn = io.nowFn ?? Date.now;
