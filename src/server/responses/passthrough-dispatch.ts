@@ -261,6 +261,18 @@ export async function preparePassthroughExchange(
     const codexSafetyBufferingOptions = isCanonicalOpenAiForwardProvider(route.provider)
       ? codexSafetyBufferingFilterOptions(config)
       : undefined;
+    // The canonical ChatGPT adapter coerces only its final outbound copy to `stream:true` so the
+    // separately captured client preference can still select JSON delivery. Recovery runs before
+    // delivery, though, and must classify the bytes the upstream was actually asked to send:
+    // ChatGPT may omit Content-Type, so consulting `parsed.stream` here would mistake its SSE body
+    // for non-streaming JSON and skip both opaque-state and safe-reset recovery.
+    const upstreamRequestsStream = parsed.stream === true
+      || isCanonicalOpenAiForwardProvider(route.provider);
+    // A JSON client still needs the canonical destination's HTTP/SSE response so delivery can
+    // validate and fold it. Letting the forced `stream:true` body select the WebSocket transport
+    // bypasses manual HTTP redirects and can turn a real 3xx into a connect timeout.
+    const canonicalBufferedJson = clientRequestedStream !== true
+      && isCanonicalOpenAiForwardProvider(route.provider);
     const imageGenCallAliases = route.provider.authMode === "forward"
       ? new Map<string, { namespace: string; name: string }>()
       : imageGenToolCallAliases(toolBridgeMaps.toolNsMap, parsed._rawBody, translatorBudget);
@@ -961,8 +973,9 @@ export async function preparePassthroughExchange(
             method: request.method,
             headers: request.headers,
             body: request.body,
-          }, recovery), upstream.signal, connectMs, parsed.stream,
+          }, recovery), upstream.signal, connectMs, upstreamRequestsStream,
             providerFetch(route.provider, options.codexWsRuntimeIdentity, {
+              httpOnly: canonicalBufferedJson,
               nativeControl: nativeResponseControlEligible(route.provider, options.nativeControl) && options.inboundTransport === "websocket" && !options.comboAttempt
                 && responseEffects.plaintextV2AgentMessageToolNames.size === 0
                 ? options.nativeControl : undefined,
@@ -1065,12 +1078,13 @@ export async function preparePassthroughExchange(
               method: request.method,
               headers: request.headers,
               body: request.body,
-            }, innerRecovery), upstream.signal, connectMs, parsed.stream,
+            }, innerRecovery), upstream.signal, connectMs, upstreamRequestsStream,
               providerFetch(route.provider, options.codexWsRuntimeIdentity, {
-              nativeControl: nativeResponseControlEligible(route.provider, options.nativeControl) && options.inboundTransport === "websocket" && !options.comboAttempt
-                && responseEffects.plaintextV2AgentMessageToolNames.size === 0
-                ? options.nativeControl : undefined,
-              dispatchOverride: oauthDispatch(request),
+                httpOnly: canonicalBufferedJson,
+                nativeControl: nativeResponseControlEligible(route.provider, options.nativeControl) && options.inboundTransport === "websocket" && !options.comboAttempt
+                  && responseEffects.plaintextV2AgentMessageToolNames.size === 0
+                  ? options.nativeControl : undefined,
+                dispatchOverride: oauthDispatch(request),
                 providerName: route.providerName,
                 modelId: route.modelId,
                 onCodexWsQuota: codexWsQuotaObserver(admissionState.authCtx, route.provider, route.modelId),
@@ -1173,6 +1187,7 @@ export async function preparePassthroughExchange(
         // rather than a second one to announce.
         const oauthReplayExecutor = storedPoolReplayDispatchNotifier(
           providerFetch(route.provider, options.codexWsRuntimeIdentity, {
+            httpOnly: canonicalBufferedJson,
             nativeControl: nativeResponseControlEligible(route.provider, options.nativeControl) && options.inboundTransport === "websocket" && !options.comboAttempt
               && responseEffects.plaintextV2AgentMessageToolNames.size === 0
               ? options.nativeControl : undefined,
@@ -1202,7 +1217,7 @@ export async function preparePassthroughExchange(
               }, recovery),
               upstream.signal,
               connectMs,
-              parsed.stream,
+              upstreamRequestsStream,
               oauthReplayExecutor,
               route.provider.authMode === "forward",
             ).then(adoptObservedResponse);
@@ -1320,12 +1335,13 @@ export async function preparePassthroughExchange(
               method: request.method,
               headers: request.headers,
               body: request.body,
-            }, recovery), upstream.signal, connectMs, parsed.stream,
+            }, recovery), upstream.signal, connectMs, upstreamRequestsStream,
               providerFetch(route.provider, options.codexWsRuntimeIdentity, {
-              nativeControl: nativeResponseControlEligible(route.provider, options.nativeControl) && options.inboundTransport === "websocket" && !options.comboAttempt
-                && responseEffects.plaintextV2AgentMessageToolNames.size === 0
-                ? options.nativeControl : undefined,
-              dispatchOverride: oauthDispatch(request),
+                httpOnly: canonicalBufferedJson,
+                nativeControl: nativeResponseControlEligible(route.provider, options.nativeControl) && options.inboundTransport === "websocket" && !options.comboAttempt
+                  && responseEffects.plaintextV2AgentMessageToolNames.size === 0
+                  ? options.nativeControl : undefined,
+                dispatchOverride: oauthDispatch(request),
                 providerName: route.providerName,
                 modelId: route.modelId,
                 onCodexWsQuota: codexWsQuotaObserver(admissionState.authCtx, route.provider, route.modelId),
@@ -1454,12 +1470,13 @@ export async function preparePassthroughExchange(
               method: request.method,
               headers: request.headers,
               body: request.body,
-            }, recovery), upstream.signal, connectMs, parsed.stream,
+            }, recovery), upstream.signal, connectMs, upstreamRequestsStream,
               providerFetch(route.provider, options.codexWsRuntimeIdentity, {
-              nativeControl: nativeResponseControlEligible(route.provider, options.nativeControl) && options.inboundTransport === "websocket" && !options.comboAttempt
-                && responseEffects.plaintextV2AgentMessageToolNames.size === 0
-                ? options.nativeControl : undefined,
-              dispatchOverride: oauthDispatch(request),
+                httpOnly: canonicalBufferedJson,
+                nativeControl: nativeResponseControlEligible(route.provider, options.nativeControl) && options.inboundTransport === "websocket" && !options.comboAttempt
+                  && responseEffects.plaintextV2AgentMessageToolNames.size === 0
+                  ? options.nativeControl : undefined,
+                dispatchOverride: oauthDispatch(request),
                 providerName: route.providerName,
                 modelId: route.modelId,
                 onCodexWsQuota: codexWsQuotaObserver(admissionState.authCtx, route.provider, route.modelId),
@@ -1571,7 +1588,8 @@ export async function preparePassthroughExchange(
           upstream,
           connectMs,
           passthroughEstimate,
-          stream: parsed.stream,
+          stream: upstreamRequestsStream,
+          httpOnly: canonicalBufferedJson,
           onResponse: (response, retryAuthCtx, retryRequest) => {
             adoptCodexWsStage(response);
             captureAffinityResponse(
@@ -1621,7 +1639,7 @@ export async function preparePassthroughExchange(
     const recoveryContentType = upstreamResponse.headers.get("content-type")?.toLowerCase() ?? "";
     const streamedFunctionOutputCandidate = upstreamResponse.ok
       && !!upstreamResponse.body
-      && (recoveryContentType.includes("text/event-stream") || (!recoveryContentType && parsed.stream))
+      && (recoveryContentType.includes("text/event-stream") || (!recoveryContentType && upstreamRequestsStream))
       && !opaqueBlobRecoveryGuard.attempted
       && !configuredTransientSendBudgetExhausted()
       && outboundResponsesBodyCarriesEncryptedFunctionOutput(request.body);
@@ -1639,7 +1657,7 @@ export async function preparePassthroughExchange(
           if (decryptRejection) preflightLog.upstreamError = ENCRYPTED_FUNCTION_OUTPUT_REJECTION;
           return decryptRejection;
         }, {
-          allowMissingContentType: !recoveryContentType && parsed.stream,
+          allowMissingContentType: !recoveryContentType && upstreamRequestsStream,
           replayReadErrors: true,
         });
       if (options.abortSignal?.aborted) return transportFailureResponse(options.abortSignal.reason);
@@ -1789,7 +1807,7 @@ export async function preparePassthroughExchange(
       && !(options.nativeControl && options.inboundTransport === "websocket")
       && ambiguousResend() !== undefined
       && remainingTransientSendBudget(transientSendAttempts()) > 0
-      && (streamRecoveryContentType.includes("text/event-stream") || (!streamRecoveryContentType && parsed.stream));
+      && (streamRecoveryContentType.includes("text/event-stream") || (!streamRecoveryContentType && upstreamRequestsStream));
     if (protocolRecoveryCandidate) {
       upstreamResponse = deferProtocolSafeResetRecovery(
         upstreamResponse,
@@ -1808,11 +1826,11 @@ export async function preparePassthroughExchange(
             authorize: () => authorizeResendForRecovery(stage, "connection-reset", ambiguousResend()).allowed,
             acceptResponse: candidate => {
               const type = candidate.headers.get("content-type")?.toLowerCase() ?? "";
-              return type.includes("text/event-stream") || (!type && parsed.stream);
+              return type.includes("text/event-stream") || (!type && upstreamRequestsStream);
             },
           },
         ),
-        { allowMissingContentType: !streamRecoveryContentType && parsed.stream },
+        { allowMissingContentType: !streamRecoveryContentType && upstreamRequestsStream },
       );
     }
     break;

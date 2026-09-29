@@ -510,6 +510,16 @@ export function createResponsesPassthroughAdapter(provider: OcxProviderConfig): 
         const originalChoice = isPlainObject(parsed._rawBody) ? parsed._rawBody.tool_choice : undefined;
         finalBody = normalizeMuseToolChoice(finalBody, originalChoice);
       }
+      // The canonical ChatGPT Codex endpoint is SSE-only even though the public Responses surface
+      // permits an omitted/false `stream`. Keep the client's delivery preference on `parsed.stream`
+      // and coerce only this final upstream copy; passthrough delivery folds the terminal stream
+      // back into JSON for that client. `store` is intentionally untouched here because explicit
+      // caller storage semantics are independent of the transport required by the destination.
+      if (isCanonicalOpenAiForwardProvider(provider)
+        && isPlainObject(finalBody)
+        && finalBody.stream !== true) {
+        finalBody = { ...finalBody, stream: true };
+      }
       if (isCanonicalOpenAiForwardProvider(provider)) {
         const routingHeaders = new Headers(headers);
         applyCodexRoutingHint(routingHeaders, finalBody);
