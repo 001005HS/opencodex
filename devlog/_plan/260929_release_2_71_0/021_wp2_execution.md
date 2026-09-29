@@ -42,3 +42,11 @@ D9 (architect, wp2): the union touches eight docs-site pages and no other gate b
 (deploy-docs.yml runs on main only), so an Astro build is added. Accepted. The architect confirmed
 no path under desktop/, go/, app/ or native/ is touched, so the macOS/cargo helper suites are not
 needed; root `bun run test` does not run gui/tests, so the separate gui gate stays.
+
+Audit (Kimi 01a0eb66, PASS). Dispositions: the deps gate ran when the verification worktree was
+created (`bun install` root and gui at 441aeb179e, lockfiles unchanged vs dev). The "fail in both"
+classification compares the named test and its error text, not only the file, because #6198 and
+#6209 touch the spawned-CLI area where the base has load timeouts. Union finding 1 (F1 paths "do
+not exist") is rebutted: both files exist on the #6079 head that the paragraph describes
+(`git ls-tree rt/pr-6079`: src/codex/desktop-compatibility/usage-policy.ts and runtime-ownership.ts,
+with the cited line ranges matching).
