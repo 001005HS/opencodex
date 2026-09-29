@@ -273,6 +273,16 @@ healthy request can retry; stable missing files still cache as empty. Symlinked 
 directories pass through canonical confinement: inside-cwd targets load, outside targets
 do not. The 30-second, 128-entry cache rechecks capacity at insertion time.
 
+## TokenLab chat provider
+
+The `tokenlab` key preset uses the existing OpenAI Chat adapter at
+`https://api.tokenlab.sh/v1`. Registry-owned discovery requests the chat category and requires
+the row's `tokenlab.capabilities` to include `tool-use`, excluding non-chat and unclassified
+rows. A supplied key scopes the catalog to its model permissions and delivery policy; the
+anonymous catalog does not establish authentication. Newly promoted preset collision protection
+preserves an older same-named custom destination. `tests/providers/tokenlab-provider.test.ts`
+covers derived entry points, scoped discovery, destination preservation and model routing.
+
 ## TypeSafe JEV decision provider
 
 `src/providers/registry/entries-extended.ts` owns the canonical `jev` key preset at
