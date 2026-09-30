@@ -366,9 +366,13 @@ short-window tuple when secondary and tertiary windows are explicitly null or al
 Long means **at least 24 hours**, matching the parser's short/long discriminator; a one-day primary
 qualifies, not only a seven-day or monthly window. The policy trusts that one reported topology;
 it does not require repeated observations or independently confirm upstream window completeness.
-An omitted tertiary is also accepted for the two-window WHAM shape only when secondary is explicitly null,
-`rate_limit.allowed` is exactly true, and `rate_limit.limit_reached` is exactly false; the measured long primary is still required.
-Other omissions, a long auxiliary window without a usage reading, an unknown primary duration, partial headers, or invalid usage cannot prove that the
+Omitted secondary/tertiary fields remain partial even when `rate_limit.allowed` is true and
+`rate_limit.limit_reached` is false: these flags do not establish response completeness or bound an
+omitted window's usage below 98%. For every plan, a measured long primary with null secondary and
+omitted tertiary updates long-window usage but preserves the known blocking short tuple, including
+its observation and reset timestamps. A fresh measured short-window reading below 98% can release
+that short block; an elapsed reset alone cannot. A long auxiliary window without a usage reading,
+an unknown primary duration, partial headers, or invalid usage cannot prove that the
 short window disappeared. Replacement proof belongs only to that observation and is never persisted;
 the resulting weekly/monthly window still blocks at 98%. This prevents old short-window exhaustion
 from surviving indefinitely on a now weekly/monthly account. Coverage lives in

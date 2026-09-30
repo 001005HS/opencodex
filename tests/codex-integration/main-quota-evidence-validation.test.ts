@@ -239,18 +239,54 @@ describe("main policy window replacement", () => {
     expect(getMainAccountHardLockStatus(cfg).state).toBe("blocked");
   });
 
-  test.each([64, 97.99, 98, 100])("allowed two-window WHAM retires stale short evidence at %s percent", percent => {
+  test.each([64, 97.99, 98, 100])("allowed two-window WHAM retains stale short evidence at %s percent", percent => {
     retainedShort();
-    // Sanitized shape observed on an updated Windows install: tertiary is absent, not null.
+    // Synthetic partial topology: flags do not establish the omitted short window's usage.
     const data: WhamUsageResponse = { plan_type: "prolite", rate_limit: {
       allowed: true, limit_reached: false,
       primary_window: { used_percent: percent, limit_window_seconds: weeklySeconds }, secondary_window: null,
     } };
-    expect(parseMainPolicyUsageQuota(data)?.shortWindowAbsent).toBe(true);
+    expect(parseMainPolicyUsageQuota(data)?.shortWindowAbsent).toBeUndefined();
     publish(data);
-    expect(getMainPolicyQuota()?.shortPercent).toBeUndefined();
+    expect(getMainPolicyQuota()?.shortPercent).toBe(100);
     expect(getMainPolicyQuota()?.weeklyPercent).toBe(percent);
     expect(getMainPolicyQuota()).not.toHaveProperty("shortWindowAbsent");
+    expect(getMainAccountHardLockStatus(cfg).state).toBe("blocked");
+  });
+
+  for (const plan of [undefined, "prolite", "plus", "team"]) {
+    test.each([99, 100])(`${plan} two-window flags cannot erase a live short%s block`, percent => {
+      const reset = Math.floor(Date.now() / 1000) + 3600;
+      publish({ plan_type: plan, rate_limit: {
+        primary_window: { used_percent: percent, limit_window_seconds: 18_000, reset_at: reset },
+        secondary_window: { used_percent: 35, limit_window_seconds: weeklySeconds },
+      } });
+      const before = getMainPolicyQuota()!;
+      publish({ plan_type: plan, rate_limit: {
+        allowed: true, limit_reached: false,
+        primary_window: { used_percent: 64, limit_window_seconds: weeklySeconds }, secondary_window: null,
+      } });
+      const after = getMainPolicyQuota()!;
+      for (const key of ["shortPercent", "shortResetAt", "shortObservedAt", "shortWindowSeconds"] as const) {
+        expect(after[key]).toBe(before[key]);
+      }
+      expect(after.weeklyPercent).toBe(64);
+      expect(getMainAccountHardLockStatus(cfg)).toEqual({ enabled: true, state: "blocked", resetAt: reset * 1000 });
+    });
+  }
+
+  test.each([97.99, 98, 100])("a measured short reading recovers partial two-window usage only below 98: %s", percent => {
+    retainedShort();
+    publish({ rate_limit: {
+      allowed: true, limit_reached: false,
+      primary_window: { used_percent: 64, limit_window_seconds: weeklySeconds }, secondary_window: null,
+    } });
+    expect(getMainAccountHardLockStatus(cfg).state).toBe("blocked");
+    publish({ rate_limit: {
+      primary_window: { used_percent: percent, limit_window_seconds: 18_000 },
+      secondary_window: { used_percent: 64, limit_window_seconds: weeklySeconds },
+    } });
+    expect(getMainPolicyQuota()?.shortPercent).toBe(percent);
     expect(getMainAccountHardLockStatus(cfg).state).toBe(percent < 98 ? "ready" : "blocked");
   });
 

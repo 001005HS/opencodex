@@ -114,7 +114,7 @@ export type WhamUsageResponse = {
   rate_limit?: {
     allowed?: unknown;
     limit_reached?: unknown;
-    // WHAM can omit optional tertiary; an absent secondary is explicitly null.
+    // Omitted windows remain unknown to policy; explicit null reports an absent window.
     primary_window?: WhamUsageWindow | null;
     secondary_window?: WhamUsageWindow | null;
     tertiary_window?: WhamUsageWindow | null;
