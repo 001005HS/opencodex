@@ -43,7 +43,7 @@ export interface RequestSpendTracker extends RequestSendObserver, RequestSpendSe
 export function createRequestSpendTracker(
   logCtx: Pick<
     RequestLogContext,
-    "provider" | "accountLogLabel" | "usageLogInputTokens" | "spendOutputCeilingTokens" | "spendInputEstimateTokens"
+    "provider" | "accountLogLabel" | "usageLogInputTokens" | "spendOutputCeilingTokens" | "spendInputEstimateTokens" | "spendPoolId"
   > & Partial<Pick<RequestLogContext, "localTerminalReason" | "terminalSource" | "errorCode">>,
   rootId: string | undefined,
   injected?: SpendReservationLedger,
@@ -88,7 +88,9 @@ export function createRequestSpendTracker(
           // Already the privacy-safe label the request log uses, and the ledger aliases it
           // again on the way to disk. A raw credential never reaches either.
           ...(logCtx.accountLogLabel !== undefined ? { identityId: logCtx.accountLogLabel } : {}),
-          ...(logCtx.provider !== undefined ? { poolId: logCtx.provider } : {}),
+          ...((logCtx.spendPoolId ?? logCtx.provider) !== undefined
+            ? { poolId: logCtx.spendPoolId ?? logCtx.provider }
+            : {}),
         },
         inputTokens: logCtx.spendInputEstimateTokens ?? logCtx.usageLogInputTokens ?? 0,
         outputCeilingTokens: logCtx.spendOutputCeilingTokens ?? 0,

@@ -102,6 +102,10 @@ so one ledger entry per increment is one entry per send, and a dispatch path add
 forget to book. The previous attempt at this wiring shipped the whole reserve/dispatch/settle
 vocabulary with no caller at all (#4707), which is the failure mode this shape rules out.
 
+Provider-pool accounting uses the canonical routed provider identity, not the mutable display label
+that may identify an OAuth account in request logs. Native Messages therefore shares the same pool
+ceiling as Responses even when its Anthropic log label includes an account ordinal.
+
 A booking is confirmed dispatched only once a LATER send exists, because that later send proves
 the earlier one left. The newest booking stays open, so a reservation the budget hands back
 during this process's lifetime can still be released for free.

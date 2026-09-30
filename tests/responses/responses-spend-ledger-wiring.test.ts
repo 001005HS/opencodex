@@ -88,6 +88,18 @@ describe("the request path books every physical send on the durable ledger", () 
     expect(root?.unresolved).toBe(1000);
   });
 
+  test("a canonical pool identity is independent of an account-specific display label", () => {
+    const ledger = createSpendReservationLedger({ journal: memoryJournal() });
+    const tracker = createRequestSpendTracker(logContext({
+      provider: "anthropic-p123abc",
+      spendPoolId: "anthropic",
+    }), undefined, ledger);
+
+    expect(tracker.charge()).toBe(true);
+    expect(ledger.snapshot("pool", "anthropic")?.reserved).toBe(500);
+    expect(ledger.snapshot("pool", "anthropic-p123abc")).toBeUndefined();
+  });
+
   test("a reservation the budget hands back releases its tokens instead of booking spend", () => {
     const ledger = createSpendReservationLedger({ journal: memoryJournal() });
     const tracker = createRequestSpendTracker(logContext(), "root-c", ledger);
