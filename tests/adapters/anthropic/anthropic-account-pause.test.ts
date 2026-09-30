@@ -75,6 +75,16 @@ test("pause invalidates quorum immediately; disabled-pool reactive failover skip
   expect(hasAnthropicFailoverQuorum()).toBe(true);
 });
 
+test("pause does not promote an expired background local-CLI credential", async () => {
+  const [a, b, c] = ids as [string, string, string];
+  const background = getAccountCredential("anthropic", b)!;
+  await saveAccountCredential("anthropic", b, { ...background, source: "local-cli", expires: Date.now() + 30_000 });
+  const result = await setAccountPaused("anthropic", a, true);
+  expect(result).toMatchObject({ status: "updated", activeAccountChanged: true, activeAccountId: c });
+  expect(getAccountSet("anthropic")!.accounts.find(row => row.id === b)?.paused).not.toBe(true);
+  expect(getAccountCredential("anthropic", b)?.access).toBe(background.access);
+});
+
 test("all-paused refusal and resume preserve credentials and cooldown, independent of pool enable", async () => {
   const a = ids[0]!;
   const credential = getAccountCredential("anthropic", a);

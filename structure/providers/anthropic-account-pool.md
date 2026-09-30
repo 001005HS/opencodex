@@ -7,6 +7,8 @@ OAuth, not a second list in provider config. `setAccountPaused` serializes pause
 with credential and selection writes, advances the selection revision, and only publishes
 invalidation after persistence. Removing an account removes its pause; reauthentication
 preserves it. The store moves active selection to an unpaused, non-reauth row if available.
+For Anthropic, that automatic fallback also skips expired background local-CLI rows so making
+one active cannot authorize it to adopt another account's current Claude Code credential.
 Pause does not clear cooldowns, quota, or credentials and does not cancel an already-sent turn.
 
 `src/oauth/anthropic-routing.ts` excludes paused rows from quota, round-robin, fill-first,
