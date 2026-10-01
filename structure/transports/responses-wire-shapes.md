@@ -376,7 +376,7 @@ destination receives unchanged whenever a caller sends one itself.
 ## Passthrough SSE stream shapes (#314)
 
 Native passthrough SSE has TWO shapes, selected per request in
-`src/server/responses/core.ts`:
+`src/server/responses/core.ts`; both apply the client-only [hosted-image projection](../data-planes/images.md#hosted-responses-image-display) after continuation-cache observers:
 
 - **Default outside Windows: tee + background inspection.** `upstreamResponse.body.tee()` sends
   branch[0] through a terminal-aware client relay while branch[1] is
