@@ -2,6 +2,7 @@
   "version": 1,
   "root": "tests",
   "explicit": {
+    "owner-registry-acl.test.ts": "config",
     "claude-devin-output-order.test.ts": "claude-integration",
     "codex-config-preservation.test.ts": "codex-integration",
     "codex-credits.test.ts": "codex-integration",
