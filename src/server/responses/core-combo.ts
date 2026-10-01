@@ -791,6 +791,7 @@ export async function executeComboResponses(
         // parent arrived with.
         sendBudget: targetSendBudget,
         comboAttempt: true,
+        comboDispatchPermit: hopDecision?.allowed ? hopDecision.permit : undefined,
         comboReplaySnapshot,
         deferCodexResetDerivedCooldown,
         // Attempt-relative TTFT is recorded HERE (not via childLog.firstOutputMs — a later

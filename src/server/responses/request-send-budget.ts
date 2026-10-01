@@ -1,5 +1,5 @@
 import type { ResponsesRequestContext } from "./core-options";
-import { createRequestExecutionBudget, isRequestExecutionBudget } from "../../lib/request-execution-budget";
+import { claimDispatchSpendProof, createRequestExecutionBudget, isRequestExecutionBudget } from "../../lib/request-execution-budget";
 import {
   chargeWorkflowSends,
   workflowSendCeilingReached,
@@ -84,7 +84,9 @@ export function createResponsesSendBudget(
   if (continuityRefusal) {
     return workflowRefusalResponse(continuityRefusal, logCtx, undefined, workflowRootId);
   }
-  const spentCeiling = workflowSpendCeilingReached(workflowRootId, undefined, logCtx.spendPoolId ?? logCtx.provider);
+  const prepaid = isRequestExecutionBudget(sendBudget)
+    ? claimDispatchSpendProof(sendBudget, options.compactionRecoveryPermit ?? options.comboDispatchPermit) : undefined;
+  const spentCeiling = workflowSpendCeilingReached(workflowRootId, undefined, logCtx.spendPoolId ?? logCtx.provider, prepaid);
   if (spentCeiling) {
     return workflowRefusalResponse(
       "workflow-spend-exhausted",

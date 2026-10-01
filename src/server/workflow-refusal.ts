@@ -116,6 +116,7 @@ export function admitHttpWorkflowTurn(headers: Headers): WorkflowDecision | unde
   const rootId = headers.get("x-codex-parent-thread-id")?.trim() || undefined;
   const continuityRefusal = poolContinuityRefusalReason();
   if (continuityRefusal) {
+    recordWorkflowRefusalEvent(rootId, continuityRefusal);
     return { admitted: false, reason: continuityRefusal, rootId: rootId ?? "" };
   }
   const threadId = headers.get("thread-id")?.trim() || undefined;

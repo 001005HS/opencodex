@@ -53,14 +53,19 @@ export function createPoolContinuity() {
     }
     return alias;
   };
-  const link = (map: Map<string, string>, alias: string, canonical: string): boolean => {
-    const existing = map.get(alias);
-    const target = resolve(canonical, map);
-    if (existing !== undefined && existing !== alias && resolve(alias, map) !== target) return false;
-    // An explicit rename can join a formerly canonical alias to its successor. The old
-    // name still resolves to this same group, so neither a reload nor an old caller splits it.
-    if (target !== alias || existing === undefined) map.set(alias, target);
-    return true;
+  const merge = (proposed: Iterable<readonly [string, string]>): Map<string, string> | undefined => {
+    const next = new Map(bindings);
+    for (const [alias, canonical] of proposed) next.set(alias, canonical);
+    try {
+      // Validate the whole proposed graph, not an intermediate sorted prefix. A verified
+      // A -> B -> C rename may repeat A -> C without splitting the existing A/B group.
+      for (const alias of next.keys()) resolve(alias, next);
+      for (const [alias, canonical] of bindings) {
+        if (resolve(alias, next) !== resolve(canonical, next)) return undefined;
+      }
+      for (const alias of next.keys()) next.set(alias, resolve(alias, next));
+    } catch { return undefined; }
+    return next;
   };
   return {
     resolve: (alias: string): string => resolve(alias),
@@ -71,23 +76,16 @@ export function createPoolContinuity() {
       bindings: [...bindings].map(([alias, canonical]) => ({ alias, canonical })),
     }),
     restore(record: PoolContinuityRecord): boolean {
-      const next = new Map(bindings);
-      try {
-        for (const { alias, canonical } of record.bindings) if (!link(next, alias, canonical)) return false;
-        for (const alias of next.keys()) resolve(alias, next);
-      } catch { return false; }
+      const next = merge(record.bindings.map(({ alias, canonical }) => [alias, canonical] as const));
+      if (!next) return false;
       bindings = next;
       return true;
     },
     prepare(config: unknown, requested: string | undefined, historical: ReadonlySet<string>,
       hash: (provider: string) => string, at: number, capacity: number): PoolContinuityRecord | false | undefined {
       if (spendPoolAliasesError(config)) return false;
-      const next = new Map(bindings);
-      // Sort for deterministic multi-hop mappings regardless of JSON property order. Link
-      // conflicts fail closed; repeat entries and already-joined destinations are idempotent.
-      for (const [alias, provider] of Object.entries(config ?? {}).sort(([a], [b]) => a.localeCompare(b))) {
-        if (!link(next, alias, hash(provider as string))) return false;
-      }
+      const next = merge(Object.entries(config ?? {}).map(([alias, provider]) => [alias, hash(provider as string)] as const));
+      if (!next) return false;
       if (requested !== undefined && !next.has(requested) && !historical.has(requested)) next.set(requested, requested);
       if (next.size > Math.min(16_384, capacity)) return false;
       if (next.size === bindings.size && [...next].every(([key, value]) => bindings.get(key) === value)) return undefined;

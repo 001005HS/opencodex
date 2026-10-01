@@ -579,6 +579,12 @@ export interface ScopeSpendSnapshot {
   readonly exhausted: boolean;
 }
 
+/** In-memory proof of one booked send; never journaled or exposed in request logs. */
+export interface SpendReservationProof {
+  readonly ledger: SpendReservationLedger;
+  readonly sendId: string;
+}
+
 export interface SpendReservationLedger {
   reserve(request: SpendReservationRequest): SpendReservationDecision;
   /** Pre-dispatch guard, including transports which report their sends after dispatch. */
@@ -607,7 +613,8 @@ export interface SpendReservationLedger {
    */
   markLost(sendId: string): boolean;
   snapshot(scope: SpendScope, scopeId: string): ScopeSpendSnapshot | undefined;
-  exhausted(scope: SpendScope, scopeId: string): boolean;
+  /** Exclude only a proven current dispatch's still-open reservation in this scope. */
+  exhausted(scope: SpendScope, scopeId: string, excludingSendId?: string): boolean;
   /**
    * Drop dormant scopes per the retention rule in SpendReservationPolicy. Cleanup also runs
    * automatically on every reservation, so nothing depends on a caller remembering this.
@@ -1161,10 +1168,15 @@ export function createSpendReservationLedger(options: {
       };
     },
 
-    exhausted(scope: SpendScope, scopeId: string): boolean {
+    exhausted(scope: SpendScope, scopeId: string, excludingSendId?: string): boolean {
       assertOwnedAccounting?.();
-      const state = stateFor(scope, aliasFor(scope, scopeId));
-      return state !== undefined && isExhausted(scope, state);
+      const alias = aliasFor(scope, scopeId);
+      const state = stateFor(scope, alias);
+      if (!state) return false;
+      const own = excludingSendId === undefined ? undefined : reservations.get(aliasFor("send", excludingSendId));
+      const matches = own?.status === "open" && own.targets.some(target => target.scope === scope
+        && (scope === "pool" ? poolContinuity.resolve(target.alias) === poolContinuity.resolve(alias) : target.alias === alias));
+      return isExhausted(scope, matches ? { ...state, reserved: Math.max(0, state.reserved - own.tokens) } : state);
     },
 
     prune(at: number = now()): void {

@@ -73,7 +73,7 @@ export function createRequestSpendTracker(
     for (let index = 0; index < live.length - 1; index += 1) ledger().markDispatched(live[index] as string);
   };
   return {
-    charge(options?: { alreadySent?: boolean }): boolean {
+    charge(options?: Parameters<RequestSendObserver["charge"]>[0]): boolean {
       // A send that has already left is RECORDED, never refused: the tokens are spent, and a
       // booking the ledger drops is a booking the ceiling can never see. This is the reporting
       // transports' path -- the passthrough ladder reports through `onSendsConsumed` after the
@@ -81,7 +81,8 @@ export function createRequestSpendTracker(
       // short of its limit forever and refuse nothing.
       const alreadySent = options?.alreadySent === true;
       const sendId = randomUUID();
-      const decision = ledger().reserve({
+      const bookedLedger = ledger();
+      const decision = bookedLedger.reserve({
         sendId,
         scopes: {
           ...(rootId !== undefined ? { rootId } : {}),
@@ -130,6 +131,7 @@ export function createRequestSpendTracker(
         recordWorkflowRefusalEvent(rootId, "workflow-spend-exhausted", Date.now(), detail);
         return false;
       }
+      if (!alreadySent) options?.onReserved?.({ ledger: bookedLedger, sendId });
       live.push(sendId);
       confirmOlderSends();
       // It has already left, so the reservation cannot be handed back for free: from here only

@@ -907,7 +907,9 @@ inference admission returns local HTTP 429 with
 `x-opencodex-local-refusal: workflow_pool_history_unresolved` before contacting a provider.
 This can temporarily block otherwise valid requests, including requests without a workflow root.
 After routing, preflight also refuses a canonical pool that is already exhausted by its combined
-balances. This check does not turn post-reported passthrough sends into atomic reservations:
+balances. A recovery or combo send already admitted by a reservation does not count that same
+reservation against itself a second time; all other reservations remain counted.
+This check does not turn post-reported passthrough sends into atomic reservations:
 a crossing send, concurrent admissions or retries reported afterwards retain their existing limits.
 Observe-only installs remain observe-only. Root and identity ceilings remain in force independently.
 
@@ -924,7 +926,8 @@ disable the entire section. Invalid top-level mappings are rejected on configura
 malformed `spendPoolAliases` hand edits retain existing ceilings and fail pool admission closed. Correct the mapping
 and restart through the ordinary configuration workflow. Empty/removing mappings does not erase
 links already recorded durably. A previously redirected alias cannot be reassigned to a different
-group; verified canonical renames can join groups without splitting existing spend.
+group; verified canonical renames can join groups without splitting existing spend. The complete
+mapping is checked together, so a valid group merge does not depend on alias-key order.
 
 Each original balance is counted once. Settled usage, in-flight reservations and unresolved usage
 all count; unknown usage is never treated as a refund. Original reservation targets are retained.

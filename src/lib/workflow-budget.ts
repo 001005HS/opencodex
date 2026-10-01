@@ -23,6 +23,7 @@ import {
   sharedSpendLedger,
   spendCeilingsConfigured,
   type SpendReservationLedger,
+  type SpendReservationProof,
   type SpendScope,
   type SpendUsage,
 } from "./spend-reservation-ledger";
@@ -715,10 +716,11 @@ export function workflowSendCeilingReached(
 function spentRootCeiling(
   rootId: string,
   ledger: SpendReservationLedger,
+  excludingSendId?: string,
 ): WorkflowSpendDenialDetail | undefined {
   const limit = ledger.policy.root.maxTokens;
   if (limit === undefined) return undefined;
-  return ledger.exhausted("root", rootId) ? { scope: "root", limit } : undefined;
+  return ledger.exhausted("root", rootId, excludingSendId) ? { scope: "root", limit } : undefined;
 }
 
 /**
@@ -736,14 +738,16 @@ export function workflowSpendCeilingReached(
   rootId: string | undefined,
   spendLedger?: SpendReservationLedger,
   poolId?: string,
+  reservation?: SpendReservationProof,
 ): WorkflowSpendDenialDetail | undefined {
   if (!rootId && !poolId) return undefined;
   const ledger = spendLedger ?? (spendCeilingsConfigured() ? sharedSpendLedger() : undefined);
   if (!ledger) return undefined;
-  const root = rootId ? spentRootCeiling(rootId, ledger) : undefined;
+  const excludingSendId = reservation?.ledger === ledger ? reservation.sendId : undefined;
+  const root = rootId ? spentRootCeiling(rootId, ledger, excludingSendId) : undefined;
   if (root) return root;
   const limit = ledger.policy.pool.maxTokens;
-  return poolId && limit !== undefined && ledger.exhausted("pool", poolId) ? { scope: "pool", limit } : undefined;
+  return poolId && limit !== undefined && ledger.exhausted("pool", poolId, excludingSendId) ? { scope: "pool", limit } : undefined;
 }
 
 export interface WorkflowBudgetSnapshot {

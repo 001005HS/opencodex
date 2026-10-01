@@ -143,6 +143,8 @@ export interface HandleResponsesOptions {
   callerDirectAuth?: CallerDirectAuth | null;
   /** Internal recursion guard; callers outside this module must not set it. */
   comboAttempt?: boolean;
+  /** Exact externally booked combo hop, used only for its child's spend preflight. */
+  comboDispatchPermit?: SingleUseDispatchPermit;
   /** Internal handoff: this combo was selected by shadow-call interception. */
   shadowCallIntercepted?: boolean;
   /** Internal handoff: the memory phase this turn belongs to, so combo children keep its routing. */

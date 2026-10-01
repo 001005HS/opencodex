@@ -1,3 +1,7 @@
+import { executeComboResponses } from "../../src/server/responses/core-combo";
+import { clearComboSelectionState, clearComboTargetCooldowns } from "../../src/combos";
+import { createTranslatorBudget } from "../../src/lib/translator-budget";
+import type { OcxConfig } from "../../src/types";
 import { createLegacySpendLedger } from "../helpers/legacy-spend-ledger";
 import { describe, expect, test } from "bun:test";
 import { mkdtempSync, writeFileSync } from "node:fs";
@@ -6,12 +10,15 @@ import { join } from "node:path";
 import { createHash } from "node:crypto";
 import {
   createSpendReservationLedger, configureSharedSpendLedger, DEFAULT_SPEND_RESERVATION_POLICY, parseSpendJournalRecord,
-  type SpendJournal, type SpendReservationPolicy,
+  sharedSpendLedger, type SpendJournal, type SpendReservationPolicy,
 } from "../../src/lib/spend-reservation-ledger";
 import { acquireOwnedSpendHome } from "../helpers/owned-spend-home";
 import { removeTreeWithRetry } from "../helpers/remove-tree";
 import { admitHttpWorkflowTurn, workflowDecisionRefusalResponse } from "../../src/server/workflow-refusal";
 import { createResponsesSendBudget } from "../../src/server/responses/request-send-budget";
+import { claimDispatchSpendProof, createRequestExecutionBudget, deriveRequestExecutionBudget } from "../../src/lib/request-execution-budget";
+import { createPoolContinuity } from "../../src/lib/spend-pool-continuity";
+import { listWorkflowBudgetEvents, resetWorkflowBudgetsForTest, workflowSpendCeilingReached } from "../../src/lib/workflow-budget";
 import { createRequestSpendTracker } from "../../src/server/responses/request-spend";
 
 const salt = "5".repeat(64);
@@ -33,6 +40,30 @@ const reserve = (ledger: ReturnType<typeof createSpendReservationLedger>, sendId
   ledger.reserve({ sendId, scopes: { poolId }, inputTokens: tokens, outputCeilingTokens: 0, alreadySent });
 
 describe("historical pool identity continuity", () => {
+  test("verified group merges are atomic and independent of salted key order", () => {
+    const low = "1".repeat(32), high = "2".repeat(32), target = "3".repeat(32);
+    for (const [a, b] of [[low, high], [high, low]]) {
+      const continuity = createPoolContinuity();
+      expect(continuity.restore({ v: 1, kind: "pool-continuity", at: 1,
+        bindings: [{ alias: a!, canonical: b! }] })).toBe(true);
+      const record = continuity.prepare({ [a!]: target, [b!]: target }, undefined, new Set(), id => id, 2, 100);
+      expect(record).not.toBe(false);
+      if (!record) throw new Error("merge was refused");
+      expect(continuity.resolve(a!)).toBe(b!); // prepare does not publish evidence
+      expect(continuity.restore(record)).toBe(true);
+      expect(continuity.resolve(a!)).toBe(target);
+      expect(continuity.resolve(b!)).toBe(target);
+      const before = continuity.record(3);
+      expect(continuity.prepare({ [a!]: "4".repeat(32) }, undefined, new Set(), id => id, 3, 100)).toBe(false);
+      expect(continuity.record(3)).toEqual(before);
+      expect(continuity.restore({ v: 1, kind: "pool-continuity", at: 3,
+        bindings: [{ alias: a!, canonical: "4".repeat(32) }] })).toBe(false);
+      expect(continuity.record(3)).toEqual(before);
+      expect(continuity.prepare({ [target]: a!, [a!]: target }, undefined, new Set(), id => id, 3, 100)).toBe(false);
+      expect(continuity.record(3)).toEqual(before);
+    }
+  });
+
   test("unmapped historical debt fails closed across labels, providers, pruning and restart", () => {
     const disk = journal([checkpoint([["provider-old-label", 100, 0]])]);
     for (let restart = 0; restart < 2; restart += 1) {
@@ -193,6 +224,12 @@ test("rootless HTTP and passthrough preflight refuse before any synthetic fetch"
     writeFileSync(join(home, "spend-ledger.salt"), salt + "\n", { mode: 0o600 });
     writeFileSync(join(home, "spend-ledger.jsonl"), JSON.stringify(checkpoint([["old-label", 100, 0]])) + "\n", { mode: 0o600 });
     configureSharedSpendLedger(policy());
+    resetWorkflowBudgetsForTest();
+    const rooted = admitHttpWorkflowTurn(new Headers({ "x-codex-parent-thread-id": "synthetic-root" }));
+    expect(rooted).toMatchObject({ admitted: false, reason: "workflow-pool-history-unresolved" });
+    expect(listWorkflowBudgetEvents()).toMatchObject([{ rootId: "synthetic-root", reason: "workflow-pool-history-unresolved" }]);
+    if (rooted && !rooted.admitted) workflowDecisionRefusalResponse(rooted);
+    expect(listWorkflowBudgetEvents()).toHaveLength(1);
     let syntheticFetches = 0;
     const decision = admitHttpWorkflowTurn(new Headers());
     expect(decision).toMatchObject({ admitted: false, reason: "workflow-pool-history-unresolved" });
@@ -206,6 +243,7 @@ test("rootless HTTP and passthrough preflight refuse before any synthetic fetch"
     expect(budget).toBeInstanceOf(Response);
     if (!(budget instanceof Response)) syntheticFetches += 1;
     expect(syntheticFetches).toBe(0);
+    expect(listWorkflowBudgetEvents()).toHaveLength(1); // rootless refusals add no event
     configureSharedSpendLedger(policy({ [pool("old-label")]: "provider" }));
     expect(admitHttpWorkflowTurn(new Headers())).toBeUndefined();
     const mappedBudget = createResponsesSendBudget({ req: new Request("https://fixture.example.test/v1/responses"), options: {}, logCtx: { model: "fixture", provider: "provider-display", spendPoolId: "provider" } });
@@ -218,6 +256,7 @@ test("rootless HTTP and passthrough preflight refuse before any synthetic fetch"
     const otherPool = createResponsesSendBudget({ req: new Request("https://fixture.example.test/v1/responses"), options: {}, logCtx: { model: "fixture", provider: "provider", spendPoolId: "unspent-provider" } });
     expect(otherPool).not.toBeInstanceOf(Response);
   } finally {
+    resetWorkflowBudgetsForTest();
     release();
     if (previous === undefined) delete process.env.OPENCODEX_HOME;
     else process.env.OPENCODEX_HOME = previous;
@@ -246,4 +285,194 @@ test("actual old-reader compaction preserves raw spend; compatible rollback reso
   returned.reconfigure(policy({ [pool("old-label")]: "provider", [pool("provider")]: "provider", [pool("new-old-label")]: "provider" }));
   expect(returned.checkPoolContinuity()).toBeUndefined();
   expect(returned.snapshot("pool", "provider")?.settled).toBe(60);
+});
+
+for (const kind of ["compaction", "combo"] as const) {
+  for (const rootId of [undefined, "reservation-root"]) {
+    test(`${kind} child spends its own exact-limit reservation (${rootId ?? "rootless"})`, () => {
+      const previous = process.env.OPENCODEX_HOME;
+      const home = mkdtempSync(join(tmpdir(), "ocx-prepaid-spend-"));
+      process.env.OPENCODEX_HOME = home;
+      const release = acquireOwnedSpendHome();
+      try {
+        configureSharedSpendLedger(policy(undefined, { root: { maxTokens: 100 } }));
+        const logCtx = { model: "fixture", provider: "provider-display", spendPoolId: "provider", usageLogInputTokens: 100 };
+        const tracker = createRequestSpendTracker(logCtx, rootId);
+        const sendBudget = createRequestExecutionBudget(undefined, undefined, tracker);
+        const reservation = sendBudget.reserveDispatch({ sendClass: "initial", targetKey: "provider/fixture", countedExternally: true });
+        expect(reservation.allowed).toBe(true);
+        if (!reservation.allowed) throw new Error("synthetic reservation refused");
+        if (kind === "combo") expect(reservation.permit.use()).toBe(true);
+        expect(sharedSpendLedger().snapshot("pool", "provider")?.reserved).toBe(100);
+        const req = new Request("https://fixture.example.test/v1/responses", {
+          headers: rootId ? { "x-codex-parent-thread-id": rootId } : {},
+        });
+        const options = { sendBudget, ...(kind === "compaction"
+          ? { compactionRecoveryPermit: reservation.permit } : { comboDispatchPermit: reservation.permit }) };
+        const child = createResponsesSendBudget({ req, options, logCtx });
+        expect(child).not.toBeInstanceOf(Response);
+        if (child instanceof Response) throw new Error("own reservation refused");
+        expect(createResponsesSendBudget({ req, options, logCtx })).toBeInstanceOf(Response); // proof is single-use
+        if (kind === "compaction") {
+          const dispatch = child.adapterDispatchBudget!.reserveDispatch({ sendClass: "initial", targetKey: "provider/fixture" });
+          expect(dispatch.allowed).toBe(true);
+          if (dispatch.allowed) expect(dispatch.permit.use()).toBe(true);
+        } else child.noteTransientSends(1); // synthetic report-only combo dispatch, no fetch
+        expect(sendBudget.used).toBe(1);
+        tracker.settle({ inputTokens: 100, outputTokens: 0 });
+        expect(sharedSpendLedger().snapshot("pool", "provider")).toMatchObject({ settled: 100, reserved: 0 });
+        expect(createResponsesSendBudget({ req, options: {}, logCtx })).toBeInstanceOf(Response);
+      } finally {
+        release();
+        if (previous === undefined) delete process.env.OPENCODEX_HOME;
+        else process.env.OPENCODEX_HOME = previous;
+        removeTreeWithRetry(home);
+      }
+    });
+  }
+}
+
+function prepaidFixture(tokens = 100, ceiling = 100) {
+  const ledger = createSpendReservationLedger({ salt, policy: policy(undefined, { root: { maxTokens: ceiling }, pool: { maxTokens: ceiling } }) });
+  const tracker = createRequestSpendTracker({ provider: "provider", usageLogInputTokens: tokens }, "root", ledger);
+  const budget = createRequestExecutionBudget(undefined, undefined, tracker);
+  const reservePermit = () => {
+    const decision = budget.reserveDispatch({ sendClass: "initial", targetKey: "provider/fixture", countedExternally: true });
+    if (!decision.allowed) throw new Error("synthetic permit refused");
+    return decision.permit;
+  };
+  return { ledger, tracker, budget, reservePermit };
+}
+
+test("prepaid proof belongs to one shared budget and one still-pending dispatch", () => {
+  for (const end of ["release", "report", "assume"] as const) {
+    const { budget, reservePermit } = prepaidFixture();
+    const permit = reservePermit();
+    if (end === "release") permit.release();
+    if (end === "report") budget.used += 1;
+    if (end === "assume") expect(permit.assumeCharge()).toBe(true);
+    expect(claimDispatchSpendProof(budget, permit)).toBeUndefined();
+  }
+  const { ledger, budget, reservePermit } = prepaidFixture();
+  const permit = reservePermit();
+  expect(permit.use()).toBe(true); // combo use leaves its external receipt pending
+  expect(claimDispatchSpendProof(createRequestExecutionBudget(), permit)).toBeUndefined();
+  const childBudget = deriveRequestExecutionBudget(budget, budget.policy);
+  const proof = claimDispatchSpendProof(childBudget, permit);
+  expect(proof).toBeDefined();
+  expect(workflowSpendCeilingReached("root", ledger, "provider", proof)).toBeUndefined();
+  expect(claimDispatchSpendProof(budget, permit)).toBeUndefined();
+  expect(workflowSpendCeilingReached("root", ledger, "provider")).toMatchObject({ scope: "root" });
+});
+
+test("receipt identity survives out-of-order handoff and reports cannot authorize another permit", () => {
+  const first = prepaidFixture(10, 100);
+  const a = first.reservePermit(), b = first.reservePermit();
+  expect(b.assumeCharge()).toBe(true);
+  expect(claimDispatchSpendProof(first.budget, b)).toBeUndefined();
+  expect(claimDispatchSpendProof(first.budget, a)).toBeDefined();
+  first.budget.used += 1;
+  expect(first.budget.used).toBe(2); // report consumed A; B was already assumed
+
+  const second = prepaidFixture(10, 100);
+  const reported = second.reservePermit(), pending = second.reservePermit();
+  second.budget.used += 1;
+  expect(claimDispatchSpendProof(second.budget, reported)).toBeUndefined();
+  reported.release();
+  expect(second.budget.used).toBe(2); // cannot refund a different pending receipt
+  expect(claimDispatchSpendProof(second.budget, pending)).toBeDefined();
+  pending.release();
+  expect(second.budget.used).toBe(1);
+  expect(second.ledger.snapshot("pool", "provider")).toMatchObject({ reserved: 10 });
+});
+
+test("preflight retains unrelated reservations, debt and mismatched scope or ledger", () => {
+  const { ledger, budget, reservePermit } = prepaidFixture(100, 200);
+  const permit = reservePermit();
+  expect(reserve(ledger, "unrelated", "provider", 100).reserved).toBe(true);
+  ledger.reconfigure(policy(undefined, { root: { maxTokens: 200 } }));
+  const proof = claimDispatchSpendProof(budget, permit)!;
+  expect(workflowSpendCeilingReached(undefined, ledger, "provider", proof)).toMatchObject({ scope: "pool" });
+  const foreign = prepaidFixture();
+  foreign.reservePermit();
+  expect(workflowSpendCeilingReached(undefined, foreign.ledger, "provider", proof)).toMatchObject({ scope: "pool" });
+  expect(ledger.markDispatched(proof.sendId)).toBe(true);
+  expect(ledger.exhausted("pool", "provider", proof.sendId)).toBe(true);
+  ledger.settle(proof.sendId, { inputTokens: 100, outputTokens: 0 });
+  expect(ledger.exhausted("pool", "provider", proof.sendId)).toBe(true);
+
+  const zero = prepaidFixture(0, 100);
+  expect(reserve(zero.ledger, "full", "provider", 100).reserved).toBe(true);
+  const zeroProof = claimDispatchSpendProof(zero.budget, zero.reservePermit());
+  expect(workflowSpendCeilingReached(undefined, zero.ledger, "provider", zeroProof)).toMatchObject({ scope: "pool" });
+});
+
+test("prepaid exclusion follows only its canonical pool and retains settled/unresolved history", () => {
+  const disk = journal([checkpoint([["historical", 30, 10]])]);
+  const ledger = createSpendReservationLedger({ salt, journal: disk, policy: policy({ [pool("historical")]: "provider" }), now: () => 2 });
+  const tracker = createRequestSpendTracker({ provider: "provider", usageLogInputTokens: 60 }, undefined, ledger);
+  const budget = createRequestExecutionBudget(undefined, undefined, tracker);
+  const decision = budget.reserveDispatch({ sendClass: "initial", targetKey: "provider", countedExternally: true });
+  if (!decision.allowed) throw new Error("synthetic permit refused");
+  const proof = claimDispatchSpendProof(budget, decision.permit)!;
+  expect(ledger.snapshot("pool", "provider")).toMatchObject({ settled: 30, unresolved: 10, reserved: 60 });
+  expect(workflowSpendCeilingReached(undefined, ledger, "provider", proof)).toBeUndefined();
+  ledger.reconfigure(policy({ [pool("historical")]: "renamed", [pool("provider")]: "renamed" }));
+  expect(ledger.checkPoolContinuity()).toBeUndefined();
+  expect(workflowSpendCeilingReached(undefined, ledger, "renamed", proof)).toBeUndefined();
+  expect(reserve(ledger, "other", "unrelated", 100).reserved).toBe(true);
+  expect(workflowSpendCeilingReached(undefined, ledger, "unrelated", proof)).toMatchObject({ scope: "pool" });
+  ledger.reconfigure(policy(undefined, { pool: { maxTokens: 40 } }));
+  expect(workflowSpendCeilingReached(undefined, ledger, "renamed", proof)).toMatchObject({ scope: "pool" });
+});
+
+
+test("actual combo dispatch forwards only its own prepaid permit into the child preflight", async () => {
+  const previous = process.env.OPENCODEX_HOME;
+  const home = mkdtempSync(join(tmpdir(), "ocx-combo-prepaid-"));
+  process.env.OPENCODEX_HOME = home;
+  const release = acquireOwnedSpendHome();
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (() => { throw new Error("unexpected network in synthetic combo"); }) as typeof fetch;
+  const translatorBudget = createTranslatorBudget();
+  clearComboSelectionState();
+  clearComboTargetCooldowns();
+  try {
+    configureSharedSpendLedger(policy());
+    const config: OcxConfig = { port: 0, defaultProvider: "provider", providers: {
+      provider: { adapter: "openai-chat", apiKey: "fixture-only", baseUrl: "https://provider.example.test/v1" },
+    }, combos: { prepaid: { strategy: "failover", targets: [{ provider: "provider", model: "fixture" }] } } };
+    const logCtx = { model: "", provider: "", usageLogInputTokens: 100 };
+    const tracker = createRequestSpendTracker(logCtx, undefined);
+    const sendBudget = createRequestExecutionBudget(undefined, undefined, tracker);
+    const body = { model: "combo/prepaid", input: [] };
+    let sends = 0;
+    const response = await executeComboResponses(new Request("https://fixture.example.test/v1/responses", {
+      method: "POST", body: JSON.stringify(body), headers: { "content-type": "application/json" },
+    }), body, "prepaid", config, logCtx, { sendBudget, translatorBudget }, {
+      handleResponses: async (req, _config, childLog, options) => {
+        const child = createResponsesSendBudget({ req, logCtx: childLog, options: options! });
+        expect(child).not.toBeInstanceOf(Response);
+        if (child instanceof Response) return child;
+        sends += 1;
+        child.noteTransientSends(1);
+        return Response.json({ id: "synthetic-response", output: [] });
+      },
+      handleComboResponses: async () => { throw new Error("unexpected nested combo"); },
+    });
+    expect(response.status).toBe(200);
+    expect(sends).toBe(1);
+    expect(sendBudget.used).toBe(1);
+    tracker.settle({ inputTokens: 100, outputTokens: 0 });
+    expect(sharedSpendLedger().snapshot("pool", "provider")).toMatchObject({ settled: 100, reserved: 0 });
+  } finally {
+    globalThis.fetch = originalFetch;
+    translatorBudget.dispose();
+    clearComboSelectionState();
+    clearComboTargetCooldowns();
+    release();
+    if (previous === undefined) delete process.env.OPENCODEX_HOME;
+    else process.env.OPENCODEX_HOME = previous;
+    removeTreeWithRetry(home);
+  }
 });

@@ -122,7 +122,9 @@ mapping when their positive history predates identity metadata. Zero-balance his
 The ledger retains original scope balances and reservation targets. The canonical view adds each
 member once, keeping settled, reserved and unresolved buckets separate. Explicit links can join
 previously canonical groups for a verified rename; an already redirected alias cannot be assigned
-to a different group. A removed config entry never removes a journaled link. Group activity,
+to a different group. The complete proposed graph is validated atomically, so a verified merge
+that repeats existing member aliases is independent of salted-key order. A removed config entry
+never removes a journaled link. Group activity,
 last-seen time and exhaustion govern retention; unidentified positive balances cannot be evicted.
 Identity evidence is bounded and retained even when dormant under-limit scopes are evicted.
 
@@ -136,6 +138,9 @@ With a configured pool ceiling, any remaining unidentified positive pool history
 conflicting mapping refuses admission. HTTP workflow admission and the Responses pre-dispatch
 seam check this even without a root ID, before passthrough transports that report sends afterwards.
 After routing, that seam also refuses an already-exhausted canonical pool, including mapped historical totals.
+A prepaid child excludes only its own open reservation, proven by its exact permit, shared send
+ledger and still-pending receipt. Proof is single-use; unrelated reservations and other pool groups
+remain counted. HTTP continuity refusals record one rooted workflow event; rootless ones record none.
 It is a snapshot check, not a new atomic reservation for report-only transports: crossing sends,
 concurrent preflight admissions and retries reported afterwards retain their existing limitations.
 `workflow_pool_history_unresolved` identifies the local 429 without disclosing aliases; storage
