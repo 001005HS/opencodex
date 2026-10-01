@@ -103,8 +103,13 @@ forget to book. The previous attempt at this wiring shipped the whole reserve/di
 vocabulary with no caller at all (#4707), which is the failure mode this shape rules out.
 
 Provider-pool accounting uses the canonical routed provider identity, not the mutable display label
-that may identify an OAuth account in request logs. Native Messages therefore shares the same pool
-ceiling as Responses even when its Anthropic log label includes an account ordinal.
+that may identify an OAuth account in request logs. Responses final-route normalization captures
+that identity before credential selection labels the account, and replaces it when a fallback
+selects another provider. Earlier reservations retain the pool they originally charged. Native
+Messages therefore shares the same pool ceiling as Responses even when its Anthropic log label
+includes an account ordinal; root and account identity scopes remain independent.
+Before reserving each combo hop, `core-combo.ts` updates the parent tracker's pool to the resolved
+target provider; child account labels and the logical `combo` label do not create separate pools.
 
 A booking is confirmed dispatched only once a LATER send exists, because that later send proves
 the earlier one left. The newest booking stays open, so a reservation the budget hands back
