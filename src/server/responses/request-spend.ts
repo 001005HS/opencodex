@@ -106,7 +106,14 @@ export function createRequestSpendTracker(
         // configured -- so an install that configured nothing is still never refused here.
         // Capacity and a duplicate send id stay permissive: they say the ledger cannot account
         // for this send, which is a degradation to report, not an outage to cause.
-        if (denial.reason === "reserve-not-durable" || denial.reason === "journal-corrupt") {
+        if (denial.reason === "reserve-not-durable" || denial.reason === "journal-corrupt"
+          || denial.reason === "pool-history-unresolved") {
+          if (denial.reason === "pool-history-unresolved" && !alreadySent) {
+            const summary = workflowDenialSummary("workflow-pool-history-unresolved");
+            markLocalRequestLogRefusal(logCtx, summary.code);
+            logCtx.errorCode = summary.code;
+            recordWorkflowRefusalEvent(rootId, "workflow-pool-history-unresolved", Date.now());
+          }
           return alreadySent;
         }
         if (denial.reason !== "spend-limit-exceeded") return true;

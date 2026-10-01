@@ -5,7 +5,7 @@ import {
   workflowSendCeilingReached,
   workflowSpendCeilingReached,
 } from "../../lib/workflow-budget";
-import { workflowRefusalResponse } from "../workflow-refusal";
+import { poolContinuityRefusalReason, workflowRefusalResponse } from "../workflow-refusal";
 import type { AttemptRecoveryKind, AttemptRecoveryWithheld } from "../../usage/log";
 import { noteAttemptRecoveryWithheld, noteAttemptSend } from "../request-log";
 import { TRANSIENT_RETRY_MAX_ATTEMPTS } from "../../lib/upstream-retry";
@@ -78,7 +78,13 @@ export function createResponsesSendBudget(
   // returns -- a refusal an operator cannot tell from an ordinary budget exhaustion, on a
   // ceiling they configured themselves. Asked before dispatch, it names the scope and the
   // number instead. Returns undefined and touches no ledger when no ceiling is configured.
-  const spentCeiling = workflowSpendCeilingReached(workflowRootId);
+  // Passthrough reports sends after they leave. Historical identity uncertainty must
+  // refuse here as well as in reserve(), including requests with no workflow root.
+  const continuityRefusal = poolContinuityRefusalReason();
+  if (continuityRefusal) {
+    return workflowRefusalResponse(continuityRefusal, logCtx, undefined, workflowRootId);
+  }
+  const spentCeiling = workflowSpendCeilingReached(workflowRootId, undefined, logCtx.spendPoolId ?? logCtx.provider);
   if (spentCeiling) {
     return workflowRefusalResponse(
       "workflow-spend-exhausted",

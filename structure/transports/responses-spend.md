@@ -111,6 +111,47 @@ includes an account ordinal; root and account identity scopes remain independent
 Before reserving each combo hop, `core-combo.ts` updates the parent tracker's pool to the resolved
 target provider; child account labels and the logical `combo` label do not create separate pools.
 
+### Historical pool continuity and rollback
+
+`src/lib/spend-pool-continuity.ts` accepts only explicit operator mappings from exact salted
+historical pool aliases to canonical provider IDs, configured in top-level `spendPoolAliases`.
+Current account rosters, label prefixes, short IDs, and renamed/deleted providers are not evidence
+for automatically assigning old balances. Old canonical-looking aliases also need explicit
+mapping when their positive history predates identity metadata. Zero-balance history needs none.
+
+The ledger retains original scope balances and reservation targets. The canonical view adds each
+member once, keeping settled, reserved and unresolved buckets separate. Explicit links can join
+previously canonical groups for a verified rename; an already redirected alias cannot be assigned
+to a different group. A removed config entry never removes a journaled link. Group activity,
+last-seen time and exhaustion govern retention; unidentified positive balances cannot be evicted.
+Identity evidence is bounded and retained even when dormant under-limit scopes are evicted.
+
+Before a mapping authorizes admission, a v1 checkpoint durably carries both unchanged accounting
+and optional salted `poolContinuity` metadata. No raw provider/account names are added to the
+journal. New reservations still use the routed canonical pool ID. Replays and compaction preserve
+the links; complete invalid metadata fails closed, including at the final line, and corruption is
+never compacted away. Unparseable torn final JSON keeps the existing conservative replay rule.
+
+With a configured pool ceiling, any remaining unidentified positive pool history or invalid/
+conflicting mapping refuses admission. HTTP workflow admission and the Responses pre-dispatch
+seam check this even without a root ID, before passthrough transports that report sends afterwards.
+After routing, that seam also refuses an already-exhausted canonical pool, including mapped historical totals.
+It is a snapshot check, not a new atomic reservation for report-only transports: crossing sends,
+concurrent preflight admissions and retries reported afterwards retain their existing limitations.
+`workflow_pool_history_unresolved` identifies the local 429 without disclosing aliases; storage
+or replay failures keep `workflow_spend_undurable`. Already-sent reports still book actual spend.
+Observe-only mode has no new token refusal, and root/identity accounting remains independent.
+
+Supported rollback retains/backports **both** canonical route attribution and the continuity-aware
+reader/writer, using the same journal, salt and verified bindings. Restoring an older journal or
+salt loses newer spend and is not a supported rollback. Unmodified older binaries are unsupported:
+they can read v1 counters but do not enforce the canonical aggregate, can introduce fresh account
+label pools, and can discard optional identity metadata during compaction. There is no automatic
+downgrade barrier and no unknown-record fence. If that unsupported write has happened, the current
+reader requires explicit mappings for the remaining unidentified balances rather than assuming
+zero. `tests/lib/spend-pool-continuity.test.ts` exercises this using the frozen pre-change reader,
+as well as exact aggregation, active/unresolved sends, retention, failures and rootless preflight.
+
 A booking is confirmed dispatched only once a LATER send exists, because that later send proves
 the earlier one left. The newest booking stays open, so a reservation the budget hands back
 during this process's lifetime can still be released for free.

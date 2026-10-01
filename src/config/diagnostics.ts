@@ -1,3 +1,4 @@
+import { spendPoolAliasesError } from "../lib/spend-pool-continuity";
 import { createHash } from "node:crypto";
 import { lstatSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -134,6 +135,9 @@ function validFileConfigDiagnostics(config: OcxConfig, rawParsed: unknown): Conf
   if (codexPoolWarning) warnings.push(codexPoolWarning);
   const spendWarning = malformedSpendWarning(rawParsed);
   if (spendWarning) warnings.push(spendWarning);
+  if (spendPoolAliasesError(rawConfigRecord(rawParsed)?.spendPoolAliases)) {
+    warnings.push("spendPoolAliases invalid: configured pool admission is refused until the mapping is corrected");
+  }
   const plaintextWarning = malformedPlaintextV2AgentMessagesWarning(rawParsed);
   if (plaintextWarning) warnings.push(plaintextWarning);
   if (syncDisabledReason) {
@@ -642,6 +646,7 @@ export function validateConfigCandidate(value: unknown): { ok: true; config: Ocx
     ?? agentTaskRecoveryError(value)
     ?? quotaResetNotifyError(value)
     ?? catalogAutoRefreshError(value)
+    ?? (spendPoolAliasesError(rawConfigRecord(value)?.spendPoolAliases) ? "schema_invalid: spendPoolAliases: invalid pool identity mapping" : null)
     ?? spendError(value)
     ?? codexPoolError(value)
     ?? googleAntigravityStaticCatalogVersionError(value)
