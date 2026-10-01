@@ -344,6 +344,55 @@ function prepaidFixture(tokens = 100, ceiling = 100) {
   return { ledger, tracker, budget, reservePermit };
 }
 
+for (const end of ["release", "report", "assume"] as const) {
+  test(`a prepaid validated rebase preserves proof ownership and exact charges on ${end}`, () => {
+    for (const [priorSends, claimBeforeEnd] of [[2, false], [2, true], [3, false], [3, true]] as const) {
+      const { ledger, budget } = prepaidFixture(10, (priorSends + 1) * 10);
+      for (const [sendClass, targetKey] of [["initial", "a"], ["account-failover", "b"]] as const) {
+        const decision = budget.reserveDispatch({ sendClass, targetKey });
+        if (!decision.allowed) throw new Error("synthetic initial dispatch refused");
+        expect(decision.permit.use()).toBe(true);
+      }
+      if (priorSends === 3) {
+        const third = budget.reserveDispatch({ sendClass: "transient", targetKey: "b" });
+        if (!third.allowed) throw new Error("synthetic base dispatch refused");
+        expect(third.permit.use()).toBe(true);
+      }
+      const decision = budget.reserveDispatch({
+        sendClass: "repair", targetKey: "c", rebasedTarget: true, countedExternally: true,
+      });
+      if (!decision.allowed) throw new Error("synthetic rebase refused");
+      const { permit } = decision;
+      expect(budget.used).toBe(priorSends + 1);
+      expect(budget.reserveSpent).toBe(priorSends === 3);
+      expect(budget.lastTargetKey).toBe("c");
+      expect(budget.alternateTargetSends).toBe(1);
+      expect(budget.targetTransitions).toBe(1);
+      expect(workflowSpendCeilingReached(undefined, ledger, "provider")).toMatchObject({ scope: "pool" });
+      expect(claimDispatchSpendProof(createRequestExecutionBudget(), permit)).toBeUndefined();
+      if (claimBeforeEnd) {
+        const child = deriveRequestExecutionBudget(budget, budget.policy);
+        const proof = claimDispatchSpendProof(child, permit);
+        expect(proof?.ledger).toBe(ledger);
+        expect(workflowSpendCeilingReached(undefined, ledger, "provider", proof)).toBeUndefined();
+        expect(claimDispatchSpendProof(budget, permit)).toBeUndefined();
+      }
+      if (end === "report") budget.used += 1;
+      if (end === "assume") expect(permit.assumeCharge()).toBe(true);
+      permit.release();
+      permit.release();
+      const expectedSends = priorSends + (end === "release" ? 0 : 1);
+      expect(budget.used).toBe(expectedSends);
+      expect(budget.reserveSpent).toBe(priorSends === 3 && end !== "release");
+      expect(budget.lastTargetKey).toBe(end === "release" ? "b" : "c");
+      expect(budget.alternateTargetSends).toBe(1);
+      expect(budget.targetTransitions).toBe(1);
+      expect(ledger.snapshot("pool", "provider")).toMatchObject({ reserved: expectedSends * 10 });
+      expect(claimDispatchSpendProof(budget, permit)).toBeUndefined();
+    }
+  });
+}
+
 test("prepaid proof belongs to one shared budget and one still-pending dispatch", () => {
   for (const end of ["release", "report", "assume"] as const) {
     const { budget, reservePermit } = prepaidFixture();

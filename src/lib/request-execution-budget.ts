@@ -80,6 +80,14 @@ export interface DispatchIntent {
    * second charge. Charging both is how a four-send cap silently becomes a two-send cap.
    */
   readonly countedExternally?: boolean;
+  /**
+   * True when the caller's request was rebuilt onto a different destination by an
+   * authorized mid-flight change (e.g. Kiro's reset-triggered account rebuild).
+   * The physical destination is still recorded, but the move is not a failover
+   * decision: it must not consume the request's single target transition or
+   * alternate-target allowance, which belong to the actual endpoint fallback.
+   */
+  readonly rebasedTarget?: boolean;
 }
 
 export interface SingleUseDispatchPermit {
@@ -329,10 +337,12 @@ function createRequestExecutionBudgetWithLedger(
       const changesTarget = lastTargetKey !== undefined && lastTargetKey !== intent.targetKey;
       const isAlternateTarget = changesTarget || intent.sendClass === "account-failover"
         || intent.sendClass === "combo-failover";
-      if (isAlternateTarget && changesTarget && targetTransitions >= policy.maxTargetTransitions) {
+      const chargesTransition = changesTarget && intent.rebasedTarget !== true;
+      const chargesAlternateTarget = isAlternateTarget && intent.rebasedTarget !== true;
+      if (isAlternateTarget && chargesTransition && targetTransitions >= policy.maxTargetTransitions) {
         return { allowed: false, reason: "target-transition-exhausted" };
       }
-      if (isAlternateTarget && alternateTargetSends >= policy.maxAlternateTargetSends) {
+      if (chargesAlternateTarget && alternateTargetSends >= policy.maxAlternateTargetSends) {
         return { allowed: false, reason: "alternate-target-exhausted" };
       }
 
@@ -366,8 +376,8 @@ function createRequestExecutionBudgetWithLedger(
       const receipt = {};
       if (intent.countedExternally === true) counter.pendingExternalSends.add(receipt);
       if (drawsReserve) reserveSpent = true;
-      if (isAlternateTarget) alternateTargetSends += 1;
-      if (changesTarget) targetTransitions += 1;
+      if (chargesAlternateTarget) alternateTargetSends += 1;
+      if (chargesTransition) targetTransitions += 1;
       lastTargetKey = intent.targetKey;
 
       let settled: "open" | "used" | "released" = "open";
@@ -398,8 +408,8 @@ function createRequestExecutionBudgetWithLedger(
           counter.spent -= 1;
           observer?.refund();
           if (drawsReserve) reserveSpent = false;
-          if (isAlternateTarget) alternateTargetSends -= 1;
-          if (changesTarget) targetTransitions -= 1;
+          if (chargesAlternateTarget) alternateTargetSends -= 1;
+          if (chargesTransition) targetTransitions -= 1;
           lastTargetKey = previousTargetKey;
         },
       };
