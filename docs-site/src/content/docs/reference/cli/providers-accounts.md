@@ -493,6 +493,11 @@ token; the stored account ID and email are preserved. If Claude Code replaces bo
 OpenCodex cannot establish credential continuity and uses its stored-token refresh or existing
 reauthentication path instead. Use explicit login to import a completely replaced Claude Code pair.
 
+If no permitted fallback remains, quota and live model discovery wait for a usable active account.
+You can explicitly select an existing unpaused legacy account with
+`ocx account use anthropic <account-id-or-alias>`; its own valid credential and normal stored-token
+refresh remain available even when its original credential source was not recorded.
+
 ```bash
 ocx account pause google-antigravity <account-id-or-alias>
 ocx account resume google-antigravity <account-id-or-alias>

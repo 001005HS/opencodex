@@ -15,6 +15,10 @@ supplies this credential-continuity check; a shared path, active selection or ma
 does not prove continuity. Fully replaced opaque token pairs are not adopted, even if they may
 belong to the same account. Stored-token refresh and explicit login remain available through the
 existing refresh-intent/reauth rules, so promotion cannot authorize another account's CLI pair.
+The provenance restriction governs automatic pause fallback, not explicit selection of an existing
+unpaused account. A selected legacy row can use its own valid bearer for quota/model discovery and
+refresh its stored token normally. With no permitted fallback, active-account probes stay closed
+until a usable account is selected or resumed; they do not silently select an unknown-origin row.
 Pause does not clear cooldowns, quota, or credentials and does not cancel an already-sent turn.
 
 `src/oauth/anthropic-routing.ts` excludes paused rows from quota, round-robin, fill-first,

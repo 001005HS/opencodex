@@ -3,6 +3,9 @@ import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { clearPoolRotationState } from "../../../src/codex/pool-rotation";
+import { fetchProviderModels } from "../../../src/codex/catalog/provider-models";
+import { clearModelCache } from "../../../src/codex/model-cache";
+import * as outbound from "../../../src/lib/provider-outbound";
 import { OAuthAccountPausedError, OAuthLoginRequiredError, OAUTH_PROVIDERS, refreshAnthropicAccountWithLock } from "../../../src/oauth";
 import { AnthropicTokenError } from "../../../src/oauth/anthropic";
 import * as localTokens from "../../../src/oauth/local-token-detect";
@@ -16,6 +19,7 @@ import {
   removeAccount, saveAccountCredential, saveCredential, setAccountPaused, setActiveAccount,
 } from "../../../src/oauth/store";
 import { clearAccountQuotaCache, setCachedProviderAccountQuotaForTests } from "../../../src/providers/quota";
+import { fetchAnthropicQuota } from "../../../src/providers/quota/vendor-probes-oauth";
 import type { OcxAccountPoolQuotaWindow, OcxAccountPoolRotationStrategy, OcxConfig } from "../../../src/types";
 import { removeTreeWithRetry } from "../../helpers/remove-tree";
 
@@ -96,6 +100,72 @@ for (const source of [undefined, "invalid-source"] as const) {
       status: "updated", activeAccountChanged: true, activeAccountId: c,
     });
     expect(getAccountCredential("anthropic", b)?.access).toBe(background.access);
+  });
+
+  test(`explicitly selected ${source ?? "source-less"} legacy account keeps quota, discovery and stored refresh`, async () => {
+    const [a, b, c] = ids as [string, string, string];
+    const legacy = { ...getAccountCredential("anthropic", b)!, source: source as "oauth" | undefined };
+    await saveAccountCredential("anthropic", b, legacy);
+    await setAccountPaused("anthropic", c, true);
+    const originalFetch = globalThis.fetch;
+    const usageBearers: Array<string | null> = [];
+    const modelBearers: Array<string | null> = [];
+    const refreshTokens: string[] = [];
+    const detect = spyOn(localTokens, "detectClaudeCodeToken").mockImplementation(() => {
+      throw new Error("legacy accounts must not read external Claude credentials");
+    });
+    const refreshed = { access: "synthetic-legacy-refreshed", refresh: "synthetic-legacy-rotated", expires: Date.now() + 3_600_000 };
+    const refresh = spyOn(OAUTH_PROVIDERS.anthropic!, "refresh").mockImplementation(async token => {
+      refreshTokens.push(token);
+      return refreshed;
+    });
+    globalThis.fetch = (async (input, init) => {
+      // Every possible fetch stays inside this fixture, including unexpected URLs.
+      expect(String(input)).toBe("https://api.anthropic.com/api/oauth/usage");
+      usageBearers.push(new Headers(init?.headers).get("authorization"));
+      return Response.json({ five_hour: { utilization: 25 } });
+    }) as typeof fetch;
+    const models = spyOn(outbound, "providerOutboundGet").mockImplementation(async (_name, _provider, url, init, deps) => {
+      expect(url).toBe("https://api.anthropic.com/v1/models?limit=1000");
+      expect(await deps?.beforeSend?.()).toBe(true);
+      modelBearers.push(new Headers(init?.headers).get("authorization"));
+      return Response.json({ data: [{ id: "claude-fixture-legacy" }] });
+    });
+    const provider = config().providers.anthropic!;
+    try {
+      clearModelCache();
+      // Unknown provenance cannot silently acquire active-account authority on pause.
+      expect(await setAccountPaused("anthropic", a, true)).toMatchObject({ activeAccountChanged: false, activeAccountId: a });
+      expect(await fetchAnthropicQuota("anthropic")).toBeNull();
+      await fetchProviderModels("anthropic", provider, 0);
+      expect(usageBearers).toEqual([]);
+      expect(modelBearers).toEqual([]);
+      expect(refreshTokens).toEqual([]);
+
+      // Explicit selection of the existing unpaused row authorizes its own credential.
+      expect(await setActiveAccount("anthropic", b)).toBe(true);
+      expect((await fetchAnthropicQuota("anthropic"))?.quota.fiveHourPercent).toBe(25);
+      expect((await fetchProviderModels("anthropic", provider, 0)).map(model => model.id)).toContain("claude-fixture-legacy");
+      expect(usageBearers).toEqual([`Bearer ${legacy.access}`]);
+      expect(modelBearers).toEqual([`Bearer ${legacy.access}`]);
+      expect(getAccountCredential("anthropic", b)?.source).toBeUndefined();
+      expect(refreshTokens).toEqual([]);
+
+      await saveAccountCredential("anthropic", b, { ...legacy, expires: 1 });
+      clearModelCache();
+      expect((await fetchProviderModels("anthropic", provider, 0)).map(model => model.id)).toContain("claude-fixture-legacy");
+      expect((await fetchAnthropicQuota("anthropic"))?.quota.fiveHourPercent).toBe(25);
+      expect(refreshTokens).toEqual([legacy.refresh]);
+      expect(modelBearers).toEqual([`Bearer ${legacy.access}`, `Bearer ${refreshed.access}`]);
+      expect(usageBearers).toEqual([`Bearer ${legacy.access}`, `Bearer ${refreshed.access}`]);
+      expect(detect).not.toHaveBeenCalled();
+      expect(getAccountCredential("anthropic", b)).toMatchObject({ ...refreshed, accountId: legacy.accountId, source: "oauth" });
+      expect(getAccountSet("anthropic")!.accounts.find(account => account.id === a)?.paused).toBe(true);
+    } finally {
+      models.mockRestore(); refresh.mockRestore(); detect.mockRestore();
+      globalThis.fetch = originalFetch;
+      clearModelCache();
+    }
   });
 }
 
