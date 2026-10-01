@@ -864,6 +864,7 @@
   "gemini-inline.test.ts": "images",
   "gemini-web-search.test.ts": "adapters/google",
   "generic-oauth-failover.test.ts": "oauth",
+  "generic-oauth-refusal-composition.test.ts": "oauth",
   "github-copilot-account-origin.test.ts": "providers/github-copilot",
   "github-copilot-context-tier.test.ts": "providers/github-copilot",
   "github-copilot-oauth.test.ts": "providers/github-copilot",
