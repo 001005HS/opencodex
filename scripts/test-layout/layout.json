@@ -1541,6 +1541,7 @@
     "routing-compatibility.test.ts": "routing",
     "routing-identity-domains.test.ts": "routing",
     "routing-intelligence-ui.test.ts": "gui",
+    "routing-policy-dispatch-scope.test.ts": "routing",
     "routing-policy-fallback.test.ts": "routing",
     "routing-policy-pool-quota.test.ts": "routing",
     "routing-policy-surface-parity.test.ts": "routing",
