@@ -7,6 +7,13 @@ opencodex serves `POST /v1/messages` (plus `count_tokens`) alongside `/v1/respon
 Code can use every routed provider — OAuth logins, account pools, key failover and sidecars
 included — with zero extra auth work.
 
+On Devin routes (including SWE-2) reached through the Messages API, text and tool calls wait
+for the upstream turn to complete so its late reasoning signature can precede the answer. This prevents Claude Code's final
+result from becoming empty; reasoning and keepalive progress still flow during generation.
+The buffer shares the request's 32 MiB translation limit and cancellation stops the producer.
+This output-order fix does not resolve Cognition's separate refusal of some generated system
+text. It preserves system instructions and safety constraints.
+
 For an Anthropic route on stored OAuth or an Anthropic API key, native Fast is available on
 `claude-opus-5-5`, `claude-opus-5`, and `claude-opus-4-8`: pick the model's `--fast` row (listed
 when Fast rows are enabled) or set `fastMode: true`. Claude Code's own `/fast` toggle is not
@@ -37,6 +44,8 @@ reauthentication, or threshold, then advances. It is **off by default**, shows a
 and is not battle-tested — Anthropic may restrict accounts that look like automated rotation;
 rotation does not protect against provider enforcement.
 
+To bind a model to particular stored Claude accounts, add ordered `anthropicAccountPool.routes` rules while the pool is enabled. Each rule has a safe `name`, a full case-sensitive `match` glob, an `accounts` array of stored account IDs, and optional `fallback` (default `false`). The first matching rule limits active, manual, affinity, strategy and 429 recovery picks to its accounts. A healthy affinity outside that rule is ignored for this request but kept for other models; the routed choice does not overwrite it. Without fallback, an empty route returns a local 401, or 429 with `Retry-After` when all its declared accounts are cooling, before contacting Anthropic. The client response does not name the route; the proxy log records `route:#<n>`, where `n` is the rule’s 1-based position. `fallback: true` uses the ordinary pool only when the route has no eligible account, including its ordinary fill-first successor order; if its stored accounts are all cooling, the returned 429 uses the earliest cooldown across that expanded pool, even if a saved route account has been removed. An unmatched model follows the existing pool policy; disabling the pool leaves saved rules inactive and restores active-account and presence-driven 429 behavior. A rule is an operator allowlist, not proof of model entitlement.
+
 Operational contract when enabled:
 
 - Upstream **429** cools that account, clears its affinities, and may rotate to another eligible
@@ -52,8 +61,15 @@ Operational contract when enabled:
   whose known reset time has passed are discarded as unknown, including retained model-specific
   windows. Values without a known reset are preserved; missing data is never reported as zero usage.
 - Affinity is **process-local** (lost on proxy restart).
-- **401/403** credential failures quarantine the account (`needsReauth`) so it is excluded from
-  selection until re-authenticated.
+- A complete, structured **403** account-entitlement or billing refusal can rotate before
+  output. Recognized cases include no Claude Code access, an expired/inactive subscription,
+  and an insufficient Anthropic credit balance. The refused account loses its affinities and
+  cools for `Retry-After`, or ten minutes without a deadline. Generic permission, model/resource
+  access, policy and unrecognized errors stay terminal. Recovery respects model routes and
+  send limits; if no replacement is eligible, the original 403 is returned. This also works
+  with proactive pooling off. A 403 after assistant output starts never switches accounts.
+- Token-refresh credential failures retain the existing `needsReauth` policy. Subscription
+  renewal does not require reauthentication, but the account waits for its cooldown to expire.
 - If every eligible account is cooling, the proxy returns **429** (not 401) with `Retry-After`
   when known.
 - Recovery, including 429 failover, uses `quotaWindow` to rank eligible replacements without
@@ -253,7 +269,7 @@ every request, so you bind a picker row to an opencodex route instead:
 
 ```bash
 ocx claude desktop bind claude-sonnet-4-6 xai/grok-4.7
-ocx claude desktop bind claude-opus-4-6 native/gpt-6-sol
+ocx claude desktop bind claude-opus-4-6 native/gpt-6.1-sol
 ocx claude desktop unbind claude-opus-4-6
 ```
 

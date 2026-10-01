@@ -1,3 +1,4 @@
+import { rotateAnthropicAccountOnResponse } from "../../oauth/anthropic-account-refusal";
 import { isNonReplayableResponse } from "../../lib/upstream-retry";
 import { isLocalUpstream } from "../../lib/local-upstream";
 import type { ResponsesRequestContext, ResponsesAdmissionState } from "./core-options";
@@ -35,6 +36,7 @@ import {
   fetchWithResetRetry,
   applyUpstreamRecoveryInit,
   SendBudgetExhaustedError,
+  UpstreamRetryEvidenceError,
   prepareSameTarget429Wait,
   sleepWithAbort,
 } from "../../lib/upstream-retry";
@@ -54,8 +56,8 @@ import { resolveCopilotApiBaseUrl } from "../../oauth/github-copilot";
 import { resolveWireProtocolOverride } from "../adapter-resolve";
 import { bindRouteReasoningReplayScope } from "./core-replay";
 import {
+  AnthropicAccountCooldownError,
   ANTHROPIC_POOL_MAX_FAILOVERS_PER_REQUEST,
-  rotateAnthropicAccountOn429,
   getAnthropicPoolAccessSnapshot,
   formatAnthropicProviderForLog,
 } from "../../oauth/anthropic-routing";
@@ -93,6 +95,7 @@ import {
 import { resolveClientRetryAfter } from "../../lib/retry-after";
 import { cancelBodyOnAbort } from "../../lib/abort";
 import { chargeWorkflowSends } from "../../lib/workflow-budget";
+import { isAntigravityValidationRefusal } from "./antigravity-validation-refusal";
 
 /** One responsibility of the Responses request pipeline; state owners are explicit. */
 export async function prepareAdapterExchange(
@@ -126,6 +129,7 @@ export async function prepareAdapterExchange(
     | "replayOAuthCredentialSnapshot"
     | "invalidateSameTargetRequest"
     | "resolveSelectionAdapter"
+    | "anthropicRouteDecision"
     | "anthropicPoolAccountId"
     | "anthropicPoolFailovers"
     | "anthropicSessionKey"
@@ -268,6 +272,7 @@ export async function prepareAdapterExchange(
   try {
     initialRequest = await transportState.activeAdapter.buildRequest(parsed, {
       headers: requestState.selectedForwardHeaders,
+            providerName: route.providerName,
       translatorBudget,
       abortSignal: upstream.signal,
     });
@@ -379,6 +384,18 @@ export async function prepareAdapterExchange(
     cleanupUpstreamAbort();
     upstream.abort();
     if (options.abortSignal?.aborted) return clientCancelledResponse();
+    const refusal = err instanceof UpstreamRetryEvidenceError ? err.cause : err;
+    // A pause committed during pacing is local admission policy, not a failed upstream.
+    if (refusal instanceof OAuthAccountPausedError) {
+      return formatErrorResponse(403, "permission_error", publicOAuthAuthenticationErrorMessage(refusal));
+    }
+    if (refusal instanceof OAuthLoginRequiredError) {
+      return formatErrorResponse(401, "authentication_error", publicOAuthAuthenticationErrorMessage(refusal));
+    }
+    if (refusal instanceof AnthropicAccountCooldownError) {
+      return formatErrorResponse(429, "rate_limit_error", refusal.message,
+        refusal.retryAfterSeconds === null ? undefined : { retryAfter: String(refusal.retryAfterSeconds) });
+    }
     // A budget refusal is a decision this process made, not an upstream fault. Reporting it as
     // 502 does more than mislabel it: the Codex client retries 5xx and does not retry a 429, so
     // blaming the provider makes the caller send the whole turn again -- the amplification this
@@ -413,7 +430,7 @@ export async function prepareAdapterExchange(
     // moments later; at most one byte-identical replay is allowed per request.
     const consoleGoUploadRetryGuard: { attempted: boolean } = { attempted: false };
     let oauth401ReplayAttempted = false;
-    let antigravity401RotationAttempted = false;
+    let antigravityAuthRotationAttempted = false;
     // At most one reasoning-effort downgrade per request. This sits outside the recovery loop
     // below for the same reason the two guards above do: a guard declared inside it is reset by
     // every `continue recovery`, which would let one turn walk the whole ladder down.
@@ -454,6 +471,7 @@ export async function prepareAdapterExchange(
         try {
           retryRequest = await transportState.activeAdapter.buildRequest(parsed, {
             headers: requestState.selectedForwardHeaders,
+            providerName: route.providerName,
             translatorBudget,
             abortSignal: upstream.signal,
             ...(transportState.imageTierBias > 0 ? { imageTierBias: transportState.imageTierBias } : {}),
@@ -584,6 +602,17 @@ export async function prepareAdapterExchange(
         if (options.abortSignal?.aborted) {
           return { failed: clientCancelledResponse() };
         }
+        const refusal = err instanceof UpstreamRetryEvidenceError ? err.cause : err;
+        if (refusal instanceof OAuthAccountPausedError) {
+          return { failed: formatErrorResponse(403, "permission_error", publicOAuthAuthenticationErrorMessage(refusal)) };
+        }
+        if (refusal instanceof OAuthLoginRequiredError) {
+          return { failed: formatErrorResponse(401, "authentication_error", publicOAuthAuthenticationErrorMessage(refusal)) };
+        }
+        if (refusal instanceof AnthropicAccountCooldownError) {
+          return { failed: formatErrorResponse(429, "rate_limit_error", refusal.message,
+            refusal.retryAfterSeconds === null ? undefined : { retryAfter: String(refusal.retryAfterSeconds) }) };
+        }
         // Same rule on the recovery leg: the ladder refused to send again, so the answer names
         // this proxy rather than the provider it never reached.
         if (err instanceof SendBudgetExhaustedError) {
@@ -665,7 +694,7 @@ export async function prepareAdapterExchange(
           if (route.providerName === "google-antigravity" && err instanceof OAuthLoginRequiredError && failed
             && getAccountSet(route.providerName)?.accounts.some(row =>
               row.id === failed.accountId && row.needsReauth === true)) {
-            antigravity401RotationAttempted = true;
+            antigravityAuthRotationAttempted = true;
             const rotated = await rotateAntigravityAuth(upstreamResponse, "oauth-401");
             if (rotated) { upstreamResponse = rotated; continue recovery; }
           }
@@ -758,10 +787,21 @@ export async function prepareAdapterExchange(
       }
 
       if (route.providerName === "google-antigravity" && upstreamResponse.status === 401
-        && oauth401ReplayAttempted && !antigravity401RotationAttempted
+        && oauth401ReplayAttempted && !antigravityAuthRotationAttempted
         && !isNonReplayableResponse(upstreamResponse)) {
-        antigravity401RotationAttempted = true;
+        antigravityAuthRotationAttempted = true;
         const rotated = await rotateAntigravityAuth(upstreamResponse, "oauth-401");
+        if (rotated) { upstreamResponse = rotated; continue recovery; }
+      }
+
+      if (route.providerName === "google-antigravity" && upstreamResponse.status === 403
+        && transportState.activeAdapter.name === "google"
+        && antigravityPoolActivated && !antigravityAuthRotationAttempted
+        && !isNonReplayableResponse(upstreamResponse)
+        && transportState.genericFailovers < transportState.genericFailoverLimit
+        && await isAntigravityValidationRefusal(upstreamResponse, options.abortSignal)) {
+        antigravityAuthRotationAttempted = true;
+        const rotated = await rotateAntigravityAuth(upstreamResponse, "oauth-account-403");
         if (rotated) { upstreamResponse = rotated; continue recovery; }
       }
 
@@ -945,26 +985,22 @@ export async function prepareAdapterExchange(
         if (isNonReplayableResponse(upstreamResponse)) continue recovery;
      }
 
-      // Opt-in Anthropic OAuth account pool (#294): cool the failed account and retry
-      // with another eligible OAuth account (bounded per request). Disabled by default.
+      // Anthropic OAuth: recover a rate limit or proven account entitlement refusal
+      // before output, within the shared request and account rotation limits.
       while (
-        upstreamResponse.status === 429
+        (upstreamResponse.status === 429 || upstreamResponse.status === 403)
         && transportState.anthropicPoolAccountId
-        && transportState.anthropicPoolFailovers < ANTHROPIC_POOL_MAX_FAILOVERS_PER_REQUEST
       ) {
-        const nextAccountId = rotateAnthropicAccountOn429(
-          config,
-          transportState.anthropicPoolAccountId,
-          upstreamResponse.headers.get("retry-after"),
-          anthropicSessionKey,
-          Date.now(),
-          upstreamResponse.headers,
-        );
+        const nextAccountId = await rotateAnthropicAccountOnResponse(upstreamResponse, {
+          config, accountId: transportState.anthropicPoolAccountId, sessionKey: anthropicSessionKey,
+          decision: transportState.anthropicRouteDecision, signal: upstream.signal,
+          canRetry: transportState.anthropicPoolFailovers < ANTHROPIC_POOL_MAX_FAILOVERS_PER_REQUEST,
+        });
         if (!nextAccountId) break;
-        try { void upstreamResponse.body?.cancel().catch(() => {}); } catch { /* already consumed/closed */ }
         try {
           const admitted = await commitResolvedOAuthSelection(await getAnthropicPoolAccessSnapshot(nextAccountId));
           if (!admitted) throw new Error("OAuth selection changed during recovery");
+          try { void upstreamResponse.body?.cancel().catch(() => {}); } catch { /* already consumed/closed */ }
           transportState.anthropicPoolAccountId = admitted.accountId;
           transportState.anthropicPoolFailovers += 1;
           route.provider = { ...route.provider, apiKey: admitted.accessToken };

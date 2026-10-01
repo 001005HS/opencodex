@@ -28,8 +28,7 @@ Comportement lorsque cette option est activée :
 - Un **429** en amont place le compte en temporisation selon `Retry-After` lorsqu'il est présent, ou selon un délai de repli,
   efface ses affinités et peut faire basculer la requête vers un autre compte admissible, dans les limites prévues.
 - L'affinité est **locale au processus** et disparaît au redémarrage du proxy.
-- Les erreurs d'identification **401/403** mettent le compte en quarantaine (`needsReauth`) afin de l'exclure de la
-  sélection jusqu'à sa réauthentification.
+- Les erreurs de renouvellement du jeton conservent la règle `needsReauth`. Un 403 confirmé lié à un abonnement ou à la facturation du compte peut déclencher un basculement avant la sortie, avec une temporisation selon `Retry-After` ou de dix minutes. Un refus d’autorisation ordinaire reste terminal. Voir la [reprise des comptes](/guides/claude-code/).
 - Si chaque compte éligible est en temporisation, le proxy renvoie **429** (et non 401) avec `Retry-After`
   lorsqu'il est connu.
 - La récupération, y compris le basculement 429, utilise `quotaWindow` pour classer les comptes de
@@ -190,7 +189,7 @@ du sélecteur à une route opencodex :
 
 ```bash
 ocx claude desktop bind claude-sonnet-4-6 xai/grok-4.7
-ocx claude desktop bind claude-opus-4-6 native/gpt-6-sol
+ocx claude desktop bind claude-opus-4-6 native/gpt-6.1-sol
 ocx claude desktop unbind claude-opus-4-6
 ```
 
@@ -735,3 +734,7 @@ Utilisez `"haiku"` comme valeur de remplacement pour le modèle.
 Dans `config.json`, `claudeCode.stabilizePromptCache: true` déplace les notices Claude reconnues en fin des instructions système vers un dernier message utilisateur sur les routes traduites. La valeur par défaut est `false`. Activez cette option seulement si ce changement de rôle convient à vos clients. Les exemples dans des blocs de code et le texte non reconnu sont conservés ; le transfert Anthropic natif reste inchangé. Sans métadonnées, la clé de cache suit les instructions stabilisées. Cette option ne crée pas une identité de conversation et ne garantit aucun succès du cache amont.
 
 Sur toutes les routes Chat traduites, les rappels de l’historique conservent leur position dans la conversation, après les résultats d’outils encore attendus. L’ajout d’un rappel ne réécrit donc pas le prompt système initial, et une instruction placée au milieu de la conversation n’arrive plus avant les tours qu’elle était censée suivre. Le rôle porté par cet emplacement se décide séparément : un rappel part en `system`, sauf si le fournisseur enregistre `foldDeveloperRoleToSystem: false`, ce qui indique que le service en amont accepte le rôle `developer` et le transmet à la même position. Un service qui ne l’accepte pas répond `400 role 'developer' is not allowed` et le tour ne démarre pas, d’où le repli d’une destination non enregistrée. Ce comportement s’applique avec ou sans `stabilizePromptCache` ; le transfert Anthropic natif reste inchangé. La réutilisation du cache exige toujours une identité de session stable et un cache disponible en amont. Les changements des instructions ou outils antérieurs et la compaction de la conversation peuvent aussi affecter les succès du cache ; préserver l’ordre des rappels ne suffit pas à garantir sa réutilisation.
+
+### `anthropicAccountPool.routes`
+
+Les règles `anthropicAccountPool.routes` limitent la sélection et les reprises 429 aux comptes enregistrés du premier modèle correspondant lorsque le pool est activé. Sans compte éligible, la requête échoue localement; `fallback: true` autorise alors le pool ordinaire. Les règles ne prouvent pas l’accès du compte au modèle.

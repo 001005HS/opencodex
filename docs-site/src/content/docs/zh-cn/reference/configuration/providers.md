@@ -161,17 +161,17 @@ API key 提供者可以持有字面量 key，或环境引用。OAuth 提供者�
 
 ### 保存提供方时会保留什么
 
-用已有提供方的名称调用 `POST /api/providers`，会用根据请求构建的行替换已存储的行。仪表板的添加/编辑表单无法发送所有字段，因此保存时会保留请求省略的部分已存储字段。其中五个记录的是某个上游的行为：`preserveReasoningContentModels`, `requiresReasoningPlaceholderModels`, `foldDeveloperRoleToSystem`, `reasoningWireFormat`, `omitReasoningEffortWithToolsModels`。
+用已有提供方的名称调用 `POST /api/providers`，会用根据请求构建的行替换已存储的行。仪表板的添加/编辑表单无法发送所有字段，因此保存时会保留请求省略的部分已存储字段。其中八个记录的是某个上游的行为：`preserveReasoningContentModels`, `requiresReasoningPlaceholderModels`, `foldDeveloperRoleToSystem`, `reasoningWireFormat`, `omitReasoningEffortWithToolsModels`, `retryOn429`, `transientRetryOn5xx`, `retryOnReset`。
 
-| 保存 | 五项设置 | 已存储的 `apiKeyPool` |
+| 保存 | 八项设置 | 已存储的 `apiKeyPool` |
 | --- | --- | --- |
 | 目的地相同，字段省略 | 保留已存储的值，包括显式的 `[]` 或 `false` | 保留 |
 | 新目的地，字段省略 | 不保留；可能套用新目的地的注册表默认值 | 不保留 |
 | 请求中发送了该字段 | 请求中的值 | 请求中的值 |
 
-目的地指适配器、base URL（协议与主机名比较时不区分大小写，忽略末尾斜杠），以及请求中指定了时的认证模式。把提供方移到其他目的地时，描述旧上游的五项设置和为旧上游签发的密钥池都不会带过去。保存从不把旧行的其余部分合并进新行。
+目的地指适配器、base URL（协议与主机名比较时不区分大小写，忽略末尾斜杠），以及请求中指定了时的认证模式。把提供方移到其他目的地时，描述旧上游的八项设置和为旧上游签发的密钥池都不会带过去。保存从不把旧行的其余部分合并进新行。
 
-`PATCH /api/providers?name=<provider>` 只修改它指定的字段，无论目的地如何都保留其他所有已存储字段。它接受全部五项设置，`null` 表示清除。对于两个推理列表，空数组会作为显式退出选项保存，而不会被删除。
+`PATCH /api/providers?name=<provider>` 只修改它指定的字段，无论目的地如何都保留其他所有已存储字段。它接受全部八项设置，`null` 表示清除。对于两个推理列表，空数组会作为显式退出选项保存，而不会被删除。
 
 ### 响应服务等级的可信度
 
@@ -248,7 +248,7 @@ affinity。这些策略不能规避 provider enforcement。
 | `anthropicAccountPool.quotaWindow?` | `"five-hour" \| "weekly" \| "max-utilization"` | `"five-hour"` | 基于用量选择账户时使用的、由提供商报告并缓存的用量条。`five-hour` 保持原有行为。`weekly` 使用每周用量条，并在仍有其他可用账户时跳过 5 小时用量已耗尽的账户；若没有其他账户，则回退使用这些账户。`max-utilization` 使用已知值中的最高值，因此每周用量尚不可用时仍可使用 5 小时用量；两者都未知时，账户遵循 unknown 用量排序。已知用量排在 unknown 之前，但如果所有可用账户都未知，仍会按可用顺序选择一个账户。在前述较低 5 小时用量的同分判定之后，完全相同时也保留可用顺序。不会主动重新平衡健康且已建立亲和性的会话。在新会话分配和符合条件的 429 替代后的路由恢复中，`quota` 直接按此窗口对可用候选账户排序；`fill-first` 按此窗口的阈值和耗尽规则以稳定顺序前进；`round-robin` 忽略此设置。冷却状态、故障转移上限和重新认证资格仍是独立的本地状态。各账户的每周用量只有在控制面板的提供商页面完成查询后才可用。 |
 | `anthropicAccountPool.stickyLimit?` | `number` | `1` | 在一次轮询选择中保留的成功新会话绑定次数。范围 1–100。 |
 
-启用后，429 会根据 `Retry-After` 记录有界冷却，或者使用默认退避，并且可能在同一请求内轮换。亲和性是进程本地的，并且有大小上限。凭据 401/403 会将账户标记为需要重新认证。如果所有合格账户都在冷却，客户端会在已知时收到带 `Retry-After` 的 429，而不是身份验证错误。
+启用后，429 会根据 `Retry-After` 记录有界冷却，或者使用默认退避，并且可能在同一请求内轮换。亲和性是进程本地的，并且有大小上限。令牌刷新失败保留原有重新认证规则。明确的订阅或账户计费 403 可在输出前切换账户，并按 `Retry-After` 或默认十分钟冷却；普通权限拒绝不会切换。如果所有合格账户都在冷却，客户端会在已知时收到带 `Retry-After` 的 429，而不是身份验证错误。
 
 :::caution[Experimental]
 除非你理解 Anthropic 账户策略风险，否则请保持关闭。若不确定，优先手动使用 `ocx account use anthropic <id>` 切换。
@@ -508,3 +508,7 @@ Vercel AI Gateway 可以在多个底层推理提供者之间路由一个模型�
   "visionSidecar": { "enabled": true }
 }
 ```
+
+### `anthropicAccountPool.routes`
+
+`anthropicAccountPool.routes` 将模型绑定到已保存的 Anthropic OAuth 账户 ID。启用账户池后，区分大小写的 `match` 通配模式按顺序取第一个匹配规则，限制首次选择和 429 重试。仅当该规则没有可用账户时，`fallback: true` 才回退到普通账户池。
