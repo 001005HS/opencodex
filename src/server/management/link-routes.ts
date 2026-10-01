@@ -131,9 +131,14 @@ function joinPortMatches(ctx: ManagementContext): boolean {
   return live !== undefined && live === ctx.config.port;
 }
 
-/** Whether `POST /api/link/join` would pass its admission, role and port gates for this caller. */
-function joinAvailable(ctx: ManagementContext): boolean {
-  return pairedSession(ctx) && (ctx.config.runtimeRole ?? "standalone") === "standalone" && joinPortMatches(ctx);
+type LinkJoinDenied = "pairing_required" | "standalone_required" | "join_port_mismatch";
+
+/** Read-only explanation of the join gates, in the same order as `POST /api/link/join`. */
+function joinDenied(ctx: ManagementContext): LinkJoinDenied | null {
+  if (!pairedSession(ctx)) return "pairing_required";
+  if ((ctx.config.runtimeRole ?? "standalone") !== "standalone") return "standalone_required";
+  if (!joinPortMatches(ctx)) return "join_port_mismatch";
+  return null;
 }
 
 function runnerFor(ctx: ManagementContext): SshRunner {
@@ -578,9 +583,11 @@ export async function handleLinkRoutes(ctx: ManagementContext, suppliedState?: L
       const failure = state.compensationFailures?.get(store.links[0].id);
       if (failure) Object.assign(dto.child, { state: "failed" as const, since: failure.since, reason: failure.reason });
     }
-    // A dashboard session also learns whether it may join as a Child. The admin-token answer stays
+    // A dashboard session also learns why it cannot join as a Child. The admin-token answer stays
     // the exact K16 document that `ocx link status` validates key by key.
-    const body: LinkStatusDto & { joinAvailable?: boolean } = ctx.principal === "gui-session" ? { ...dto, joinAvailable: joinAvailable(ctx) } : dto;
+    const denial = ctx.principal === "gui-session" ? joinDenied(ctx) : null;
+    const body: LinkStatusDto & { joinAvailable?: boolean; joinDenied?: LinkJoinDenied | null } = ctx.principal === "gui-session"
+      ? { ...dto, joinAvailable: denial === null, joinDenied: denial } : dto;
     return Response.json(body, { headers: { "cache-control": "no-store" } });
   }
   if (url.pathname === "/api/link/candidates" && req.method === "GET") {

@@ -184,7 +184,7 @@ describe("link management routes", () => {
 
     const status = await sessionCall(`${base}/api/link/status`, headers, state, cfg, deps, true);
     expect(status?.status).toBe(200);
-    expect(await status!.json()).toMatchObject({ role: "standalone", joinAvailable: false });
+    expect(await status!.json()).toMatchObject({ role: "standalone", joinAvailable: false, joinDenied: "pairing_required" });
     const listed = await sessionCall(`${base}/api/link/candidates`, headers, state, cfg, deps, true);
     expect(listed?.status).toBe(200);
     expect(await listed!.json()).toEqual({ candidates: [{ alias: "home", source: "ssh_config" }] });
@@ -243,25 +243,36 @@ describe("link management routes", () => {
     expect(await refused!.json()).toMatchObject({ error: { code: "tailscale_session_refused" } });
   });
 
-  test("status tells a dashboard session whether it may join and keeps the admin-token DTO exact", async () => {
+  test("status explains join gates without mutations and keeps the admin-token DTO exact", async () => {
     temp = mkdtempSync(join(tmpdir(), "ocx-link-join-available-"));
     const h = harness();
     const standalone = { ...h.config, runtimeRole: "standalone" } as OcxConfig;
     const paired = await call("/api/link/status", "GET", undefined, h.deps, "gui-session", true, "pairing", true, standalone);
     expect(paired?.status).toBe(200);
-    expect(await paired!.json()).toMatchObject({ role: "standalone", joinAvailable: true });
+    expect(await paired!.json()).toMatchObject({ role: "standalone", joinAvailable: true, joinDenied: null });
+    expect(paired!.headers.get("cache-control")).toBe("no-store");
     const hub = await call("/api/link/status", "GET", undefined, h.deps, "gui-session", true, "pairing", true, { ...standalone, runtimeRole: "hub" } as OcxConfig);
-    expect(await hub!.json()).toMatchObject({ joinAvailable: false });
+    expect(await hub!.json()).toMatchObject({ joinAvailable: false, joinDenied: "standalone_required" });
+    const client = await call("/api/link/status", "GET", undefined, h.deps, "gui-session", true, "pairing", true, { ...standalone, runtimeRole: "client" } as OcxConfig);
+    expect(await client!.json()).toMatchObject({ joinAvailable: false, joinDenied: "standalone_required" });
     // A credentialless local session cannot join even on the configured port.
     const loopback = await call("/api/link/status", "GET", undefined, h.deps, "gui-session", true, "loopback", false, standalone);
-    expect(await loopback!.json()).toMatchObject({ role: "standalone", joinAvailable: false });
+    expect(await loopback!.json()).toMatchObject({ role: "standalone", joinAvailable: false, joinDenied: "pairing_required" });
     const moved = await call("/api/link/status", "GET", undefined, { ...h.deps, liveListenPort: () => 10200 }, "gui-session", true, "loopback", false, standalone);
-    expect(await moved!.json()).toMatchObject({ joinAvailable: false });
+    expect(await moved!.json()).toMatchObject({ joinAvailable: false, joinDenied: "pairing_required" });
     const unknownPort = await call("/api/link/status", "GET", undefined, { ...h.deps, liveListenPort: () => undefined }, "gui-session", true, "loopback", false, standalone);
-    expect(await unknownPort!.json()).toMatchObject({ joinAvailable: false });
-    // `ocx link status` validates the admin-token answer key by key, so it never gains the field.
+    expect(await unknownPort!.json()).toMatchObject({ joinAvailable: false, joinDenied: "pairing_required" });
+    // Pairing takes precedence; only a paired standalone is told to fix the listening port.
+    for (const liveListenPort of [() => 10200, () => undefined]) {
+      const portDenied = await call("/api/link/status", "GET", undefined, { ...h.deps, liveListenPort }, "gui-session", true, "pairing", true, standalone);
+      expect(await portDenied!.json()).toMatchObject({ joinAvailable: false, joinDenied: "join_port_mismatch" });
+    }
+    // `ocx link status` validates the admin-token answer key by key, so it gains neither field.
     const admin = await call("/api/link/status", "GET", undefined, h.deps, "admin-token", true, null, true, standalone);
     expect(Object.keys(await admin!.json()).sort()).toEqual(["child", "links", "listener", "role"]);
+    expect(h.events).toEqual([]);
+    expect(standalone.apiKeys).toEqual([]);
+    expect(h.store.links).toEqual([]);
   });
 
   test("confirm-host keeps the parsed remote version to a bounded semver shape", async () => {

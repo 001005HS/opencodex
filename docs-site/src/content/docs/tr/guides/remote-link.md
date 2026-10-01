@@ -36,7 +36,9 @@ Home'un sağlayıcılarını kullanacak bilgisayarda:
 
 Bağlanmak bu bilgisayardaki OpenCodex'i yeniden başlatır. Zaten çalışan Codex istekleri önce tamamlanır ve yeniden başlatma sırasında yeni istekler bir dakikaya kadar başarısız olabilir. Ardından kontrol paneli kendiliğinden yeniden yüklenir ve Child bağlantısını gösterir. Codex bu bilgisayarda `http://127.0.0.1:<port>/v1` adresini kullanmaya devam eder ve belirteç veya ortam değişkeni ayarlamanız gerekmez: yerel OpenCodex her isteği Home'a aktarır, Home da kendi sağlayıcıları ve hesaplarıyla yanıt verir.
 
-**Child** rolü yalnızca OpenCodex yapılandırılmış bağlantı noktasında çalışırken kullanılabilir, çünkü Child tam olarak o bağlantı noktasında yeniden başlar. Kontrol paneli OpenCodex'in yapılandırılmış bağlantı noktasında çalışmadığını söylerse önce onu o bağlantı noktasında yeniden başlatın.
+**Child** önce bu bilgisayarı eşleştirmenizi istiyorsa bu bilgisayarın yapılandırılmış HTTP geri döngü IP adresindeki kontrol panelini açın; örneğin `http://127.0.0.1:<configured-port>`. Yerel eşleştirme formu yalnızca eşleştirme eksik olduğunda ve kontrol paneli ile API aynı geri döngü kaynağını kullandığında görünür. Formdaki `ocx gui pair --origin "http://127.0.0.1:<configured-port>"` komutunu kopyalayıp bu bilgisayarın terminalinde çalıştırın, ardından tek kullanımlık kodu forma yapıştırın. Formda gösterilen kaynak adresini aynen kullanın; sağlayıcı API anahtarı veya yönetici belirteci eşleştirme kodu değildir. Eksik eşleştirme ile yapılandırılmış bağlantı noktası uyuşmazlığı farklı nedenlerdir.
+
+**Child** rolü ayrıca OpenCodex'in bağımsız çalışma modunda, yapılandırılmış bağlantı noktasında çalışmasını gerektirir, çünkü Child tam olarak o bağlantı noktasında yeniden başlar. Kontrol paneli OpenCodex'in yapılandırılmış bağlantı noktasında çalışmadığını söylerse önce onu o bağlantı noktasında yeniden başlatın.
 
 ## Bağlantı durumu
 
