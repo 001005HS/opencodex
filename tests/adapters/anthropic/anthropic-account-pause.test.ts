@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { clearPoolRotationState } from "../../../src/codex/pool-rotation";
 import { OAuthAccountPausedError, OAuthLoginRequiredError, OAUTH_PROVIDERS, refreshAnthropicAccountWithLock } from "../../../src/oauth";
 import { AnthropicTokenError } from "../../../src/oauth/anthropic";
+import * as localTokens from "../../../src/oauth/local-token-detect";
 import {
   bindAnthropicSessionAffinity, clearAnthropicAccountPoolState, getAnthropicAccountHealthSnapshot,
   getAnthropicPoolAccessSnapshot, getEligibleAnthropicAccounts, hasAnthropicFailoverQuorum,
@@ -27,7 +28,7 @@ beforeEach(async () => {
   clearAnthropicAccountPoolState(); clearPoolRotationState(); clearAccountQuotaCache();
   for (let i = 0; i < 3; i++) await saveCredential("anthropic", {
     access: `synthetic-access-${i}`, refresh: `synthetic-refresh-${i}`,
-    expires: Date.now() + 3_600_000, accountId: `pause-${i}`,
+    expires: Date.now() + 3_600_000, accountId: `pause-${i}`, source: "oauth",
   });
   ids = getAccountSet("anthropic")!.accounts.map(account => account.id);
   await setActiveAccount("anthropic", ids[0]!);
@@ -75,7 +76,7 @@ test("pause invalidates quorum immediately; disabled-pool reactive failover skip
   expect(hasAnthropicFailoverQuorum()).toBe(true);
 });
 
-test("pause does not promote an expired background local-CLI credential", async () => {
+test("pause does not promote a background local-CLI credential within the refresh skew", async () => {
   const [a, b, c] = ids as [string, string, string];
   const background = getAccountCredential("anthropic", b)!;
   await saveAccountCredential("anthropic", b, { ...background, source: "local-cli", expires: Date.now() + 30_000 });
@@ -83,6 +84,51 @@ test("pause does not promote an expired background local-CLI credential", async 
   expect(result).toMatchObject({ status: "updated", activeAccountChanged: true, activeAccountId: c });
   expect(getAccountSet("anthropic")!.accounts.find(row => row.id === b)?.paused).not.toBe(true);
   expect(getAccountCredential("anthropic", b)?.access).toBe(background.access);
+});
+
+for (const source of [undefined, "invalid-source"] as const) {
+  test(`pause skips Anthropic credentials with ${source ?? "missing"} provenance`, async () => {
+    const [a, b, c] = ids as [string, string, string];
+    const background = getAccountCredential("anthropic", b)!;
+    await saveAccountCredential("anthropic", b, { ...background, source: source as typeof background.source });
+    expect(getAccountCredential("anthropic", b)?.source).toBeUndefined();
+    expect(await setAccountPaused("anthropic", a, true)).toMatchObject({
+      status: "updated", activeAccountChanged: true, activeAccountId: c,
+    });
+    expect(getAccountCredential("anthropic", b)?.access).toBe(background.access);
+  });
+}
+
+test("a promoted local-CLI account cannot adopt another account after entering the refresh skew", async () => {
+  const [a, b] = ids as [string, string, string];
+  const now = Date.now();
+  const background = { ...getAccountCredential("anthropic", b)!, email: "synthetic-b@example.test", source: "local-cli" as const, expires: now + 120_000 };
+  await saveAccountCredential("anthropic", b, background);
+  expect(await setAccountPaused("anthropic", a, true)).toMatchObject({ activeAccountId: b, activeAccountChanged: true });
+  const pausedCredential = getAccountCredential("anthropic", a)!;
+  const detect = spyOn(localTokens, "detectClaudeCodeToken").mockReturnValue({ ...pausedCredential, source: "local-cli" });
+  const refreshed = { access: "synthetic-b-refreshed", refresh: "synthetic-b-refresh", expires: now + 3_600_000 };
+  const sent: string[] = [];
+  try {
+    expect(await refreshAnthropicAccountWithLock("anthropic", b, {
+      ...OAUTH_PROVIDERS.anthropic!, refresh: async token => { sent.push(token); return refreshed; },
+    }, background, { now: () => now + 60_001 })).toBe(refreshed.access);
+    expect(sent).toEqual([background.refresh]);
+    expect(getAccountCredential("anthropic", b)).toMatchObject({
+      ...refreshed, source: "oauth", accountId: background.accountId, email: background.email,
+    });
+    expect(getAccountCredential("anthropic", a)).toEqual(pausedCredential);
+    expect(getAccountSet("anthropic")!.accounts.find(row => row.id === a)?.paused).toBe(true);
+  } finally { detect.mockRestore(); }
+});
+
+test("missing provenance does not change non-Anthropic pause fallback", async () => {
+  for (const accountId of ["synthetic-xai-a", "synthetic-xai-b"]) {
+    await saveCredential("xai", { access: accountId, refresh: accountId, expires: Date.now() + 3_600_000, accountId });
+  }
+  const [a, b] = getAccountSet("xai")!.accounts;
+  await setActiveAccount("xai", a!.id);
+  expect(await setAccountPaused("xai", a!.id, true)).toMatchObject({ activeAccountId: b!.id, activeAccountChanged: true });
 });
 
 test("all-paused refusal and resume preserve credentials and cooldown, independent of pool enable", async () => {

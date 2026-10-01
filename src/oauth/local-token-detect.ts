@@ -128,3 +128,10 @@ export function detectClaudeCodeToken(): OAuthCredentials | null {
   if (!raw) return null;
   return parseClaudeOauthPayload(raw);
 }
+
+/** Opaque Claude tokens carry no account identity; adoption needs a shared credential token. */
+export function hasClaudeCredentialContinuity(stored: OAuthCredentials, disk: OAuthCredentials): boolean {
+  const sameToken = (left: string, right: string): boolean =>
+    typeof left === "string" && left.trim().length > 0 && left === right;
+  return sameToken(stored.refresh, disk.refresh) || sameToken(stored.access, disk.access);
+}

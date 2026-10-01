@@ -7,8 +7,14 @@ OAuth, not a second list in provider config. `setAccountPaused` serializes pause
 with credential and selection writes, advances the selection revision, and only publishes
 invalidation after persistence. Removing an account removes its pause; reauthentication
 preserves it. The store moves active selection to an unpaused, non-reauth row if available.
-For Anthropic, that automatic fallback also skips expired background local-CLI rows so making
-one active cannot authorize it to adopt another account's current Claude Code credential.
+For Anthropic, that automatic fallback skips rows with missing or invalid credential provenance
+and background local-CLI rows expiring within 60 seconds, including still-valid credentials.
+`src/oauth/index.ts` permits Claude Code re-adoption only when a nonempty access or refresh token
+matches the stored credential, preserving its account ID/email. `src/oauth/local-token-detect.ts`
+supplies this credential-continuity check; a shared path, active selection or matching metadata
+does not prove continuity. Fully replaced opaque token pairs are not adopted, even if they may
+belong to the same account. Stored-token refresh and explicit login remain available through the
+existing refresh-intent/reauth rules, so promotion cannot authorize another account's CLI pair.
 Pause does not clear cooldowns, quota, or credentials and does not cancel an already-sent turn.
 
 `src/oauth/anthropic-routing.ts` excludes paused rows from quota, round-robin, fill-first,
@@ -29,6 +35,7 @@ pause/prior-429 recovery uses `only-eligible`, and logs name the committed accou
 > Decision record: [ADR-6013](../decisions/ADR-6013-anthropic-account-pause.md)
 
 Regression coverage: `tests/adapters/anthropic/anthropic-account-pause.test.ts`,
+`tests/oauth/local-token-detect.test.ts`, `tests/oauth/oauth-refresh.test.ts`,
 `tests/adapters/anthropic/anthropic-model-routes.test.ts`, `tests/oauth/oauth-accounts-api.test.ts`,
 `tests/cli/cli-account-pool-verbs.test.ts`, and `gui/tests/provider-quota-refresh-controls.test.tsx`.
 

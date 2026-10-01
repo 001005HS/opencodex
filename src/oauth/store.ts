@@ -1289,8 +1289,8 @@ export async function setAccountPaused(
       const start = set.accounts.findIndex(candidate => candidate.id === accountId);
       const ring = [...set.accounts.slice(start + 1), ...set.accounts.slice(0, start)];
       const fallback = ring.find(candidate => candidate.paused !== true && candidate.needsReauth !== true
-        && !(provider === "anthropic" && candidate.credential.source === "local-cli"
-          && candidate.credential.expires <= Date.now() + 60_000));
+        && !(provider === "anthropic" && (!candidate.credential.source
+          || (candidate.credential.source === "local-cli" && candidate.credential.expires <= Date.now() + 60_000))));
       if (fallback) {
         set.activeAccountId = fallback.id;
         set.selectionRevision = randomUUID();

@@ -159,16 +159,18 @@ An unreadable 5h reading cannot hide a weekly block. Unknown usage does not fabr
 not erase an already measured blocking tuple. A predicted reset time alone does not unlock it.
 While blocked, the minute sweep waits for the latest known blocking reset, then checks owned usage.
 If no future reset is known or a check remains blocked, recovery uses a capped 5/10/20/40/60-minute
-schedule; a longer `Retry-After` also delays profile and token preparation. Only a fresh valid reading
+schedule; a longer `Retry-After` also delays profile and token preparation. Only fresh valid usage or authoritative window-absence evidence
 can lift the block. In Pool mode, a quota `--refresh` bypasses cache freshness but still honors failed-read pacing;
 a deferred read makes no new diagnostic attempt. Other pause, reauthentication, and upstream limits remain independent.
 
 Protection treats one fresh valid WHAM usage response as a replacement for the old 5h reading when
-its primary window explicitly lasts **at least 24 hours** and secondary/tertiary windows are explicitly `null`
-or also explicitly last at least 24 hours and report their usage. This follows the parser's short/long boundary, so a
+its primary window explicitly lasts **at least 24 hours** and reports valid usage, or its primary window is
+explicitly `null` and a measured secondary supplies the weekly usage. In either case, secondary/tertiary
+windows must be explicitly `null` or explicitly last at least 24 hours and report valid usage. This follows the parser's short/long boundary, so a
 one-day window qualifies as well as weekly/monthly windows. The current window still uses the same
 98% threshold. This relies on the single reported snapshot; repeated observations are not required.
-Omitted secondary/tertiary fields, an unknown primary duration, or partial response headers cannot clear a previous block.
+Any omitted window field, an unknown duration, or partial response headers cannot clear a previous block.
+All-null responses carrying only credits and supplementary monthly-only readings also cannot establish recovery.
 The proxy checks the stored credential again before applying a delayed response. An unreadable file
 or replaced bearer cannot update the usage cache, release the lock, or quarantine the new credential,
 even for the same account with no second quota read.
@@ -483,6 +485,13 @@ Anthropic pause applies even when proactive pooling is disabled, including sessi
 429 successors. It survives restart and reauthentication, preserves credentials and health,
 and does not interrupt a turn already sent. Removing the account removes its pause state.
 Per-account Anthropic auto-switch thresholds are not part of this control.
+
+Anthropic's automatic pause fallback skips credentials with unknown provenance and Claude Code
+imports expiring within 60 seconds. A still-valid Claude Code import with more time remaining
+can be selected. Later automatic re-adoption requires an unchanged, nonempty access or refresh
+token; the stored account ID and email are preserved. If Claude Code replaces both tokens,
+OpenCodex cannot establish credential continuity and uses its stored-token refresh or existing
+reauthentication path instead. Use explicit login to import a completely replaced Claude Code pair.
 
 ```bash
 ocx account pause google-antigravity <account-id-or-alias>

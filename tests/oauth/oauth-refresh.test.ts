@@ -1235,22 +1235,39 @@ describe("oauth refresh hardening", () => {
     expect(readOAuthRefreshIntent("anthropic", id)?.uncertain).toBe(true);
   });
 
-  test("Anthropic outstanding intent adopts a newer Claude credential without replay", async () => {
+  test("Anthropic outstanding intent adopts a shared-access Claude credential without replay", async () => {
     await saveCredential("anthropic", { access: "old", refresh: "rt-consumed", expires: 1, source: "local-cli" });
     const id = getAccountSet("anthropic")!.activeAccountId;
     const credential = getAccountCredential("anthropic", id)!;
     writeOAuthRefreshIntent("anthropic", id, credentialGeneration(credential));
-    seedClaudeCredentials("disk", "rt-new", Date.now() + 3600_000);
+    seedClaudeCredentials("old", "rt-new", Date.now() + 3600_000);
     let refreshCalls = 0;
 
     await expect(refreshAnthropicAccountWithLock("anthropic", id, {
       ...OAUTH_PROVIDERS.anthropic!,
       refresh: async () => { refreshCalls++; throw new Error("must not replay"); },
-    }, credential)).resolves.toBe("disk");
+    }, credential)).resolves.toBe("old");
 
     expect(refreshCalls).toBe(0);
     expect(getAccountCredential("anthropic", id)?.refresh).toBe("rt-new");
     expect(readOAuthRefreshIntent("anthropic", id)).toBeUndefined();
+  });
+
+  test("an unrelated Claude pair cannot clear an outstanding intent or replace its account", async () => {
+    await saveCredential("anthropic", {
+      access: "synthetic-old", refresh: "synthetic-consumed", expires: 1, source: "local-cli",
+      accountId: "synthetic-bound", email: "synthetic-bound@example.test",
+    });
+    const id = getAccountSet("anthropic")!.activeAccountId;
+    const credential = getAccountCredential("anthropic", id)!;
+    const intent = writeOAuthRefreshIntent("anthropic", id, credentialGeneration(credential));
+    seedClaudeCredentials("synthetic-unrelated", "synthetic-other-refresh", Date.now() + 3600_000);
+    const mock = mockRefreshFetch([new Response("unexpected", { status: 500 })]);
+    await expect(getValidAccessToken("anthropic")).rejects.toBeInstanceOf(OAuthLoginRequiredError);
+    expect(mock.count()).toBe(0);
+    expect(getAccountCredential("anthropic", id)).toEqual(credential);
+    expect(readOAuthRefreshIntent("anthropic", id)).toEqual(intent);
+    expect(getAccountSet("anthropic")!.accounts[0]!.needsReauth).toBe(true);
   });
 
   test("Anthropic successful refresh clears its intent and the new generation can refresh", async () => {
@@ -1295,13 +1312,18 @@ describe("oauth refresh hardening", () => {
     expect(getAccountSet("anthropic")!.accounts[0]!.needsReauth).toBeUndefined();
   });
 
-  test("Anthropic adopts a newer Claude Code generation without refreshing", async () => {
-    await saveCredential("anthropic", { access: "old", refresh: "rt-old", expires: 1, source: "local-cli" });
-    seedClaudeCredentials("disk", "rt-new", Date.now() + 3600_000);
+  test("Anthropic adopts a shared-refresh Claude generation without losing stored identity", async () => {
+    await saveCredential("anthropic", {
+      access: "old", refresh: "rt-old", expires: 1, source: "local-cli",
+      accountId: "synthetic-bound", email: "synthetic-bound@example.test",
+    });
+    seedClaudeCredentials("disk", "rt-old", Date.now() + 3600_000);
     const mock = mockRefreshFetch([new Response("unexpected", { status: 500 })]);
     await expect(getValidAccessToken("anthropic")).resolves.toBe("disk");
     expect(mock.count()).toBe(0);
-    expect(getCredential("anthropic")?.refresh).toBe("rt-new");
+    expect(getCredential("anthropic")).toMatchObject({
+      refresh: "rt-old", source: "local-cli", accountId: "synthetic-bound", email: "synthetic-bound@example.test",
+    });
   });
 
   /**
@@ -1321,7 +1343,7 @@ describe("oauth refresh hardening", () => {
       "definitive-rejection",
     )).toMatchObject({ cleanupPending: "definitive-rejection" });
 
-    seedClaudeCredentials("disk", "rt-new", Date.now() + 3600_000);
+    seedClaudeCredentials("disk", "rt-old", Date.now() + 3600_000);
     const mock = mockRefreshFetch([new Response("unexpected", { status: 500 })]);
 
     // The intent carries an attemptId, so cleanup runs through the exact-match clear.
@@ -1340,18 +1362,21 @@ describe("oauth refresh hardening", () => {
     // The adoption committed and no network refresh was attempted; only the guard survives.
     expect(cleanupAttempts).toBeGreaterThan(0);
     expect(mock.count()).toBe(0);
-    expect(getCredential("anthropic")?.refresh).toBe("rt-new");
+    expect(getCredential("anthropic")?.refresh).toBe("rt-old");
     expect(getAccountSet("anthropic")!.accounts[0]!.needsReauth).toBeUndefined();
     expect(readOAuthRefreshIntent("anthropic", id)?.cleanupPending).toBe("definitive-rejection");
   });
 
-  test("marked Anthropic local-cli account lazily recovers only from a newer disk generation", async () => {
+  test("marked Anthropic local-cli account recovers only with a usable shared-token generation", async () => {
     await saveCredential("anthropic", { access: "old", refresh: "rt-old", expires: 1, source: "local-cli" });
     const id = getAccountSet("anthropic")!.activeAccountId;
     await markAccountNeedsReauth("anthropic", id, true);
     seedClaudeCredentials("same", "rt-old", 1);
     await expect(getValidAccessToken("anthropic")).rejects.toBeInstanceOf(OAuthLoginRequiredError);
-    seedClaudeCredentials("recovered", "rt-new", Date.now() + 3600_000);
+    seedClaudeCredentials("unrelated", "rt-unrelated", Date.now() + 3600_000);
+    await expect(getValidAccessToken("anthropic")).rejects.toBeInstanceOf(OAuthLoginRequiredError);
+    expect(getAccountCredential("anthropic", id)?.access).toBe("old");
+    seedClaudeCredentials("recovered", "rt-old", Date.now() + 3600_000);
     await expect(getValidAccessToken("anthropic")).resolves.toBe("recovered");
     expect(getAccountSet("anthropic")!.accounts[0]!.needsReauth).toBeUndefined();
   });
