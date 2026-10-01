@@ -235,7 +235,7 @@ The `hub-link` socket is HTTP-only and default-denies all but the fixed data rou
 usage, and `GET /readyz`; every `Upgrade` header, management, GUI, session, health, and unknown
 `/v1/*` route is rejected before dispatch. Its `opencodex-link.invalid` policy admits only configured
 key ids recorded by `links.json`, never the environment token. Context relays rebuild that policy for their post-body admission check, so key revocation stops an in-flight request before dispatch. `ensureStarted()` is single-flight,
-final deletion closes the listener, and `src/server/index/optional-listeners.ts` runs supervisor teardown before closing this listener and the Claude intercept pair.
+final deletion closes the listener, and `src/server/index/optional-listeners.ts` runs supervisor teardown before closing this listener, the Claude intercept pair and the optional ChatGPT send-unblock listener.
 ### Claude intercept pair
 
 At the end of the startup transaction, `startServer` also starts the optional Claude intercept pair
@@ -598,3 +598,9 @@ registration succeeds.
 Bun updater lease and recovery behavior follows the [update transaction contract](ops/service-and-sidecars.md#bun-updater-ownership-transaction).
 
 Companion timeline and filtered totals follow the [companion usage contract](companion.md). [Ongoing priority failback](providers/openai-accounts.md#ongoing-priority-failback) reuses request-triggered quota priming and captured-account dispatch; it adds no periodic worker or mid-request account switch. The serving-install census and bounded foreground delegation in `src/config/serving-runtimes.ts` follow [service command selection](ops/service-and-sidecars.md#background-service-command-selection). The experimental macOS `ocx chatgpt` launcher, restore and status commands follow the [ChatGPT Desktop contract](clients/chatgpt-desktop.md); the internal stdout filter remains hidden from public capability discovery.
+
+The optional macOS ChatGPT send-unblock listener joins this same synchronous startup
+composition and awaited shutdown through `src/server/index/chatgpt-unblock-lifecycle.ts`.
+It starts only for `chatgptDesktop.unblockSend === true` outside the client role, stores its
+startup promise and degrades failures to warnings. Its shared-CA trust, resolver
+launch and credential-relay boundaries are owned by [ChatGPT Desktop](clients/chatgpt-desktop.md#optional-local-ca-send-unblock-intercept).
