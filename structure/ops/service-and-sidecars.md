@@ -368,10 +368,14 @@ post-failure service recovery, as a successful update does, and makes the recove
 again after the release. The Bun updater releases before `service repair` in both the recovery
 branch and the post-install refresh — the port reclaim that authorizes kills already ran under
 the lease — and re-acquires before each fallback's ownership re-read, so the re-read and any
-direct start stay serialized with a claim that landed in the unleased window. The dashboard
-restart worker in `src/update/job.ts` releases the lease immediately before `ocx service
-repair`, re-acquires it at the direct-start fallthrough — a still-claimed lease fails closed —
-and re-runs the recorded-owner veto under it before mutating the port.
+direct start stay serialized with a claim that landed in the unleased window; after the package
+swap, a lease that stays claimed is reported with manual recovery steps and a non-zero exit. The
+dashboard restart worker in `src/update/job.ts` releases the lease immediately before `ocx
+service repair` and re-acquires it at the direct-start fallthrough, waiting long enough to
+outlast one service-wrapper respawn, then re-runs the recorded-owner veto under it before
+mutating the port, because a claim could have landed during the now-unleased refresh window. A
+lease that stays claimed fails closed: nothing is started, and the job is marked failed, since
+the refresh before it produced no serving proxy; an ownership veto still ends as succeeded.
 
 The npm transaction creates each staging directory exclusively and may clean that fresh path
 while the creating process still owns it. On POSIX it also creates the stage's `lib` directory,
