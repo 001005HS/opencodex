@@ -365,6 +365,9 @@ export async function prepareAdapterExchange(
         {
           abortSignal: upstream.signal,
           label: safeHostLabel(builtInitialRequest.url),
+          // Even the reset-only combo leg must settle its named prepaid receipt.
+          ...(options.comboDispatchPermit
+            ? { onSendsConsumed: transientSendReporter(options.comboDispatchPermit) } : {}),
           ...(transientPolicy || compactPrepaid
             // Draws the remainder, not the raw policy. A combo child inherits the parent's
             // holder but used to take a fresh full allowance on its own first send, so the

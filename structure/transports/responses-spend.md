@@ -42,6 +42,8 @@ reporter's first send settles only its named pending permit instead of adding a 
 `transientSendReporter` captures that permit before entering a helper; a later handoff cannot
 replace it. `reportDispatchSends` verifies shared-ledger ownership and consumes one receipt only.
 Native Chat combo children carry the same exact permit to their physical-send boundary.
+Reset-only generic combo helpers report their named prepaid receipt too, without changing
+the selected retry cap; compaction reconciliation therefore does not count that source again.
 Numeric `used` updates and unnamed, foreign, released or already-reported permits charge actual
 sends without consuming another reservation. Extra retries remain full charges. Reports may arrive
 out of reservation order; no FIFO ordering is required. An adapter
