@@ -260,6 +260,10 @@ Codex pool selection applies to the next request after clearing existing affinit
 
 Anthropic의 자동 대체 계정 선택은 출처가 불명확한 자격 증명과 60초 이내에 만료되는 Claude Code 가져오기를 건너뜁니다. 60초 넘게 남은 유효한 Claude Code 계정은 선택할 수 있습니다. 이후 CLI 자격 증명을 자동으로 다시 가져올 때는 비어 있지 않은 access 또는 refresh 토큰 중 하나가 저장된 값과 같아야 하며, 기존 계정 ID와 이메일을 보존합니다. 두 토큰이 모두 바뀌면 자격 증명의 연속성을 확인할 수 없으므로 저장된 토큰의 갱신 또는 기존 재인증 경로를 사용합니다. 완전히 교체된 Claude Code 토큰을 가져오려면 명시적으로 로그인하세요.
 
+허용된 대체 계정이 없으면 사용 가능한 활성 계정이 선택될 때까지 할당량 조회와 실시간 모델 검색이 대기합니다.
+`ocx account use anthropic <account-id-or-alias>`로 일시 정지되지 않은 기존 레거시 계정을 명시적으로 선택할 수 있습니다.
+원래 자격 증명의 출처가 기록되지 않았더라도 해당 계정의 유효한 자격 증명과 일반적인 저장 토큰 갱신을 계속 사용할 수 있습니다.
+
 CLI 명령은 Anthropic OAuth 계정을 id 또는 유일한 alias로 일시 정지하거나 재개합니다. alias는 정확히 일치하는 값을 먼저 찾고, 없으면 대소문자를 구분하지 않고 찾습니다. 대시보드와 같은 `PUT /api/oauth/accounts/pause`에 `{ provider: "anthropic", accountId, paused }`를 보냅니다. 계정에 저장되는 `paused` 상태는 `GET /api/oauth/accounts`에도 표시됩니다. 사전 계정 전환 풀이 꺼져 있어도 정지된 계정은 선택, 세션 바인딩, 429 대체 후보에서 제외됩니다. 모든 계정이 정지되면 하나를 재개할 때까지 요청은 403을 반환합니다. 이미 전송한 요청은 유지하며 자격 증명과 건강 상태를 지우지 않습니다. 재시작·재로그인 후에도 정지는 유지되고, 계정을 삭제하면 함께 제거됩니다. 계정별 전환 임계값은 이 기능에 포함되지 않습니다.
 
 ### `ocx account clear <provider> [--json]`
