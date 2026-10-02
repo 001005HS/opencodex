@@ -939,11 +939,24 @@ export function createSpendReservationLedger(options: {
    */
   const evictScopes = (at: number, force: boolean): number => {
     const cutoff = at - policy.retentionMs;
+    // Candidate selection uses one snapshot of each pool group for the whole pass.
+    // Re-scanning all scopes per pool member repeats work on every reservation.
+    const pools = new Map<string, ScopeState>();
+    for (const [key, state] of scopes) {
+      if (!key.startsWith("pool\0")) continue;
+      const group = poolContinuity.resolve(key.slice(5));
+      let total = pools.get(group);
+      if (!total) pools.set(group, total = { settled: 0, reserved: 0, unresolved: 0, lastSeenAt: 0 });
+      total.settled += state.settled;
+      total.reserved += state.reserved;
+      total.unresolved += state.unresolved;
+      total.lastSeenAt = Math.max(total.lastSeenAt, state.lastSeenAt);
+    }
     const candidates: { key: string; scope: SpendScope; alias: string; seenAt: number }[] = [];
     for (const [key, state] of scopes) {
       const separator = key.indexOf("\0");
       const scope = key.slice(0, separator) as SpendScope;
-      const effective = scope === "pool" ? poolState(key.slice(separator + 1))! : state;
+      const effective = scope === "pool" ? pools.get(poolContinuity.resolve(key.slice(separator + 1)))! : state;
       if (effective.reserved > 0) continue;
       if (scope === "pool" && state.settled + state.unresolved > 0
         && !poolContinuity.known(key.slice(separator + 1))) continue;

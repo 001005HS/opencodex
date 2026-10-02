@@ -149,6 +149,50 @@ describe("historical pool identity continuity", () => {
     expect(ledger.snapshot("pool", "provider")).toMatchObject({ settled: 40, reserved: 10 });
   });
 
+  test("retention uses the newest pool member and journals every dormant member removal", () => {
+    const record = checkpoint([["older", 10, 0], ["newer", 0, 20]]);
+    record.scopes[1]!.seenAt = 95;
+    const disk = journal([record]);
+    const aliases = { [pool("older")]: "provider", [pool("newer")]: "provider" };
+    const config = policy(aliases, { retentionMs: 5 });
+    const ledger = createSpendReservationLedger({ journal: disk, salt, policy: config, now: () => 100 });
+    expect(ledger.checkPoolContinuity()).toBeUndefined();
+    ledger.prune(100); // The newest member is exactly at the retention cutoff.
+    expect(ledger.snapshot("pool", "provider")).toMatchObject({ settled: 10, unresolved: 20 });
+    expect(disk.lines.map(line => JSON.parse(line)).filter(record => record.kind === "drop")).toEqual([]);
+    ledger.prune(101);
+    expect(ledger.snapshot("pool", "provider")).toBeUndefined();
+    expect(disk.lines.map(line => JSON.parse(line)).filter(record => record.kind === "drop")).toEqual([
+      { v: 1, kind: "drop", scope: "pool", alias: pool("older"), at: 101 },
+      { v: 1, kind: "drop", scope: "pool", alias: pool("newer"), at: 101 },
+    ]);
+    const restarted = createSpendReservationLedger({ journal: disk, salt, policy: config, now: () => 101 });
+    expect(restarted.snapshot("pool", "provider")).toBeUndefined();
+    expect(restarted.checkPoolContinuity()).toBeUndefined();
+  });
+
+  test("capacity eviction chooses the oldest individual member and drops only one scope", () => {
+    const record = checkpoint([["oldest", 10, 0], ["recent", 20, 0], ["other", 0, 0]]);
+    record.scopes[1]!.seenAt = 40;
+    record.scopes[2]!.seenAt = 2;
+    const disk = journal([record]);
+    const config = policy({ [pool("oldest")]: "provider", [pool("recent")]: "provider" },
+      { retentionMs: 100, maxTrackedScopes: 3 });
+    const ledger = createSpendReservationLedger({ journal: disk, salt, policy: config, now: () => 50 });
+    expect(ledger.checkPoolContinuity()).toBeUndefined();
+    expect(ledger.reserve({ sendId: "new-root", scopes: { rootId: "new-root" }, inputTokens: 1, outputCeilingTokens: 0 }).reserved).toBe(true);
+    expect(disk.lines.map(line => JSON.parse(line)).filter(record => record.kind === "drop")).toEqual([
+      { v: 1, kind: "drop", scope: "pool", alias: pool("oldest"), at: 50 },
+    ]);
+    expect(ledger.snapshot("pool", "provider")?.settled).toBe(20);
+    expect(ledger.snapshot("pool", "other")?.settled).toBe(0);
+    expect(ledger.snapshot("root", "new-root")?.reserved).toBe(1);
+    const restarted = createSpendReservationLedger({ journal: disk, salt, policy: config, now: () => 50 });
+    expect(restarted.snapshot("pool", "provider")?.settled).toBe(20);
+    expect(restarted.snapshot("pool", "other")?.settled).toBe(0);
+    expect(restarted.snapshot("root", "new-root")?.unresolved).toBe(1);
+  });
+
   test("observe-only records already-sent requests while ambiguity still blocks new dispatches", () => {
     const disk = journal([checkpoint([["unknown-label", 40, 0]])]);
     const ledger = createSpendReservationLedger({ journal: disk, salt, policy: policy(), now: () => 2 });

@@ -144,6 +144,9 @@ that repeats existing member aliases is independent of salted-key order. A remov
 never removes a journaled link. Group activity,
 last-seen time and exhaustion govern retention; unidentified positive balances cannot be evicted.
 Identity evidence is bounded and retained even when dormant under-limit scopes are evicted.
+Each eviction pass aggregates pool groups once before choosing candidates. Retention uses the
+group's newest activity; capacity pressure still removes only the oldest eligible individual
+scope per pass, and every removal journals its original scope alias.
 
 Before a mapping authorizes admission, a v1 checkpoint durably carries both unchanged accounting
 and optional salted `poolContinuity` metadata. No raw provider/account names are added to the
