@@ -16,7 +16,7 @@ import { acquireOwnedSpendHome } from "../helpers/owned-spend-home";
 import { removeTreeWithRetry } from "../helpers/remove-tree";
 import { admitHttpWorkflowTurn, workflowDecisionRefusalResponse } from "../../src/server/workflow-refusal";
 import { createResponsesSendBudget } from "../../src/server/responses/request-send-budget";
-import { claimDispatchSpendProof, createRequestExecutionBudget, deriveRequestExecutionBudget } from "../../src/lib/request-execution-budget";
+import { claimDispatchSpendProof, createRequestExecutionBudget, deriveRequestExecutionBudget, reportDispatchSends } from "../../src/lib/request-execution-budget";
 import { createPoolContinuity } from "../../src/lib/spend-pool-continuity";
 import { listWorkflowBudgetEvents, resetWorkflowBudgetsForTest, workflowSpendCeilingReached } from "../../src/lib/workflow-budget";
 import { createRequestSpendTracker } from "../../src/server/responses/request-spend";
@@ -377,7 +377,7 @@ for (const end of ["release", "report", "assume"] as const) {
         expect(workflowSpendCeilingReached(undefined, ledger, "provider", proof)).toBeUndefined();
         expect(claimDispatchSpendProof(budget, permit)).toBeUndefined();
       }
-      if (end === "report") budget.used += 1;
+      if (end === "report") reportDispatchSends(budget, 1, permit);
       if (end === "assume") expect(permit.assumeCharge()).toBe(true);
       permit.release();
       permit.release();
@@ -398,7 +398,7 @@ test("prepaid proof belongs to one shared budget and one still-pending dispatch"
     const { budget, reservePermit } = prepaidFixture();
     const permit = reservePermit();
     if (end === "release") permit.release();
-    if (end === "report") budget.used += 1;
+    if (end === "report") reportDispatchSends(budget, 1, permit);
     if (end === "assume") expect(permit.assumeCharge()).toBe(true);
     expect(claimDispatchSpendProof(budget, permit)).toBeUndefined();
   }
@@ -420,12 +420,12 @@ test("receipt identity survives out-of-order handoff and reports cannot authoriz
   expect(b.assumeCharge()).toBe(true);
   expect(claimDispatchSpendProof(first.budget, b)).toBeUndefined();
   expect(claimDispatchSpendProof(first.budget, a)).toBeDefined();
-  first.budget.used += 1;
+  reportDispatchSends(first.budget, 1, a);
   expect(first.budget.used).toBe(2); // report consumed A; B was already assumed
 
   const second = prepaidFixture(10, 100);
   const reported = second.reservePermit(), pending = second.reservePermit();
-  second.budget.used += 1;
+  reportDispatchSends(second.budget, 1, reported);
   expect(claimDispatchSpendProof(second.budget, reported)).toBeUndefined();
   reported.release();
   expect(second.budget.used).toBe(2); // cannot refund a different pending receipt
@@ -524,4 +524,99 @@ test("actual combo dispatch forwards only its own prepaid permit into the child 
     else process.env.OPENCODEX_HOME = previous;
     removeTreeWithRetry(home);
   }
+});
+
+test("a later child report preserves the earlier receipt and refunds its exact pool", () => {
+  const ledger = createSpendReservationLedger({ salt });
+  const logCtx = { provider: "earlier", usageLogInputTokens: 10 };
+  const tracker = createRequestSpendTracker(logCtx, "root", ledger);
+  const budget = createRequestExecutionBudget(undefined, undefined, tracker);
+  const first = budget.reserveDispatch({ sendClass: "initial", targetKey: "same", countedExternally: true });
+  logCtx.provider = "later";
+  logCtx.usageLogInputTokens = 30;
+  const second = budget.reserveDispatch({ sendClass: "initial", targetKey: "same", countedExternally: true });
+  if (!first.allowed || !second.allowed) throw new Error("synthetic reservation refused");
+  const child = createResponsesSendBudget({
+    req: new Request("http://localhost/v1/responses"), logCtx: {},
+    options: { sendBudget: deriveRequestExecutionBudget(budget, budget.policy), comboDispatchPermit: second.permit },
+  });
+  if (child instanceof Response) throw new Error("synthetic child refused");
+  child.noteTransientSends(1);
+  expect(claimDispatchSpendProof(budget, first.permit)).toBeDefined();
+  expect(claimDispatchSpendProof(budget, second.permit)).toBeUndefined();
+  second.permit.release();
+  expect(budget.used).toBe(2);
+  first.permit.release();
+  expect(budget.used).toBe(1);
+  expect(ledger.snapshot("pool", "earlier")).toMatchObject({ reserved: 0, unresolved: 0 });
+  expect(ledger.snapshot("pool", "later")).toMatchObject({ reserved: 30, unresolved: 0 });
+  tracker.settle({ inputTokens: 25, outputTokens: 0 });
+  expect(ledger.snapshot("pool", "later")).toMatchObject({ settled: 25, reserved: 0, unresolved: 0 });
+});
+
+test("captured reporters retain receipt ownership across handoffs, cancellation and retries", () => {
+  for (const finish of ["release", "report", "assume"] as const) {
+    const { ledger, tracker, budget, reservePermit } = prepaidFixture(10, 100);
+    const a = reservePermit();
+    const owner = createResponsesSendBudget({
+      req: new Request("http://localhost/v1/responses"), logCtx: {}, options: { sendBudget: budget },
+    });
+    if (owner instanceof Response) throw new Error("synthetic owner refused");
+    owner.pendingHopPermit = a;
+    const reportA = owner.transientSendReporter();
+    const b = reservePermit();
+    owner.pendingHopPermit = b;
+    const reportB = owner.transientSendReporter();
+    reportB(0); // A cancelled/no-send helper cannot settle a receipt.
+    reportB(1);
+    b.release();
+    expect(budget.used).toBe(2);
+    expect(claimDispatchSpendProof(budget, b)).toBeUndefined();
+    expect(claimDispatchSpendProof(budget, a)).toBeDefined();
+    if (finish === "report") reportA(1);
+    if (finish === "assume") expect(a.assumeCharge()).toBe(true);
+    a.release();
+    a.release();
+    expect(budget.used).toBe(finish === "release" ? 1 : 2);
+    // The same reporter's next count is a real retry, never another prepaid receipt.
+    reportB(1);
+    expect(budget.used).toBe(finish === "release" ? 2 : 3);
+    tracker.settle(undefined);
+    expect(ledger.snapshot("pool", "provider")).toMatchObject({
+      reserved: 0, settled: 0, unresolved: finish === "release" ? 20 : 30,
+    });
+  }
+});
+
+test("unnamed and foreign reports cannot consume a pending receipt", () => {
+  const { ledger, budget, reservePermit } = prepaidFixture(10, 100);
+  const a = reservePermit(), b = reservePermit();
+  const foreign = prepaidFixture(10, 100).reservePermit();
+  budget.used += 1;
+  reportDispatchSends(deriveRequestExecutionBudget(budget, budget.policy), 1, foreign);
+  expect(budget.used).toBe(4);
+  expect(claimDispatchSpendProof(budget, a)).toBeDefined();
+  expect(claimDispatchSpendProof(budget, b)).toBeDefined();
+  a.release();
+  b.release();
+  expect(budget.used).toBe(2);
+  expect(ledger.snapshot("pool", "provider")).toMatchObject({ reserved: 20, unresolved: 0 });
+  reportDispatchSends(budget, 1, a); // A late physical report is counted; no proof is revived.
+  expect(budget.used).toBe(3);
+  expect(claimDispatchSpendProof(budget, a)).toBeUndefined();
+});
+
+test("releasing an older receipt preserves the later target and its recovery charges", () => {
+  const budget = createRequestExecutionBudget();
+  const a = budget.reserveDispatch({ sendClass: "initial", targetKey: "a", countedExternally: true });
+  const b = budget.reserveDispatch({ sendClass: "account-failover", targetKey: "b", countedExternally: true });
+  if (!a.allowed || !b.allowed) throw new Error("synthetic reservation refused");
+  reportDispatchSends(budget, 1, b.permit);
+  a.permit.release();
+  expect(budget.used).toBe(1);
+  expect(budget.lastTargetKey).toBe("b");
+  expect(budget.alternateTargetSends).toBe(1);
+  expect(budget.targetTransitions).toBe(1);
+  b.permit.release();
+  expect(budget.used).toBe(1);
 });

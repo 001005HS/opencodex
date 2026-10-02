@@ -147,7 +147,7 @@ export async function prepareAdapterExchange(
     | "noteAdapterPhysicalSend"
     | "noteAdapterRecoveryWithheld"
     | "remainingTransientSendBudget"
-    | "noteTransientSends"
+    | "transientSendReporter"
     | "recoverySendAllowance"
     | "recoveryClassFor"
     | "sendBudgetExhausted"
@@ -182,7 +182,7 @@ export async function prepareAdapterExchange(
     noteAdapterPhysicalSend,
     noteAdapterRecoveryWithheld,
     remainingTransientSendBudget,
-    noteTransientSends,
+    transientSendReporter,
     recoverySendAllowance,
     recoveryClassFor,
     sendBudgetExhausted,
@@ -374,7 +374,7 @@ export async function prepareAdapterExchange(
               // remaining allowance; treating the booking as unavailable blocks a cap of two.
               attempts: Math.min(transientPolicy?.attempts ?? 1,
                 remainingTransientSendBudget(transientPolicy?.attempts ?? 1) + (compactPrepaid ? 1 : 0)),
-              onSendsConsumed: noteTransientSends,
+              onSendsConsumed: transientSendReporter(compactPrepaid),
             }
             : {}),
         },
@@ -581,7 +581,7 @@ export async function prepareAdapterExchange(
                 ...(refetchAllowance
                   ? {
                     attempts: refetchAllowance.attempts,
-                    onSendsConsumed: noteTransientSends,
+                    onSendsConsumed: transientSendReporter(refetchAllowance.permit),
                   }
                   : {}),
               },

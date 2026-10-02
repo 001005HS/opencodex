@@ -54,23 +54,25 @@ export function createRequestSpendTracker(
   // one. It also means the home in effect at dispatch is the one that gets written.
   let ledgerRef: SpendReservationLedger | undefined = injected;
   const ledger = (): SpendReservationLedger => (ledgerRef ??= sharedSpendLedger());
-  // Every send this request still owes the ledger an answer for, oldest first.
+  // Outstanding entries; exact dispatch reports move their reservation to the end.
   const live: string[] = [];
+  const pendingDispatch = new Set<string>();
   let refusals = 0;
   let resolved = false;
   let terminalProcessed = false;
   /**
    * Confirm the sends this request has already moved past.
    *
-   * A booking is only marked dispatched once a LATER send exists, because that later send
-   * proves the earlier one left. The newest booking stays open until it is settled, so a
-   * reservation the budget hands back -- a rotation that found no alternate, a rebuild
-   * abandoned before the wire -- can still be released for free while this process is alive.
+   * Legacy direct charges infer dispatch from a later send. Exact budget reservations wait
+   * for their own dispatch/report instead: reserving B does not prove that A left, and A
+   * must remain refundable if B reports first. The newest direct charge stays open.
    * A crash resolves every surviving reservation as unresolved spend regardless of this mark,
    * because a journal that lost its tail cannot prove a send never left.
    */
   const confirmOlderSends = (): void => {
-    for (let index = 0; index < live.length - 1; index += 1) ledger().markDispatched(live[index] as string);
+    for (const sendId of live.slice(0, -1)) {
+      if (!pendingDispatch.has(sendId)) ledger().markDispatched(sendId);
+    }
   };
   return {
     charge(options?: Parameters<RequestSendObserver["charge"]>[0]): boolean {
@@ -133,15 +135,29 @@ export function createRequestSpendTracker(
       }
       if (!alreadySent) options?.onReserved?.({ ledger: bookedLedger, sendId });
       live.push(sendId);
-      confirmOlderSends();
+      if (options?.deferDispatch) pendingDispatch.add(sendId);
+      else confirmOlderSends();
       // It has already left, so the reservation cannot be handed back for free: from here only
       // a settlement or unresolved spend is honest about it.
       if (alreadySent) ledger().markDispatched(sendId);
       return true;
     },
-    refund(): void {
-      const sendId = live.pop();
+    dispatch(proof): void {
+      if (proof.ledger !== ledgerRef || !pendingDispatch.has(proof.sendId)) return;
+      ledger().markDispatched(proof.sendId);
+      pendingDispatch.delete(proof.sendId);
+      // Terminal usage follows dispatch/report order, not reservation order.
+      const index = live.indexOf(proof.sendId);
+      if (index >= 0) live.push(...live.splice(index, 1));
+    },
+    refund(proof): void {
+      // null is an exact budget reservation that obtained no durable booking.
+      if (proof === null || (proof && proof.ledger !== ledgerRef)) return;
+      const index = proof ? live.indexOf(proof.sendId) : live.length - 1;
+      if (index < 0) return;
+      const [sendId] = live.splice(index, 1);
       if (sendId === undefined) return;
+      pendingDispatch.delete(sendId);
       // Undispatched, so this returns the tokens. If the send was already confirmed by a later
       // one, `abandon` refuses and unresolved is the only honest outcome left.
       if (!ledger().abandon(sendId)) ledger().markLost(sendId);

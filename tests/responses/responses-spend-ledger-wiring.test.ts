@@ -7,7 +7,7 @@ import {
   DEFAULT_SPEND_RESERVATION_POLICY,
   type SpendJournal,
 } from "../../src/lib/spend-reservation-ledger";
-import { createRequestExecutionBudget } from "../../src/lib/request-execution-budget";
+import { createRequestExecutionBudget, reportDispatchSends } from "../../src/lib/request-execution-budget";
 import { createRequestSpendTracker } from "../../src/server/responses/request-spend";
 import { SpendLedgerOwnerError, type SpendLedgerOwnerErrorCode } from "../../src/lib/spend-ledger-owner";
 import { acquireOwnedSpendHome } from "../helpers/owned-spend-home";
@@ -189,7 +189,7 @@ describe("the request path books every physical send on the durable ledger", () 
       }), body, "spend", config, logCtx, { sendBudget, translatorBudget }, {
         handleResponses: async (_req, _config, childLog, options) => {
           children += 1;
-          options!.sendBudget!.used += 1; // Report the send already reserved by the combo.
+          reportDispatchSends(options!.sendBudget!, 1, options!.comboDispatchPermit);
           childLog.provider += `-account-${children}`;
           return children === 1
             ? Response.json({ error: { message: "fixture outage" } }, { status: 503 })

@@ -146,9 +146,11 @@ export interface RequestSendObserver {
    * would cross a ceiling never joins the total, the total stays just under, and the ceiling
    * never fires for any later request either.
    */
-  charge(options?: { alreadySent?: boolean; onReserved?: (proof: SpendReservationProof) => void }): boolean;
+  charge(options?: { alreadySent?: boolean; deferDispatch?: boolean; onReserved?: (proof: SpendReservationProof) => void }): boolean;
+  /** Confirm the exact reservation once its dispatch is known. */
+  dispatch?(proof: SpendReservationProof): void;
   /** Give back a booking whose send never happened. */
-  refund(): void;
+  refund(proof?: SpendReservationProof | null): void;
 }
 
 /**
@@ -243,12 +245,28 @@ const sharedSendLedgers = new WeakMap<RequestExecutionBudget, SharedSendLedger>(
 const dispatchSpendProofs = new WeakMap<SingleUseDispatchPermit, {
   owner: SharedSendLedger;
   claim(): SpendReservationProof | undefined;
+  report(): boolean;
 }>();
 
 /** One preflight for the exact prepaid dispatch, never another budget or a replayed permit. */
 export function claimDispatchSpendProof(budget: RequestExecutionBudget, permit?: SingleUseDispatchPermit): SpendReservationProof | undefined {
   const proof = permit && dispatchSpendProofs.get(permit);
   return proof && proof.owner === sharedSendLedgers.get(budget) ? proof.claim() : undefined;
+}
+
+/** Reports actual sends against only the named permit on this shared ledger. */
+export function reportDispatchSends(
+  budget: TransientSendBudget,
+  sends: number,
+  permit?: SingleUseDispatchPermit,
+): void {
+  const count = Number.isFinite(sends) ? Math.max(0, Math.trunc(sends)) : 0;
+  if (count === 0) return;
+  const receipt = permit && dispatchSpendProofs.get(permit);
+  const prepaid = receipt && receipt.owner === sharedSendLedgers.get(budget as RequestExecutionBudget)
+    && receipt.report() ? 1 : 0;
+  // Unnamed, foreign, released or already-reported permits cannot consume another receipt.
+  budget.used += count - prepaid;
 }
 
 /**
@@ -292,24 +310,15 @@ function createRequestExecutionBudgetWithLedger(
   let alternateTargetSends = 0;
   let targetTransitions = 0;
   let lastTargetKey: string | undefined;
+  const targetReservations: Array<{ targetKey: string }> = [];
 
   const budget: RequestExecutionBudget = {
     get used(): number { return counter.spent; },
     set used(next: number) {
-      // The retry helpers report their real send count by assigning through this field. A
-      // reservation taken with `countedExternally` has already booked one of those sends, so
-      // the report settles the pending booking first and only the surplus is charged.
-      const delta = next - counter.spent;
-      if (delta <= 0) {
-        counter.spent = Math.max(0, next);
-        return;
-      }
-      const settled = Math.min(delta, counter.pendingExternalSends.size);
-      for (let index = 0; index < settled; index += 1) {
-        counter.pendingExternalSends.delete(counter.pendingExternalSends.values().next().value!);
-      }
-      const charged = delta - settled;
-      counter.spent += charged;
+      // A numeric report has no receipt identity. Only reportDispatchSends may settle a
+      // prepaid permit; guessing by reservation order can refund another leg's actual send.
+      const charged = next - counter.spent;
+      counter.spent = Math.max(0, next);
       // These sends have already left. The ledger records them even past a ceiling it would
       // have refused, because refusing after the fact only hides spend that was really
       // incurred -- the refusal has to happen at the reservation below, or not at all.
@@ -363,7 +372,7 @@ function createRequestExecutionBudgetWithLedger(
       // for a dispatch a cheaper check above would have refused is spend this request never
       // makes, and it would hold those tokens against the scope until retention expired.
       let spendProof: SpendReservationProof | undefined;
-      if (observer && !observer.charge({ onReserved: proof => { spendProof = proof; } })) {
+      if (observer && !observer.charge({ deferDispatch: true, onReserved: proof => { spendProof = proof; } })) {
         return { allowed: false, reason: "spend-exhausted" };
       }
 
@@ -371,9 +380,9 @@ function createRequestExecutionBudgetWithLedger(
       // which two legs read the same remainder, both received a permit, and both dispatched:
       // one remaining send admitted two physical sends, which is the per-request multiplication
       // this budget exists to stop. Everything is booked now; `release()` is the way back.
-      const previousTargetKey = lastTargetKey;
       counter.spent += 1;
-      const receipt = {};
+      const receipt = { targetKey: intent.targetKey };
+      targetReservations.push(receipt);
       if (intent.countedExternally === true) counter.pendingExternalSends.add(receipt);
       if (drawsReserve) reserveSpent = true;
       if (chargesAlternateTarget) alternateTargetSends += 1;
@@ -386,15 +395,16 @@ function createRequestExecutionBudgetWithLedger(
         use(): boolean {
           if (settled !== "open") return false;
           settled = "used";
+          if (intent.countedExternally !== true && spendProof) observer?.dispatch?.(spendProof);
           return true;
         },
         assumeCharge(): boolean {
-          if (settled !== "open") return false;
+          if (settled !== "open" || (intent.countedExternally === true && !counter.pendingExternalSends.has(receipt))) return false;
           settled = "used";
           // The booking this reservation made for an external reporter is now owned by the
-          // caller. Leaving it pending is not harmless: the next `used` report of this request
-          // would settle against it and one real send would go uncharged.
+          // caller. Close only its own receipt so a later reporter cannot spend it again.
           if (intent.countedExternally === true) counter.pendingExternalSends.delete(receipt);
+          if (spendProof) observer?.dispatch?.(spendProof);
           return true;
         },
         release(): void {
@@ -406,15 +416,23 @@ function createRequestExecutionBudgetWithLedger(
             if (!counter.pendingExternalSends.delete(receipt)) return;
           }
           counter.spent -= 1;
-          observer?.refund();
+          observer?.refund(spendProof ?? null);
           if (drawsReserve) reserveSpent = false;
           if (chargesAlternateTarget) alternateTargetSends -= 1;
           if (chargesTransition) targetTransitions -= 1;
-          lastTargetKey = previousTargetKey;
+          targetReservations.splice(targetReservations.indexOf(receipt), 1);
+          lastTargetKey = targetReservations.at(-1)?.targetKey;
         },
       };
       let preflightClaimed = false;
-      dispatchSpendProofs.set(permit, { owner: counter, claim: () => {
+      dispatchSpendProofs.set(permit, { owner: counter, report: () => {
+        if (!counter.pendingExternalSends.has(receipt)) return false;
+        if (spendProof) observer?.dispatch?.(spendProof);
+        counter.pendingExternalSends.delete(receipt);
+        // Reset-only helpers report just BEFORE calling the dispatch thunk. Its one use()
+        // remains available, but release/proof cannot refund or reuse this reported receipt.
+        return true;
+      }, claim: () => {
         if (preflightClaimed || settled === "released"
           || (intent.countedExternally === true ? !counter.pendingExternalSends.has(receipt) : settled !== "open")) return undefined;
         preflightClaimed = true;

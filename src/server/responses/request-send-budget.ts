@@ -1,5 +1,5 @@
 import type { ResponsesRequestContext } from "./core-options";
-import { claimDispatchSpendProof, createRequestExecutionBudget, isRequestExecutionBudget } from "../../lib/request-execution-budget";
+import { claimDispatchSpendProof, createRequestExecutionBudget, isRequestExecutionBudget, reportDispatchSends } from "../../lib/request-execution-budget";
 import {
   chargeWorkflowSends,
   workflowSendCeilingReached,
@@ -57,12 +57,18 @@ export function createResponsesSendBudget(
   // sends once per child seven hundred times, so every send charged to the request is charged
   // to the root as well (#4546).
   const workflowRootId = req.headers.get("x-codex-parent-thread-id")?.trim() || undefined;
-  const noteTransientSends = (used: number): void => {
+  const inheritedPermit = options.compactionRecoveryPermit ?? options.comboDispatchPermit;
+  let pendingHopPermit: SingleUseDispatchPermit | undefined = options.compactionRecoveryPermit;
+  const recordTransientSends = (used: number, permit?: SingleUseDispatchPermit): void => {
     const charged = Math.max(0, used);
-    sendBudget.used += charged;
+    reportDispatchSends(sendBudget, charged, permit);
     options.onCompactionRecoverySendsReported?.(charged);
     chargeWorkflowSends(workflowRootId, charged);
   };
+  const noteTransientSends = (used: number): void => recordTransientSends(used, pendingHopPermit ?? inheritedPermit);
+  // Capture at helper creation, before another leg can replace the pending handoff.
+  const transientSendReporter = (permit = pendingHopPermit ?? inheritedPermit) =>
+    (used: number): void => recordTransientSends(used, permit);
   // Refused before any dispatch, and deliberately not by evicting the root's ledger entry:
   // dropping the record to make room would hand the fan-out a fresh allowance, which is the
   // laundering this ceiling exists to stop. The client is told the task needs a new grant
@@ -165,7 +171,6 @@ export function createResponsesSendBudget(
    * refused and the request would answer with a synthetic 502 in place of the real 429 the hop
    * was recovering from.
    */
-  let pendingHopPermit: SingleUseDispatchPermit | undefined = options.compactionRecoveryPermit;
   /**
    * The budget an adapter's OWN dispatch ladder reserves against.
    *
@@ -276,6 +281,7 @@ export function createResponsesSendBudget(
   return {
     workflowRootId,
     noteTransientSends,
+    transientSendReporter,
     remainingTransientSendBudget,
     /**
      * Physical sends this logical request has already made.

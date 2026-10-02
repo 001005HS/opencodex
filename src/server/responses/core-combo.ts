@@ -816,6 +816,7 @@ export async function executeComboResponses(
       response = nativeChild ? await dispatchNativeComboChild({
         source: options.protocolSource!,
         plan: nativeChild,
+        comboDispatchPermit: hopDecision?.allowed ? hopDecision.permit : undefined,
         logCtx,
         childLog,
         attempt,

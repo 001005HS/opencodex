@@ -38,7 +38,13 @@ refunds only charges it made; reporting or assuming that receipt prevents a late
 The hop pays for a replay that some *other* layer dispatches, so which layer settles the
 reservation follows the dispatcher, not the ladder. A helper-routed replay reports the same
 physical send back through `onSendsConsumed`; that is what `countedExternally: true` names, and the
-reporter's first send settles the pending booking instead of adding a second charge. An adapter
+reporter's first send settles only its named pending permit instead of adding a second charge.
+`transientSendReporter` captures that permit before entering a helper; a later handoff cannot
+replace it. `reportDispatchSends` verifies shared-ledger ownership and consumes one receipt only.
+Native Chat combo children carry the same exact permit to their physical-send boundary.
+Numeric `used` updates and unnamed, foreign, released or already-reported permits charge actual
+sends without consuming another reservation. Extra retries remain full charges. Reports may arrive
+out of reservation order; no FIFO ordering is required. An adapter
 that owns its transport — Kiro's reset ladder, Cursor's transport ladder, or Devin's bounded
 pre-output stated-reset replay — reserves once per physical send instead, so no reporter ever
 arrives. Those ladders are handed
@@ -166,9 +172,12 @@ reader requires explicit mappings for the remaining unidentified balances rather
 zero. `tests/lib/spend-pool-continuity.test.ts` exercises this using the frozen pre-change reader,
 as well as exact aggregation, active/unresolved sends, retention, failures and rootless preflight.
 
-A booking is confirmed dispatched only once a LATER send exists, because that later send proves
-the earlier one left. The newest booking stays open, so a reservation the budget hands back
-during this process's lifetime can still be released for free.
+Budget reservations retain their exact durable proof until their own dispatch/report confirms
+them. A later reservation does not confirm an earlier pending send. Refunds remove the exact
+send and original pool, and releasing an older permit preserves the latest surviving target.
+Legacy direct charges still infer dispatch from a later charge and leave their newest booking
+open. Report order updates terminal attribution; unrelated pending reservations remain independent.
+`tests/lib/spend-pool-continuity.test.ts` covers reversed child reports and exact-pool cancellation.
 
 Settlement follows what the request learned. The terminal usage belongs to the last send that
 left, so that one settles with the real figure; every earlier send failed without reporting usage
