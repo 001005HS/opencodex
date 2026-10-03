@@ -525,3 +525,93 @@ describe("ollama-native — request shape", () => {
     ]))).toThrow(/duplicate tool result/);
   });
 });
+
+describe("ollama-native commentary validation and replay ownership", () => {
+  const call = (id = "call_guard") => ({
+    role: "assistant", content: [{ type: "toolCall", id, name: "exec", namespace: "ops", arguments: { cmd: "pwd" } }], timestamp: 1,
+  });
+  const commentary = { role: "assistant", content: [{ type: "text", text: "Working." }], timestamp: 2 };
+  const result = (id = "call_guard") => ({
+    role: "toolResult", toolCallId: id, toolName: "exec", toolNamespace: "ops", content: "done", isError: false, timestamp: 3,
+  });
+
+  for (const [label, invalid, error] of [
+    ["unknown id", { ...result(), toolCallId: "call_other" }, /has no originating call/],
+    ["wrong name", { ...result(), toolName: "other" }, /names the wrong originating tool/],
+    ["wrong namespace", { ...result(), toolNamespace: "other" }, /names the wrong originating tool/],
+  ] as const) {
+    test(`commentary does not bypass result validation: ${label}`, () => {
+      const adapter = createOllamaNativeAdapter(ollamaProvider());
+      expect(() => adapter.buildRequest(parsedWith([call(), commentary, invalid]))).toThrow(error);
+    });
+  }
+
+  test("duplicate results remain rejected while commentary holds an unresolved batch", () => {
+    const first = call("first");
+    const second = call("second");
+    const batch = { ...first, content: [...first.content, ...second.content] };
+    const adapter = createOllamaNativeAdapter(ollamaProvider());
+    expect(() => adapter.buildRequest(parsedWith([batch, result("first"), commentary, result("first")]))).toThrow(/duplicate tool result/);
+  });
+
+  test("a result cannot cross a subsequent tool-call batch", () => {
+    const adapter = createOllamaNativeAdapter(ollamaProvider());
+    expect(() => adapter.buildRequest(parsedWith([call("old"), commentary, call("new"), result("old")]))).toThrow(/has no originating call/);
+  });
+
+  for (const id of ["", "call_guard"]) {
+    test(`new batches still reject ${id ? "reused" : "empty"} call IDs after commentary`, () => {
+      const adapter = createOllamaNativeAdapter(ollamaProvider());
+      expect(() => adapter.buildRequest(parsedWith([call(), commentary, call(id)]))).toThrow(/id is missing or duplicated/);
+    });
+  }
+
+  test("EOF settles a missing result once before deferred commentary", () => {
+    const { body } = createOllamaNativeAdapter(ollamaProvider()).buildRequest(parsedWith([call(), commentary]));
+    const messages = JSON.parse(body).messages;
+    expect(messages.map((message: { role: string }) => message.role)).toEqual(["assistant", "tool", "assistant"]);
+    expect(messages[1].tool_call_id).toBe("call_guard");
+    expect(messages[1].content).toContain("execution status unknown");
+    expect(messages[2].content).toBe("Working.");
+  });
+
+  test("completed batches release commentary before the next conversation turn", () => {
+    const { body } = createOllamaNativeAdapter(ollamaProvider()).buildRequest(parsedWith([
+      call(), result(), commentary, { role: "user", content: "next" }, call("next"), result("next"),
+    ]));
+    const messages = JSON.parse(body).messages;
+    expect(messages.map((message: { role: string }) => message.role)).toEqual(["assistant", "tool", "assistant", "user", "assistant", "tool"]);
+    expect(messages[2].content).toBe("Working.");
+    expect(messages[3].content).toBe("next");
+    expect(messages[5].tool_call_id).toBe("next");
+  });
+
+  test("deep-frozen history keeps call order, deferred arrival order and original arguments", () => {
+    const first = call("first");
+    const second = call("second");
+    const batch = { ...first, content: [...first.content, ...second.content] };
+    const parsed = parsedWith([
+      batch,
+      { role: "developer", content: "hook" },
+      result("second"),
+      { role: "assistant", content: [{ type: "thinking", thinking: "Checking." }, { type: "text", text: "Working." }] },
+      { role: "user", content: "notice" },
+      result("first"),
+    ]);
+    function freeze(value: unknown): void {
+      if (!value || typeof value !== "object" || Object.isFrozen(value)) return;
+      for (const child of Object.values(value)) freeze(child);
+      Object.freeze(value);
+    }
+    const before = JSON.stringify(parsed);
+    freeze(parsed);
+    const { body } = createOllamaNativeAdapter(ollamaProvider()).buildRequest(parsed);
+    expect(JSON.stringify(parsed)).toBe(before);
+    const messages = JSON.parse(body).messages;
+    expect(messages.map((message: { role: string }) => message.role)).toEqual(["assistant", "tool", "tool", "system", "assistant", "user"]);
+    expect(messages.slice(1, 3).map((message: { tool_call_id: string }) => message.tool_call_id)).toEqual(["first", "second"]);
+    expect(messages.slice(3).map((message: { content: string }) => message.content)).toEqual(["hook", "Working.", "notice"]);
+    expect(messages[4].thinking).toBe("Checking.");
+    expect(messages[0].tool_calls[0].function.arguments).toEqual({ cmd: "pwd" });
+  });
+});
