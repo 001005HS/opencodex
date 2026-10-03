@@ -47,10 +47,13 @@ export function entryParts(entry: string, config: OcxConfig): { alias: string; i
 
 export type SubagentForceExposure = { entries: readonly string[] } | { selectors: readonly string[] };
 
+function fullSelectorIdentity(selector: string): string {
+  const route = resolveAlias(selector) ?? resolveDesktop3pAlias(selector) ?? selector;
+  return (route.startsWith("native/") ? route.slice("native/".length) : route).replace(/\[1m\]$/i, "[1m]");
+}
+
 function selectorIdentity(selector: string): string {
-  const bare = stripOneMillionMarker(selector);
-  const route = resolveAlias(bare) ?? resolveDesktop3pAlias(bare) ?? bare;
-  return route.startsWith("native/") ? route.slice("native/".length) : route;
+  return fullSelectorIdentity(stripOneMillionMarker(selector));
 }
 
 /** Resolve only currently exposed entries; retained roster rows are not exposure proof. */
@@ -67,7 +70,15 @@ export function resolveSubagentForceModel(config: OcxConfig, windows: Record<str
     });
     const exposed = selectors.some(candidate => selectorIdentity(candidate) === selectorIdentity(parts.alias));
     if (!exposed) return null;
-    const marked = withSubagentContextMarker(parts.alias, windows);
+    const bare = stripOneMillionMarker(parts.alias);
+    const requestedMarker = bare !== parts.alias;
+    const exactMarkedExposure = requestedMarker && selectors.some(candidate =>
+      fullSelectorIdentity(candidate) === fullSelectorIdentity(parts.alias));
+    const window = windows[parts.alias] ?? windows[`${bare}[1m]`] ?? windows[bare];
+    // Identity admission must not let an appended context promise ride on an
+    // ordinary exposed model. Exact catalog ids such as kimi/k3[1m] remain literal.
+    if (requestedMarker && !exactMarkedExposure && !(typeof window === "number" && Number.isFinite(window) && window >= 1_000_000)) return null;
+    const marked = exactMarkedExposure ? parts.alias : withSubagentContextMarker(parts.alias, windows);
     // Bare Anthropic names are indistinguishable from the old CLI's fallback.
     // Encode only the force selector; handlers restore native identity before
     // their existing credential/model-map checks. Roster generation is unchanged.

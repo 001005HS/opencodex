@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildClaudeEnv, buildNativeClaudeEnv } from "../../src/cli/claude";
-import { entryParts, resolveSubagentForceModel } from "../../src/claude/subagent-model";
+import { entryParts, resolveSubagentForceModel, withSubagentContextMarker } from "../../src/claude/subagent-model";
 import { inspectSubagentForceStatus, subagentForceSupport } from "../../src/claude/subagent-force-status";
 import { extractOcxRouteDirective } from "../../src/claude/inbound-model-options";
 import { configDiagnosticsFromRaw, validateConfigCandidate } from "../../src/config/diagnostics";
@@ -130,4 +130,29 @@ test("fresh wire exposure is independent of windows and failed discovery cannot 
   const warnings: string[] = [];
   const env = buildClaudeEnv(c, 10100, {}, { "mock/model": 1000000 }, { ...deps, forceAvailable: undefined, warn: message => warnings.push(message) });
   expect(env[MODEL]).toBeUndefined(); expect(env[FORCE]).toBeUndefined(); expect(warnings).toHaveLength(1);
+});
+
+
+test("force rejects caller million markers without advertised identity or authoritative capacity", () => {
+  for (const entry of ["mock/model[1m]", "gpt-6.1-sol[1M]", "anthropic/claude-sonnet-5[1m]"]) {
+    const c = config(entry);
+    const unmarked = entry.replace(/\[1m\]$/i, "");
+    const alias = entryParts(unmarked, c).alias;
+    expect(resolveSubagentForceModel(c, {}, { entries: [unmarked] })).toBeNull();
+    expect(resolveSubagentForceModel(c, {}, { selectors: [alias] })).toBeNull();
+    expect(resolveSubagentForceModel(c, { [alias]: 200000 }, { selectors: [alias] })).toBeNull();
+    expect(resolveSubagentForceModel(c, { [alias]: Number.POSITIVE_INFINITY }, { selectors: [alias] })).toBeNull();
+    expect(resolveSubagentForceModel(c, { [alias]: 1000000 }, { entries: [unmarked] })).not.toBeNull();
+  }
+});
+
+test("force preserves exact advertised genuine marked models and legacy alias identity", () => {
+  const c = config("kimi/k3[1m]");
+  const marked = "ocx-claude-kimi--k3[1m]";
+  expect(resolveSubagentForceModel(c, {}, { entries: ["kimi/k3[1m]"] })).toBe(marked);
+  expect(resolveSubagentForceModel(c, {}, { selectors: ["claude-ocx-kimi--k3[1M]"] })).toBe(marked);
+  expect(resolveSubagentForceModel(c, { [marked]: 1048576 }, { entries: ["kimi/k3[1m]"] })).toBe(marked);
+  expect(resolveSubagentForceModel(c, { [marked]: 350000 }, { entries: ["kimi/k3[1m]"] })).toBe(marked);
+  expect(resolveSubagentForceModel(config("mock/model[1m]"), { "ocx-claude-mock--model[1m]": 200000, "ocx-claude-mock--model": 1000000 }, { entries: ["mock/model"] })).toBeNull();
+  expect(withSubagentContextMarker("ocx-claude-mock--legacy[1m]", {})).toBe("ocx-claude-mock--legacy[1m]");
 });
