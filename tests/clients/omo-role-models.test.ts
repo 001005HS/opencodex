@@ -76,6 +76,43 @@ describe("omo role models", () => {
     }
   });
 
+  test.each(["dev", "ino"] as const)("rejects distinct %s values that collide as numbers", identity => {
+    const path = file("{}");
+    const first = 2n ** 53n;
+    const second = first + 1n;
+    expect(first).not.toBe(second);
+    expect(Number(first)).toBe(Number(second));
+    const numeric = fs.lstatSync(path);
+    const exact = fs.lstatSync(path, { bigint: true });
+    const realFstat = fs.fstatSync;
+    const realLstat = fs.lstatSync;
+    const opened = spyOn(fs, "fstatSync").mockImplementation(((fd, options) => {
+      const stats = realFstat(fd, options);
+      return Object.assign(stats, { [identity]: options?.bigint ? first : Number(first) });
+    }) as typeof fs.fstatSync);
+    const current = spyOn(fs, "lstatSync").mockImplementation(((target, options) => {
+      if (target !== path) return realLstat(target, options);
+      return Object.assign(options?.bigint ? exact : numeric, {
+        [identity]: options?.bigint ? second : Number(second),
+      });
+    }) as typeof fs.lstatSync);
+    const read = spyOn(fs, "readFileSync");
+    const close = spyOn(fs, "closeSync");
+    try {
+      expect(readOmoRoleModels(path)).toEqual({ state: "invalid" });
+      expect(writeOmoRoleModel("explorer", "m", path)).toBe("invalid");
+      expect(read).not.toHaveBeenCalled();
+      expect(close).toHaveBeenCalledTimes(2);
+      expect(close.mock.calls.map(([fd]) => fd)).toEqual(opened.mock.calls.map(([fd]) => fd));
+    } finally {
+      close.mockRestore();
+      read.mockRestore();
+      current.mockRestore();
+      opened.mockRestore();
+    }
+    expect(readFileSync(path, "utf8")).toBe("{}");
+  });
+
   test.skipIf(process.platform === "win32").each(["read", "write"])(
     "%s refuses a FIFO without waiting for a writer",
     operation => {

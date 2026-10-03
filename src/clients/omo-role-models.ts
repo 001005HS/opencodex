@@ -48,8 +48,8 @@ function load(path: string): Loaded {
       ? constants.O_RDONLY
       : constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK;
     fd = openSync(path, flags);
-    const opened = fstatSync(fd);
-    const current = lstatSync(path);
+    const opened = fstatSync(fd, { bigint: true });
+    const current = lstatSync(path, { bigint: true });
     if (!opened.isFile() || !current.isFile() || opened.dev !== current.dev || opened.ino !== current.ino) {
       return { kind: "invalid" };
     }

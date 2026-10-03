@@ -454,7 +454,8 @@ not an object reports `invalid`, and a file containing any `//` or block comment
 response carries that status and the dashboard shows it; the role TOML write described in
 [subagents](../subagents.md#per-role-model-pins) is not rolled back by a skipped mirror.
 The loader binds validation and reading to one file descriptor and rejects a path whose
-directory entry no longer identifies that opened regular file. On POSIX, `O_NOFOLLOW` rejects
+directory entry no longer identifies that opened regular file. Device and inode comparisons use
+bigint stats to preserve exact identities. On POSIX, `O_NOFOLLOW` rejects
 symlinks at open and `O_NONBLOCK` lets the regular-file check reject a FIFO without waiting
 for a writer. Windows omits those POSIX flags and retains the descriptor/path identity checks;
 those checks do not claim POSIX no-follow open semantics.
