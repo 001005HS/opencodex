@@ -3,7 +3,7 @@
 The previous integration stopped after combining 31 contributor changes and before
 integrating two completed issue implementations. Preserve those commits, review the
 combined behavior in five isolated worktree lanes, repair demonstrated defects, and
-land one reviewed integration candidate on dev. The final platform run establishes
+land reviewed integration candidates on dev. The final platform run establishes
 production readiness; this unit does not publish a release.
 
 Reader: the integrating maintainer, deciding what can land and what remains unverified.
@@ -33,7 +33,7 @@ Reader: the integrating maintainer, deciding what can land and what remains unve
 
 1. Roadmap: lock source commits, lane ownership and verification/closure boundaries.
 2. Integration: consume existing patches, review/repair each lane, reconcile the union,
-   publish the final PR and land eligible work through the maintainer integration policy.
+   publish ready A-D first, then E, and land eligible work through the maintainer integration policy.
 3. Verification: run full cross-platform CI on final dev and prepare the readiness handoff.
 
 Detailed executable operations are in 010_integration.md and 020_verification.md.
@@ -91,3 +91,7 @@ remains preserved, and current dev is 2e3acab46e. Five lane tasks now own bounde
 implementation/verification, with production code changes limited to demonstrated
 defects and the two authorized issue implementations. Root/GUI dependency manifests
 and lockfiles match an available existing dependency tree; no install is required.
+
+User steering: land ready work progressively. A-D is ready for its PR now; E follows
+in a separate PR. Do not wait for E to publish or land A-D. Final manual lane=all
+remains after both landings.

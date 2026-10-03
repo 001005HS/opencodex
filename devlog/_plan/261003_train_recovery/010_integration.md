@@ -58,8 +58,12 @@ through the existing pr-assets mechanism if needed for the final PR description.
 
 Inspect lane diffs and negative-path evidence, fix union conflicts and generated maps,
 check co-author trailers and docs ownership, record explicit security review. Preserve
-required CI and existing maintainer objections. Push only the assembled candidate and
-open one PR targeting dev with all template sections, accurate verification limits and
+required CI and existing maintainer objections. User steering now requires rolling landing: publish the verified A-D candidate first,
+then E as a separate follow-up PR. Open each ready PR targeting dev with all template sections, accurate verification limits and
 GUI evidence. Attach it to this chat. Revalidate live actor, base, head, reviews, membership
 and check evidence before coordinator-authorized maintainer integration. Do not bypass
 failed required checks. Use an ordinary PR, not native stack operations.
+
+User delivery correction: do not hold verified A-D behind E. Required checks gate each
+PR; the full manual cross-platform run remains after the last dev landing. This changes
+delivery order, not scope or verification requirements.
