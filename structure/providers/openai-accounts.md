@@ -237,7 +237,7 @@ successful main usage refresh clears the runtime mark.
 
 `src/codex/chatgpt-refresh-failure.ts` classifies token-endpoint failures for both stored-pool
 and native-main refresh. Exact structured terminal codes apply only to authentication-error
-statuses; HTTP429/5xx and malformed responses remain transient. Description-only OAuth400
+statuses; HTTP 429/5xx and malformed responses remain transient. Description-only OAuth 400
 compatibility never overrides a structured code. Endpoint diagnostics contain fixed outcome,
 HTTP status and an allowlisted code, never provider descriptions or credential material. Pool
 refresh errors retain that same safe status/code metadata without changing cooldown classification.
@@ -246,7 +246,8 @@ A native-main refusal is stored by physical auth path and refresh-grant fingerpr
 process-local set (64 oldest-first entries). Ordinary quarantine clears and successful usage polls
 do not erase it; replacement grants are independently usable, and returning to a refused profile
 retains its refusal until process restart or bounded eviction. Both selection and automatic
-materialization refuse a matching grant. Late failures publish only after snapshot/cancellation
+materialization refuse a matching grant. Each stored-main usability check derives rejection,
+grant availability and liveness from one physical snapshot, after the request read fences. Late failures publish only after snapshot/cancellation
 checks; downstream callers do not recreate account-wide quarantine. The account DTO checks and
 projects refusal under native-profile ownership, and typed selection causes drive sign-in guidance.
 

@@ -121,8 +121,17 @@ async function refreshNativeMainGrant(
     noteChatgptRefreshFailure("native main", resp.status, failure);
     throw new MainAccountTokenRefreshError(failure.reason === "unknown" ? "transient" : "reauth");
   }
+  let credentials: OAuthCredentials;
+  try {
+    credentials = credsFromToken((await resp.json()) as Record<string, unknown>);
+  } catch {
+    if (options.signal.aborted) throw options.signal.reason;
+    noteNativeMainRefresh("transient", resp.status);
+    // Parsing errors may include provider body text; retain only the fixed verdict.
+    throw new MainAccountTokenRefreshError("transient");
+  }
   noteNativeMainRefresh("ok", resp.status);
-  return credsFromToken((await resp.json()) as Record<string, unknown>);
+  return credentials;
 }
 
 /**
@@ -219,20 +228,35 @@ function credentialRefreshGrantRejected(current: MainAuthJsonCredential | null):
   return !!key && isMainRefreshGrantRejected(key);
 }
 
+export interface MainAccountCredentialStatus {
+  refreshGrantRejected: boolean;
+  hasRefreshGrant: boolean;
+  usable: boolean;
+}
+
+/** One owned physical observation; no credential material escapes this view. */
+export function getMainAccountCredentialStatus(now = Date.now()): MainAccountCredentialStatus {
+  const current = readMainAuthJsonCredential();
+  const refreshGrantRejected = credentialRefreshGrantRejected(current);
+  const hasRefreshGrant = !!current?.refreshToken && !refreshGrantRejected;
+  return {
+    refreshGrantRejected,
+    hasRefreshGrant,
+    usable: !refreshGrantRejected && (hasRefreshGrant || mainAccessTokenFresh(current?.accessToken, now, 0)),
+  };
+}
+
 /** Current owned profile only; callers must hold the native read/selection permission. */
 export function isMainAccountRefreshGrantRejected(): boolean {
-  return credentialRefreshGrantRejected(readMainAuthJsonCredential());
+  return getMainAccountCredentialStatus().refreshGrantRejected;
 }
 
 export function isMainAccountCredentialUsable(now = Date.now()): boolean {
-  const current = readMainAuthJsonCredential();
-  return !credentialRefreshGrantRejected(current)
-    && (!!current?.refreshToken || mainAccessTokenFresh(current?.accessToken, now, 0));
+  return getMainAccountCredentialStatus(now).usable;
 }
 
 export function hasMainAccountRefreshGrant(): boolean {
-  const current = readMainAuthJsonCredential();
-  return !!current?.refreshToken && !credentialRefreshGrantRejected(current);
+  return getMainAccountCredentialStatus().hasRefreshGrant;
 }
 
 function assertMainAuthJsonSnapshotUnchanged(expected: MainAuthJsonCredential): void {

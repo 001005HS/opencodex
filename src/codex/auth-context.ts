@@ -1318,7 +1318,12 @@ export async function resolveCodexAuthContext(
             "Selected Codex account does not support this model",
           );
         }
-        throw new CodexPoolAuthenticationError("Selected Codex account is unavailable");
+        const mainReason = fixedAccountId === MAIN_CODEX_ACCOUNT_ID && !nativeMainReadsForbidden
+          && !policy.pausedCodexAccountIds?.includes(fixedAccountId)
+          ? codexAccountUnusableReason(config, fixedAccountId, selectionOptions) : undefined;
+        throw new CodexPoolAuthenticationError("Selected Codex account is unavailable", {
+          quarantinedMain: mainReason === "needs_reauth",
+        });
       }
       // Recovery or a turn drain deliberately makes physical main unobservable.
       // If no healthy pool route is available, report the temporary fence rather
@@ -1379,10 +1384,15 @@ export async function resolveCodexAuthContext(
         throw new CodexPoolAuthenticationError("Selected Codex account is unavailable");
       }
       if (isAccountNeedsReauth(accountId)) {
-        throw new CodexPoolAuthenticationError("Selected Codex account needs reauthentication");
+        throw new CodexPoolAuthenticationError("Selected Codex account needs reauthentication", {
+          quarantinedMain: accountId === MAIN_CODEX_ACCOUNT_ID && !nativeMainReadsForbidden,
+        });
       }
-      if (!isCodexAccountUsable(config, accountId, selectionOptions)) {
-        throw new CodexPoolAuthenticationError("Selected Codex account is unavailable");
+      const unusableReason = codexAccountUnusableReason(config, accountId, selectionOptions);
+      if (unusableReason !== undefined) {
+        throw new CodexPoolAuthenticationError("Selected Codex account is unavailable", {
+          quarantinedMain: accountId === MAIN_CODEX_ACCOUNT_ID && unusableReason === "needs_reauth",
+        });
       }
     }
   } catch (cause) {

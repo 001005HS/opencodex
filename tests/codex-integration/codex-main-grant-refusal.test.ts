@@ -1,5 +1,6 @@
 import { sharedStateSelectionOptions } from "../../src/codex/routing/selection";
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
+import * as fs from "node:fs";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -17,6 +18,10 @@ import {
   forceRefreshMainAccountToken, getValidMainAccountToken, hasMainAccountRefreshGrant,
   isMainAccountCredentialUsable, isMainAccountRefreshGrantRejected, MAIN_CODEX_ACCOUNT_ID,
 } from "../../src/codex/main-account";
+import { headersForCodexAuthContext, resolveCodexAuthContext } from "../../src/codex/auth-context";
+import { codexAccountSelectionForTurn, tryAdmitTurn } from "../../src/server/lifecycle";
+import { CODEX_MAIN_SIGN_IN_REQUIRED_MESSAGE, mapCodexAuthContextErrorToResponse } from "../../src/server/responses/codex-auth-error";
+import { fakeChatGptJwt } from "../helpers/agent-task-recovery";
 import type { OcxConfig } from "../../src/types";
 import { removeTreeWithRetry } from "../helpers/remove-tree";
 
@@ -247,15 +252,18 @@ describe("native main refresh refusal is scoped to the physical path and grant",
     const refusalRead = spyOn(mainAccount, "isMainAccountRefreshGrantRejected");
     const grantRead = spyOn(mainAccount, "hasMainAccountRefreshGrant");
     const credentialRead = spyOn(mainAccount, "isMainAccountCredentialUsable");
+    const snapshotRead = spyOn(mainAccount, "getMainAccountCredentialStatus");
     try {
       expect(codexAccountUnusableReason(cfg, MAIN_CODEX_ACCOUNT_ID, options)).toBeUndefined();
       expect(refusalRead).not.toHaveBeenCalled();
       expect(grantRead).not.toHaveBeenCalled();
       expect(credentialRead).not.toHaveBeenCalled();
+      expect(snapshotRead).not.toHaveBeenCalled();
     } finally {
       refusalRead.mockRestore();
       grantRead.mockRestore();
       credentialRead.mockRestore();
+      snapshotRead.mockRestore();
     }
   });
 });
@@ -319,4 +327,122 @@ describe("default native token endpoint classification and safe diagnostics", ()
     expect(grants).toEqual(["fixture-grant-a"]);
     expect(warnings.join("\n")).not.toContain("private-transport-marker");
   });
+});
+
+
+describe("explicit account selection after a native endpoint refusal", () => {
+  test.each(["main", "missing pool", "paused main"] as const)("fixed %s maps only its own refusal", async selected => {
+    const access = writeCredential();
+    const grants = mockEndpoint(terminalResponse);
+    await expect(forceRefreshMainAccountToken(access)).rejects.toMatchObject({ reason: "reauth" });
+    expectRefused();
+    const accountId = selected === "missing pool" ? "fixture-missing-pool" : MAIN_CODEX_ACCOUNT_ID;
+    const config = {
+      ...cfg,
+      codexAccounts: selected === "missing pool" ? [{ id: accountId, label: "fixture missing" }] : [],
+      ...(selected === "paused main" ? { pausedCodexAccountIds: [MAIN_CODEX_ACCOUNT_ID] } : {}),
+    } as OcxConfig;
+    const turn = tryAdmitTurn();
+    expect(turn).not.toBeNull();
+    try {
+      const outcome = await resolveCodexAuthContext(new Headers(), config, "pool", {
+        accountId, modelId: "gpt-5.5", beginCodexAccountSelection: codexAccountSelectionForTurn(turn!),
+      }).then(value => ({ value }), error => ({ error }));
+      expect(outcome).toHaveProperty("error");
+      if (!("error" in outcome)) throw new Error("fixed unavailable account unexpectedly resolved");
+      const response = mapCodexAuthContextErrorToResponse(outcome.error, { accountSelector: selected, now: Date.now() });
+      expect(response).toBeDefined();
+      expect(response!.status).toBe(401);
+      const body = await response!.json() as { error: { message: string } };
+      if (selected === "main") expect(body.error.message).toBe(CODEX_MAIN_SIGN_IN_REQUIRED_MESSAGE);
+      else expect(body.error.message).not.toBe(CODEX_MAIN_SIGN_IN_REQUIRED_MESSAGE);
+      expect(grants).toEqual(["fixture-grant-a"]);
+      expect(isAccountNeedsReauth(MAIN_CODEX_ACCOUNT_ID)).toBe(false);
+    } finally {
+      turn?.release();
+    }
+  });
+
+  test("caller-owned explicit main retains its own credential despite stored refusal", async () => {
+    const access = writeCredential();
+    const grants = mockEndpoint(terminalResponse);
+    await expect(forceRefreshMainAccountToken(access)).rejects.toMatchObject({ reason: "reauth" });
+    const caller = fakeChatGptJwt("fixture-caller-account");
+    const incoming = new Headers({ authorization: `Bearer ${caller}`, "chatgpt-account-id": "fixture-caller-account" });
+    const context = await resolveCodexAuthContext(incoming, cfg, "pool", {
+      accountId: MAIN_CODEX_ACCOUNT_ID, modelId: "gpt-5.5", requestScopedMainCredential: true,
+    });
+    expect(context).toMatchObject({ kind: "main", accountId: null });
+    const forwarded = headersForCodexAuthContext(incoming, context);
+    expect(forwarded.get("authorization")).toBe(`Bearer ${caller}`);
+    expect(forwarded.get("chatgpt-account-id")).toBe("fixture-caller-account");
+    expect(grants).toEqual(["fixture-grant-a"]);
+    expectRefused();
+  });
+});
+
+describe("native refresh success diagnostics require a valid credential", () => {
+  const canary = "private-success-body-canary";
+  test.each([
+    ["malformed JSON", `{${canary}`],
+    ["missing access token", JSON.stringify({ marker: canary })],
+    ["numeric access token", JSON.stringify({ access_token: 42, marker: canary })],
+    ["object access token", JSON.stringify({ access_token: { marker: canary } })],
+    ["empty access token", JSON.stringify({ access_token: "", marker: canary })],
+    ["null body", "null"],
+  ] as const)("HTTP 200 with %s is transient without a success verdict or mutation", async (_label, body) => {
+    const access = writeCredential();
+    const before = readFileSync(join(home, "auth.json"), "utf8");
+    const epoch = codexCredentialMutationEpoch();
+    const grants = mockEndpoint(() => new Response(body, { status: 200, headers: { "content-type": "application/json" } }));
+    await expect(forceRefreshMainAccountToken(access)).rejects.toMatchObject({ reason: "transient" });
+    expect(grants).toEqual(["fixture-grant-a"]);
+    expect({
+      bytes: readFileSync(join(home, "auth.json"), "utf8"), epoch: codexCredentialMutationEpoch(),
+      refused: isMainAccountRefreshGrantRejected(), genericReauth: isAccountNeedsReauth(MAIN_CODEX_ACCOUNT_ID),
+      okLogs: warnings.filter(line => line.startsWith("[codex] native main refresh: ok")),
+      leakedBody: warnings.some(line => line.includes(canary)),
+    }).toEqual({ bytes: before, epoch, refused: false, genericReauth: false, okLogs: [], leakedBody: false });
+  });
+
+  test("a validated HTTP 200 credential publishes once and records one safe success verdict", async () => {
+    const access = writeCredential();
+    const epoch = codexCredentialMutationEpoch();
+    const grants = mockEndpoint(() => Response.json({
+      access_token: "fixture-validated-access", refresh_token: "fixture-validated-refresh", expires_in: 3600,
+      ignored_extra: canary,
+    }));
+    await expect(forceRefreshMainAccountToken(access)).resolves.toMatchObject({ accessToken: "fixture-validated-access" });
+    expect(grants).toEqual(["fixture-grant-a"]);
+    expect(codexCredentialMutationEpoch()).toBe(epoch + 1);
+    expect(JSON.parse(readFileSync(join(home, "auth.json"), "utf8")).tokens)
+      .toMatchObject({ access_token: "fixture-validated-access", refresh_token: "fixture-validated-refresh" });
+    expect(isMainAccountRefreshGrantRejected()).toBe(false);
+    expect(warnings.filter(line => line.startsWith("[codex] native main refresh: ok")))
+      .toEqual(["[codex] native main refresh: ok status=200 code=none"]);
+    expect(warnings.join("\n")).not.toMatch(/private-success-body-canary|fixture-validated-access|fixture-validated-refresh/);
+  });
+});
+
+test("main usability consumes one coherent physical snapshot under an ordinary reauth mark", () => {
+  const access = writeCredential();
+  markAccountNeedsReauth(MAIN_CODEX_ACCOUNT_ID);
+  const originalRead = fs.readFileSync as (...args: unknown[]) => unknown;
+  let authReads = 0;
+  const readSpy = spyOn(fs, "readFileSync").mockImplementation(((...args: unknown[]) => {
+    if (typeof args[0] === "string" && args[0].endsWith("auth.json")) authReads += 1;
+    return originalRead(...args);
+  }) as typeof fs.readFileSync);
+  try {
+    expect(isMainAccountCredentialUsable()).toBe(true);
+    expect(authReads).toBe(1);
+    authReads = 0;
+    const reason = codexAccountUnusableReason(cfg, MAIN_CODEX_ACCOUNT_ID);
+    expect(reason).toBeUndefined();
+    expect(warnings.join("\n")).not.toContain(access);
+    expect(warnings.join("\n")).not.toContain("fixture-grant-a");
+    expect(authReads).toBe(1);
+  } finally {
+    readSpy.mockRestore();
+  }
 });

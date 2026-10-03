@@ -2,9 +2,7 @@ import { readCodexAccountRecord } from "./account-store";
 import { isAccountNeedsReauth } from "./account-runtime-state";
 import {
   MAIN_CODEX_ACCOUNT_ID,
-  hasMainAccountRefreshGrant,
-  isMainAccountCredentialUsable,
-  isMainAccountRefreshGrantRejected,
+  getMainAccountCredentialStatus,
   isMainAccountTokenLive,
 } from "./main-account";
 import { hasLegacyMainCodexPoolAccount, isSelectableCodexPoolAccount } from "./account-id";
@@ -15,7 +13,7 @@ import { isMainAccountHardLocked } from "./main-account-hard-lock";
 export interface CodexAccountUsabilityOptions {
   /** Route using cached runtime state only; the caller must reject selected main before auth. */
   nativeMainSelectionOnly?: boolean;
-  /** Test seam for proving whether routing attempted a physical native-token read. */
+  /** Liveness override; ownership/read fences independently control physical credential reads. */
   isMainAccountTokenLive?: typeof isMainAccountTokenLive;
   /** Confirmed account ids for an account-gated model; omitted for ordinary native models. */
   modelEligibleAccountIds?: ReadonlySet<string>;
@@ -95,12 +93,13 @@ export function codexAccountUnusableReason(
     if (options.requestOwnedMainCredential) {
       return options.isMainAccountTokenLive?.() === false ? "main_credential_unavailable" : undefined;
     }
-    if (isMainAccountRefreshGrantRejected()) return "needs_reauth";
-    if (isAccountNeedsReauth(accountId) && !hasMainAccountRefreshGrant()) return "needs_reauth";
+    const credential = getMainAccountCredentialStatus();
+    if (credential.refreshGrantRejected) return "needs_reauth";
+    if (isAccountNeedsReauth(accountId) && !credential.hasRefreshGrant) return "needs_reauth";
     // Main account: a refresh grant is enough to route; materialization refreshes before I/O.
     const mainLive = options.isMainAccountTokenLive
       ? options.isMainAccountTokenLive()
-      : isMainAccountCredentialUsable();
+      : credential.usable;
     return mainLive ? undefined : "main_credential_unavailable";
   }
   const exists = (config.codexAccounts ?? [])
