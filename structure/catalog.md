@@ -285,6 +285,8 @@ liveness contract.
 
 ## Entry shape
 
+Client exports consume effective model metadata without rewriting custom-model editor overrides. `src/server/management/model-row-export-metadata.ts` resolves inheritance from the gathered catalog and registry-enriched configuration; the [export contract](clients/integrations.md#owned-catalog-convergence) separates declared defaults from picker preferences and preserves cleared effort ladders.
+
 Routed entries keep Codex-required metadata such as reasoning levels, shell type, API support flags,
 base instructions, modalities, auto-compact fields, and strict parser booleans. The public slug uses
 the canonical `provider/model`. Its display name uses the provider's exact `modelDisplayNames` override first,

@@ -215,6 +215,11 @@ be treated as implemented:
 
 ## API ownership
 
+Model rows keep stored custom overrides separate from their effective `exportMetadata` projection.
+`src/server/management/model-row-export-metadata.ts` resolves inherited limits and capabilities;
+the [client export contract](clients/integrations.md#owned-catalog-convergence) prevents picker-only
+default preferences from becoming provider defaults and preserves explicitly empty effort ladders.
+
 API-key PATCH validates the entire rename/scope patch on a detached entry before replacing live configuration. A rejected field changes neither the existing name nor either scope, including a later unrelated save.
 
 
