@@ -85,7 +85,8 @@ async function run(body: unknown, streamEvent?: Record<string, unknown>, committ
     sends.push(payload.model);
     expect(new Headers(init?.headers).get("authorization")).toBe(streamEvent ? "Bearer fixture-key" : `Bearer ${caller}`);
     if (payload.model === firstModel) {
-      if (!streamEvent) return Response.json(body, { status: 400 });
+      if (!streamEvent) return typeof body === "string" ? new Response(body, { status: 400 })
+        : Response.json(body, { status: 400 });
       const events = [
         ...(committed ? [{ type: "response.output_text.delta", delta: "already visible" }] : []),
         streamEvent,
@@ -248,3 +249,49 @@ for (const detailLevel of ["root", "response"] as const) {
     });
   }
 }
+
+test.each(["detail", "error"] as const)("bare SSE message cannot borrow a nested HTTP %s carrier", async carrier => {
+  const nested = carrier === "detail" ? { detail: refusal } : { error: { message: refusal } };
+  const { response, sends } = await run(undefined, {
+    type: "error", status: 400, code: "invalid_request_error", message: JSON.stringify({ response: nested }),
+  });
+  expect(await response.text()).not.toContain("fallback succeeded");
+  expect(sends).toEqual([firstModel]);
+});
+
+for (const prefix of ["", "Provider error 400: "]) {
+  test.each(["upstream_no_response", "origin-rejected", "cyber_policy"])(
+    `HTTP ${prefix || "bare JSON"} nested hard stop %s never replays`, async code => {
+      const { response, sends } = await run(prefix + JSON.stringify({ padding: "x".repeat(800), response: { error: { code, message: refusal } } }));
+      expect(response.status).toBe(400);
+      await response.text();
+      expect(sends).toEqual([firstModel]);
+    },
+  );
+  test(`HTTP ${prefix || "bare JSON"} root hard stop cannot be hidden by nested model code`, async () => {
+    const { response, sends } = await run(prefix + JSON.stringify({ padding: "x".repeat(800), code: " ORIGIN-REJECTED ",
+      response: { error: { code: "unsupported_model", message: refusal } } }));
+    expect(response.status).toBe(400);
+    await response.text();
+    expect(sends).toEqual([firstModel]);
+  });
+}
+
+test.each(["Provider error 400: ", "Provider error 401: ", "Provider error 400: Provider error 400: "])(
+  "HTTP refusal permits only a single matching prefix (%s)", async prefix => {
+    const { response, sends } = await run(prefix + JSON.stringify({ response: { error: { message: refusal } } }));
+    const valid = prefix === "Provider error 400: ";
+    expect(response.status).toBe(valid ? 200 : 400);
+    await response.text();
+    expect(sends).toEqual(valid ? [firstModel, secondModel] : [firstModel]);
+  },
+);
+
+test("SSE structured model code does not borrow a hard stop from quoted HTTP JSON", async () => {
+  const { response, sends } = await run(undefined, {
+    type: "error", status: 400, error: { code: "unsupported_model",
+      message: JSON.stringify({ response: { error: { code: "upstream_no_response", message: refusal } } }) },
+  });
+  expect(await response.text()).toContain("fallback succeeded");
+  expect(sends).toEqual([firstModel, secondModel]);
+});

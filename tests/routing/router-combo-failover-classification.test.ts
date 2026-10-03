@@ -187,6 +187,9 @@ describe("combo failure hop/stop verdicts", () => {
       expect(comboFailureDecision(400, body.slice(0, -1))).toBe("stop");
       expect(comboFailureDecision(400, JSON.stringify({ response, padding: "x".repeat(16_384) }))).toBe("stop");
     }
+    expect(comboFailureDecision(400, JSON.stringify({ response: { error: {
+      code: "upstream_no_response", message: refusal,
+    } } }), { code: "unsupported_model", codexModelRefusal: "other" })).toBe("hop");
     for (const body of [
       { detail: null, response: { detail: refusal } },
       { detail: "bad input", response: { detail: refusal } },

@@ -695,23 +695,52 @@ export function codexAccountModelRefusalPayload(status: number, payload: unknown
   return field !== undefined && CODEX_ACCOUNT_MODEL_REFUSAL.test(field) ? "refusal" : "other";
 }
 
-/** A bounded fallback signal, never credential or account-entitlement evidence. */
-export function codexAccountModelRefusal(status: number, message: string): CodexAccountModelRefusal {
-  if (status !== 400 || message.length > 16_384) return "other";
+/** One complete, bounded HTTP envelope; accept only a single exact status prefix. */
+function parseCodexRefusalEnvelope(status: number, message: string): { text: string; payload: unknown } | undefined {
+  if (status !== 400 || message.length > 16_384) return undefined;
   let text = message.trim();
   if (text.startsWith("Provider error 400: ")) text = text.slice("Provider error 400: ".length);
-  if (CODEX_ACCOUNT_MODEL_REFUSAL.test(text)) return "refusal";
-  try {
-    const payload: unknown = JSON.parse(text);
-    if (hasConflictingCodexModelRefusalEnvelopes(status, payload)) return "ambiguous";
-    // A present root carrier stays authoritative, even when malformed or nonmatching.
-    if (payload && typeof payload === "object" && !Array.isArray(payload)
-      && !Object.hasOwn(payload, "detail") && !Object.hasOwn(payload, "error")
-      && Object.hasOwn(payload, "response")) {
-      return codexAccountModelRefusalPayload(status, (payload as Record<string, unknown>).response);
+  let payload: unknown;
+  try { payload = JSON.parse(text); } catch { /* Bare refusal text is also a supported carrier. */ }
+  return { text, payload };
+}
+
+/** Only allowlisted hard stops cross the same HTTP boundary as positive refusal evidence. */
+export function codexAccountModelRefusalHardStopCode(status: number, message: string): string | undefined {
+  const payload = parseCodexRefusalEnvelope(status, message)?.payload;
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return undefined;
+  const root = payload as Record<string, unknown>;
+  const response = Object.hasOwn(root, "response") ? root.response : undefined;
+  const records = response && typeof response === "object" && !Array.isArray(response)
+    ? [root, response as Record<string, unknown>] : [root];
+  for (const record of records) {
+    const error = record.error && typeof record.error === "object" && !Array.isArray(record.error)
+      ? record.error as Record<string, unknown> : undefined;
+    for (const code of [error?.code, error?.type, record.code]) {
+      if (typeof code !== "string") continue;
+      if (isNonReplayableUpstreamCode(code) || isCyberPolicyCode(code)) return code;
+      if (normalizedFailureCode(code) === "origin_rejected") return "origin_rejected";
     }
-    return codexAccountModelRefusalPayload(status, payload);
-  } catch { return "other"; }
+  }
+  return undefined;
+}
+
+/** A bounded fallback signal, never credential or account-entitlement evidence. */
+export function codexAccountModelRefusal(
+  status: number, message: string, options?: { allowNestedResponse?: boolean },
+): CodexAccountModelRefusal {
+  const envelope = parseCodexRefusalEnvelope(status, message);
+  if (!envelope) return "other";
+  if (CODEX_ACCOUNT_MODEL_REFUSAL.test(envelope.text)) return "refusal";
+  const payload = envelope.payload;
+  if (hasConflictingCodexModelRefusalEnvelopes(status, payload)) return "ambiguous";
+  // A present root carrier stays authoritative, even when malformed or nonmatching.
+  if (options?.allowNestedResponse !== false && payload && typeof payload === "object" && !Array.isArray(payload)
+    && !Object.hasOwn(payload, "detail") && !Object.hasOwn(payload, "error")
+    && Object.hasOwn(payload, "response")) {
+    return codexAccountModelRefusalPayload(status, (payload as Record<string, unknown>).response);
+  }
+  return codexAccountModelRefusalPayload(status, payload);
 }
 
 export function comboFailureDecision(
@@ -732,6 +761,8 @@ export function comboFailureDecision(
   // Cyber policy is a hard non-retryable refusal — honor structured code even when
   // classificationText was truncated before the JSON code field.
   if (isCyberPolicyCode(options?.code)) return "stop";
+  // HTTP consumers retain hard codes before truncation; SSE metadata owns its selected carrier.
+  if (options?.codexModelRefusal === undefined && codexAccountModelRefusalHardStopCode(status, message)) return "stop";
   const modelRefusal = status === 400
     ? options?.codexModelRefusal ?? codexAccountModelRefusal(status, message) : "other";
   // Competing envelopes cannot grant a hop through an earlier structured-code rule either.
