@@ -78,7 +78,10 @@ function terminalModelRefusal(status: number, event: Record<string, unknown>): C
     const nestedKind = codexAccountModelRefusalPayload(status, nested);
     if (nestedKind === "ambiguous") return nestedKind;
     const nestedError = (nested as Record<string, unknown>).error;
-    if (nestedError && typeof nestedError === "object" && !Array.isArray(nestedError)) return nestedKind;
+    if (nestedError && typeof nestedError === "object" && !Array.isArray(nestedError)) {
+      // An outer recognized detail and the selected nested error are competing evidence.
+      return outer === "refusal" ? "ambiguous" : nestedKind;
+    }
   }
   if (event.type === "error" && !Object.hasOwn(event, "error") && typeof event.message === "string") {
     return codexAccountModelRefusal(status, event.message);

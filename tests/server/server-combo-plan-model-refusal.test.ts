@@ -160,3 +160,26 @@ test("a bare error cannot borrow a refusal from an unrelated nested response", a
   expect(await response.text()).not.toContain("fallback succeeded");
   expect(sends).toEqual([firstModel]);
 });
+
+test("outer refusal detail cannot be discarded for a nested unsupported-model error", async () => {
+  const { response, sends } = await run(undefined, {
+    type: "response.failed", detail: refusal, padding: "x".repeat(800),
+    response: { status: "failed", error: {
+      type: "invalid_request_error", code: "unsupported_model", message: "bad input",
+    } },
+  });
+  expect(await response.text()).not.toContain("fallback succeeded");
+  expect(sends).toEqual([firstModel]);
+});
+
+test.each([false, true])("an unrelated outer quote does not determine nested refusal (refusal=%s)", async modelRefusal => {
+  const { response, sends } = await run(undefined, {
+    type: "response.failed", note: refusal,
+    response: { status: "failed", error: {
+      type: "invalid_request_error", code: "invalid_request_error", message: modelRefusal ? refusal : "bad input",
+    } },
+  });
+  const text = await response.text();
+  expect(sends).toEqual(modelRefusal ? [firstModel, secondModel] : [firstModel]);
+  expect(text.includes("fallback succeeded")).toBe(modelRefusal);
+});
