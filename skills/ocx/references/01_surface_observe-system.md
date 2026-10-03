@@ -47,8 +47,8 @@ State-changing: no.
 
 | Flag | Value | Meaning |
 |---|---|---|
-| `--range` | string | today | 1d | 7d | 30d | all; default 30d. |
-| `--surface` | string | all | codex | claude | grok; default all. |
+| `--range` | string | today \| 1d \| 7d \| 30d \| all; default 30d. |
+| `--surface` | string | all \| codex \| claude \| grok; default all. |
 | `--since` | string | Inclusive epoch milliseconds or ISO datetime with timezone; requires --until. |
 | `--until` | string | Inclusive end; requires --since. Custom bounds override --range. |
 | `--provider` | string | Filter provider. |
@@ -59,7 +59,7 @@ State-changing: no.
 
 JSON mode: `payload`.
 
-- Connected clients read only their enrolled-key Hub report through /v1/usage; caller --api-key-id is refused before key read/transport and never grants management authority.
+- Alias of observe usage. Connected clients read only their enrolled-key Hub report through /v1/usage; caller --api-key-id is refused before key read/transport and never grants management authority.
 - Nonclient --api-key-id uses /api/usage and requires matching filter acknowledgment. An unknown acknowledged key is empty/matched:false, not404. Custom-window acknowledgment remains required.
 - --search filters only returned model rows after scope acknowledgment. Blank search selects the top100 model rows; modelView reports match/return counts without recomputing totals.
 
@@ -451,15 +451,15 @@ State-changing: no.
 
 | Flag | Value | Meaning |
 |---|---|---|
-| `--surface` | string | all | codex | claude | grok. |
+| `--surface` | string | all \| codex \| claude \| grok. |
 | `--model` | string | Case-insensitive exact identity across requested, resolved, served and attempted models. |
 | `--provider` | string | Case-insensitive provider or failover attempt identity. |
-| `--status` | string | all | success (200-299) | errors (400-599). |
-| `--time-window` | string | all | 15m | 1h | 24h, relative to observation time. |
+| `--status` | string | all \| success (200-299) \| errors (400-599). |
+| `--time-window` | string | all \| 15m \| 1h \| 24h, relative to observation time. |
 | `--min-tok-per-sec` | number | Inclusive minimum observed token speed. |
 | `--max-tok-per-sec` | number | Exclusive maximum observed token speed. |
 | `--intercepted-only` | boolean | Rows carrying an observed rewrite marker. |
-| `--protocol-mode` | string | all | native | translated | legacy-bridge | blocked | none. |
+| `--protocol-mode` | string | all \| native \| translated \| legacy-bridge \| blocked \| none. |
 | `--conversation` | string | Conversation ID or stored hash. |
 | `--conversationId` | string | Alias of --conversation. |
 | `--scan-limit` | number | 1-2000 raw rows inspected; default 2000. |
@@ -487,15 +487,15 @@ State-changing: no.
 
 | Flag | Value | Meaning |
 |---|---|---|
-| `--surface` | string | all | codex | claude | grok. |
+| `--surface` | string | all \| codex \| claude \| grok. |
 | `--model` | string | Case-insensitive exact identity across requested, resolved, served and attempted models. |
 | `--provider` | string | Case-insensitive provider or failover attempt identity. |
-| `--status` | string | all | success (200-299) | errors (400-599). |
-| `--time-window` | string | all | 15m | 1h | 24h, relative to observation time. |
+| `--status` | string | all \| success (200-299) \| errors (400-599). |
+| `--time-window` | string | all \| 15m \| 1h \| 24h, relative to observation time. |
 | `--min-tok-per-sec` | number | Inclusive minimum observed token speed. |
 | `--max-tok-per-sec` | number | Exclusive maximum observed token speed. |
 | `--intercepted-only` | boolean | Rows carrying an observed rewrite marker. |
-| `--protocol-mode` | string | all | native | translated | legacy-bridge | blocked | none. |
+| `--protocol-mode` | string | all \| native \| translated \| legacy-bridge \| blocked \| none. |
 | `--conversation` | string | Conversation ID or stored hash. |
 | `--conversationId` | string | Alias of --conversation. |
 | `--scan-limit` | number | 1-2000 raw rows inspected; default 2000. |
@@ -638,8 +638,8 @@ State-changing: no.
 
 | Flag | Value | Meaning |
 |---|---|---|
-| `--range` | string | today | 1d | 7d | 30d | all; default 30d. |
-| `--surface` | string | all | codex | claude | grok; default all. |
+| `--range` | string | today \| 1d \| 7d \| 30d \| all; default 30d. |
+| `--surface` | string | all \| codex \| claude \| grok; default all. |
 | `--since` | string | Inclusive epoch milliseconds or ISO datetime with timezone; requires --until. |
 | `--until` | string | Inclusive end; requires --since. Custom bounds override --range. |
 | `--provider` | string | Filter provider. |
@@ -650,7 +650,7 @@ State-changing: no.
 
 JSON mode: `payload`.
 
-- Connected clients read only their enrolled-key Hub report through /v1/usage; caller --api-key-id is refused before key read/transport and never grants management authority.
+- Also available as ocx usage. Connected clients read only their enrolled-key Hub report through /v1/usage; caller --api-key-id is refused before key read/transport and never grants management authority.
 - Nonclient --api-key-id uses /api/usage and requires matching filter acknowledgment. An unknown acknowledged key is empty/matched:false, not404. Custom-window acknowledgment remains required.
 - --search filters only returned model rows after scope acknowledgment. Blank search selects the top100 model rows; modelView reports match/return counts without recomputing totals.
 
@@ -797,7 +797,7 @@ State-changing: yes.
 
 | Flag | Value | Meaning |
 |---|---|---|
-| `--mode` | string | compat | quiet; default compat. |
+| `--mode` | string | compat \| quiet; default compat. |
 | `--json` | boolean | Emit the result as JSON. |
 
 JSON mode: `payload`.
@@ -935,10 +935,10 @@ State-changing: yes.
 
 | Flag | Value | Meaning |
 |---|---|---|
-| `--enabled` | string | true | false. |
+| `--enabled` | string | true \| false. |
 | `--percent` | number | Oldest archived-session percentage; server validates the 1-100 policy range. |
-| `--mode` | string | quarantine | permanent. |
-| `--schedule` | string | startup | daily | weekly | manual. |
+| `--mode` | string | quarantine \| permanent. |
+| `--schedule` | string | startup \| daily \| weekly \| manual. |
 | `--json` | boolean | Emit the result as JSON. |
 | `--archived-bytes-over` | number | Nonnegative safe integer byte trigger; zero is valid. |
 | `--reduce-to-bytes` | number | Nonnegative safe integer cleanup target, exclusive with either percentage spelling. |
@@ -1377,10 +1377,10 @@ State-changing: yes.
 
 | Flag | Value | Meaning |
 |---|---|---|
-| `--auto-start` | string | on | off for Codex autostart. |
-| `--stream-mode` | string | auto | legacy-tee | eager-relay. |
-| `--desktop-authless` | string | on | off for Codex Desktop authless. |
-| `--client-compaction` | string | on | off for native replay portability; summaries may consume provider quota. |
+| `--auto-start` | string | on \| off for Codex autostart. |
+| `--stream-mode` | string | auto \| legacy-tee \| eager-relay. |
+| `--desktop-authless` | string | on \| off for Codex Desktop authless. |
+| `--client-compaction` | string | on \| off for native replay portability; summaries may consume provider quota. |
 | `--json` | boolean | Emit the result as JSON. |
 | `--show-codex-credits` | string | on/off display preference only; never paid-credit permission. |
 | `--account-picker` | string | on/off Codex account picker visibility. |
@@ -1508,7 +1508,7 @@ State-changing: no.
 
 | Flag | Value | Meaning |
 |---|---|---|
-| `--channel` | string | latest | preview; default latest. |
+| `--channel` | string | latest \| preview; default latest. |
 | `--json` | boolean | Emit the result as JSON. |
 
 JSON mode: `payload`.
@@ -1529,8 +1529,8 @@ State-changing: yes.
 
 | Flag | Value | Meaning |
 |---|---|---|
-| `--channel` | string | latest | preview; default latest. |
-| `--restart` | string | on | off; default on. |
+| `--channel` | string | latest \| preview; default latest. |
+| `--restart` | string | on \| off; default on. |
 | `--yes` | boolean | Required confirmation for package update. |
 | `--json` | boolean | Emit the result as JSON. |
 

@@ -474,7 +474,7 @@ Drives no management route.
 
 | Flag | Value | Meaning |
 |---|---|---|
-| `--protocol` | string | chat | responses | messages; default chat. |
+| `--protocol` | string | chat \| responses \| messages; default chat. |
 | `--json` | boolean | Emit the result as JSON. |
 | `--api-key-stdin` | boolean | Read one explicit data key from bounded piped stdin; no secret argv/env or management/enrolled-key fallback. |
 
