@@ -68,7 +68,6 @@ test("invalid hand edits degrade without losing providers; strict candidate vali
 test("explicit wire model outranks legacy roster directive even without saved force", () => {
   const body = { model: "ocx-claude-combo--tev-auto", system: "<!-- ocx-route: ocx-claude-other--model -->" };
   expect(extractOcxRouteDirective(body)).toBe(body.model);
-  expect(extractOcxRouteDirective(body)).toBe(body.model);
 });
 
 test("version boundary and read-only settings key presence are bounded and private", async () => {
