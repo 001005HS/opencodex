@@ -581,7 +581,9 @@ aggregation sum/average/max, grouping model/modelAccount. The API limits filter
 inputs to 100 items. This reads usage without changing companion settings.
 
 Check `appliedFilters.models/hiddenProviders`. Timeline bounds are epoch seconds,
-with exclusive end, unlike ordinary usage's millisecond custom window. Empty
+with exclusive end, unlike ordinary usage's millisecond custom window. The end must
+match the request-time bucket, or its immediate successor if the request crosses
+a bucket boundary; an older aligned window is refused. Empty
 series retains bucket/filter metadata. `missingMeasurements` and `truncated` must
 remain visible: zero-filled points do not prove complete zero usage.
 

@@ -1891,5 +1891,5 @@ State-changing: no.
 
 JSON mode: `payload`.
 
-- start/end are epoch seconds. Empty series still includes metadata; missingMeasurements and truncated remain visible instead of implying measured complete zero traffic.
+- start/end are epoch seconds. The end must match the request-time bucket or its immediate successor after an observed rollover; stale windows are refused. Empty series still includes metadata; missingMeasurements and truncated remain visible instead of implying measured complete zero traffic.
 - Uses existing query validation and checks applied model/provider-exclusion scope. It does not change companion settings or request inference.

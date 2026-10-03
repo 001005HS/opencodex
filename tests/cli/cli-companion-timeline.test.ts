@@ -11,13 +11,16 @@ import { createTempHome, type TempHome } from "../helpers/temp-home";
 const realFetch = globalThis.fetch;
 let home: TempHome, out: ReturnType<typeof spyOn>, err: ReturnType<typeof spyOn>, network: ReturnType<typeof spyOn>;
 let admin: string | undefined;
+let clock: ReturnType<typeof spyOn<typeof Date, "now">>;
 beforeEach(() => {
+  clock = spyOn(Date, "now").mockReturnValue(1_700_006_399_000);
   home = createTempHome("ocx-cli-timeline-"); admin = process.env.OPENCODEX_ADMIN_AUTH_TOKEN;
   process.env.OPENCODEX_ADMIN_AUTH_TOKEN = "synthetic-timeline-admin";
   out = spyOn(console, "log").mockImplementation(() => {}); err = spyOn(console, "error").mockImplementation(() => {});
   network = spyOn(globalThis, "fetch").mockImplementation(() => { throw new Error("Unowned network forbidden"); });
 });
 afterEach(() => {
+  clock.mockRestore();
   expect(network).not.toHaveBeenCalled(); network.mockRestore(); out.mockRestore(); err.mockRestore();
   if (admin === undefined) delete process.env.OPENCODEX_ADMIN_AUTH_TOKEN; else process.env.OPENCODEX_ADMIN_AUTH_TOKEN = admin;
   home.remove();
@@ -52,6 +55,20 @@ function entry(overrides: Partial<PersistedUsageEntry> = {}): PersistedUsageEntr
     durationMs: 1, usageStatus: "reported", totalTokens: 7, ...overrides };
 }
 describe("companion timeline", () => {
+  test.each([-3600, -7200, -86400, 7200])("rejects aligned but stale or future end offset %i", async offset => {
+    const raw = timeline(); raw.start += offset; raw.end += offset;
+    expect(await handleCompanionTimelineCommand(["--json"], fixture(raw).deps)).toBe(1);
+    expect(stdout()).toBe("");
+  });
+  test.each([false, true])("adjacent bucket requires a real request-time rollover: %s", async rollover => {
+    const raw = timeline(); raw.start += 3600; raw.end += 3600;
+    const deps: RuntimeApiDeps = { baseUrl: "http://fixture.invalid", fetchImpl: async () => {
+      if (rollover) clock.mockReturnValue(1_700_006_401_000);
+      return Response.json(raw);
+    } };
+    expect(await handleCompanionTimelineCommand(["--json"], deps)).toBe(rollover ? 0 : 1);
+    if (!rollover) expect(stdout()).toBe("");
+  });
   test("public companion entry returns numeric result and empty metadata remains intact", async () => {
     const f = fixture({ ...timeline(), private: "private-canary" });
     expect(await handleCompanionCommand(["timeline", "--json"], f.deps)).toBe(0);

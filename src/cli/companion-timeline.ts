@@ -80,10 +80,15 @@ function timelineDto(raw: unknown, query: TimelineQuery): UsageTimeline {
     || (models !== null && expectedModels !== null && !sameStrings(models, expectedModels))
     || !sameStrings(hiddenProviders, query.hiddenProviders)) throw new Error("Timeline filters were not acknowledged");
   const start = integer(value.start), end = integer(value.end), buckets = integer(value.buckets), bucketSeconds = integer(value.bucketSeconds);
+  const expectedBucketSeconds = query.bucketMinutes * 60;
+  const requestedEnd = (Math.floor(query.now / 1000 / expectedBucketSeconds) + 1) * expectedBucketSeconds;
+  const observedNow = Math.floor(Date.now() / 1000);
+  const currentWindow = end === requestedEnd
+    || (observedNow >= requestedEnd && end === requestedEnd + expectedBucketSeconds);
   if (bucketSeconds !== query.bucketMinutes * 60 || buckets !== Math.ceil(query.hours * 60 / query.bucketMinutes)
     || end <= start || end - start !== buckets * bucketSeconds || start % bucketSeconds !== 0 || end % bucketSeconds !== 0
-    // Seconds are the wire unit. Millisecond-shaped or future bounds must never become a plausible chart.
-    || end > Math.floor(Date.now() / 1000) + bucketSeconds
+    // Match the requested current bucket, or its immediate successor after an observed rollover.
+    || !currentWindow || end > observedNow + bucketSeconds
     || value.metric !== query.metric || value.aggregation !== query.aggregation || value.grouping !== query.grouping
     || typeof value.truncated !== "boolean" || !Array.isArray(value.series) || value.series.length > 24) {
     throw new Error("Invalid timeline bounds or metadata");

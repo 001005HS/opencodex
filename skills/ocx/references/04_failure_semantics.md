@@ -313,7 +313,9 @@ or output. Retained rows are observations, not proof of a complete history. Use
 log events for resets/removals; legacy row JSONL cannot reconstruct them. Injection
 has no epoch/gap indicator and cannot promise lossless restart recovery.
 
-Timeline exclusions use `--hide-provider`; `--provider` is unsupported. Read the
+Timeline exclusions use `--hide-provider`; `--provider` is unsupported. Stale or
+future bucket windows fail instead of appearing as current usage; only the
+request-time end or its immediate successor after a rollover is accepted. Read the
 applied filter acknowledgment and incomplete evidence rather than retrying a zero
 plot as a fault. Management health can report status ok with degraded spendLedger;
 liveness and subsystem readiness are different. Key-scoped usage refuses an
