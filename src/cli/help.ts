@@ -1,4 +1,5 @@
-import { findCommand } from "./registry";
+import { resolveHelpPath } from "./help-catalog";
+import { MODELS_CONTEXT_DETAILS, MODELS_CONTEXT_USAGE } from "./help-models-context";
 import { packageVersion as readPackageVersion } from "../lib/package-version";
 
 /**
@@ -17,6 +18,10 @@ export function printVersion(): void {
 }
 
 export function printUsage(): void {
+  printFullUsage();
+}
+
+export function printFullUsage(): void {
   console.log(`opencodex (ocx) — Universal provider proxy for Codex
 
 Usage:
@@ -115,13 +120,49 @@ export function hasHelpFlag(values: string[]): boolean {
   return values.some(value => value === "--help" || value === "-h" || value === "help");
 }
 
-export function printSubcommandUsage(name: string | undefined): void {
-  const entry = name ? findCommand(name) : undefined;
-  if (!entry) {
-    console.error(`Unknown command: ${name ?? ""}`.trim());
-    printUsage();
+export function printSubcommandUsage(
+  name: string | undefined,
+  path?: readonly string[],
+  options: { fallbackToParent?: boolean } = {},
+): void {
+  const result = resolveHelpPath(path ?? (name ? [name] : []));
+  if (result.kind === "unavailable") {
+    // Appended flags may follow runtime operands. An explicit `help <path>`
+    // requests that exact detail instead, so only the CLI head enables fallback.
+    if (options.fallbackToParent && result.parent) {
+      printSubcommandUsage(result.parent[0], result.parent);
+      return;
+    }
+    if (result.parent) {
+      console.error("Detailed help unavailable for the requested topic.");
+      console.error(`See: ocx help ${result.parent.join(" ")}`);
+    } else {
+      console.error(`Unknown command: ${name ?? ""}`.trim());
+      printUsage();
+    }
     process.exit(1);
   }
-  console.log(`Usage: ${entry.usage}\n\n${entry.summary}`);
-  if (entry.details?.length) console.log(`\n${entry.details.join("\n")}`);
+  if (result.kind === "entry") {
+    console.log(`Usage: ${result.entry.usage}\n\n${result.entry.summary}`);
+    if (result.entry.details?.length) console.log(`\n${result.entry.details.join("\n")}`);
+    return;
+  }
+  if (result.kind === "models-context") {
+    console.log(`Usage:\n${MODELS_CONTEXT_USAGE}\n\n${MODELS_CONTEXT_DETAILS.join("\n")}`);
+  } else if (result.kind === "capability") {
+    const { capability } = result;
+    console.log(`Command: ocx ${result.path.join(" ")}\n\n${capability.summary}`);
+    if (capability.flags.length) {
+      console.log("\nDeclared flags:");
+      for (const flag of capability.flags) {
+        console.log(`  ${flag.name}${flag.value && flag.value !== "boolean" ? ` <${flag.value}>` : ""}${flag.required ? " (required)" : ""}  ${flag.summary}`);
+      }
+    }
+    if (capability.details?.length) console.log(`\n${capability.details.join("\n")}`);
+    console.log("\nCapability metadata is incomplete; this is not the full operand grammar.");
+  } else {
+    console.log(`Command group: ocx ${result.path.join(" ")}\n\nDeclared commands (incomplete):`);
+    for (const child of result.children) console.log(`  ocx ${child.command.join(" ")}  ${child.summary}`);
+  }
+  console.log(`\nParent help: ocx help ${result.path.slice(0, -1).join(" ")}`);
 }
