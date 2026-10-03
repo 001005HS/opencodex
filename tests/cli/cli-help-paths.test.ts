@@ -111,6 +111,26 @@ describe("explicit CLI help paths", () => {
     expect(result.stdout).not.toContain("Usage:");
   });
 
+  test("runnable capability parents retain their usage and expose deeper help", () => {
+    const path = ["access", "key"];
+    const result = resolveHelpPath(path);
+    expect(result.kind).toBe("capability");
+    if (result.kind !== "capability") throw new Error("expected capability help");
+    expect(result.children.map(child => child.command.join(" "))).toContain("access key list");
+    expect(result.children.map(child => child.command.join(" "))).toContain("access key rotate commit");
+    expect(result.children.some(child => child.command.length <= path.length)).toBe(false);
+    const output = help(["help", ...path]);
+    expect(output.status).toBe(0);
+    expect(output.stderr).toBe("");
+    expect(output.stdout).toContain("Usage: ocx access key list [--json]");
+    expect(output.stdout).toContain("Declared commands (incomplete)");
+    expect(output.stdout).toContain("ocx help access key list");
+    expect(output.stdout).toContain("ocx help access key rotate commit");
+    expect(output.stdout).toContain("Parent help: ocx help access");
+    const leaf = resolveHelpPath(["access", "key", "list"]);
+    expect(leaf).toMatchObject({ kind: "capability", children: [] });
+  });
+
   test("undeclared detail does not claim runtime grammar is invalid", () => {
     for (const [path, parent] of [
       [["service", "not-declared"], "service"],
@@ -151,6 +171,40 @@ describe("explicit CLI help paths", () => {
     expect(resolveHelpPath(["model", "context"]).kind).toBe("models-context");
     expect(resolveHelpPath(["account", "main"]).kind).toBe("prefix");
     expect(resolveHelpPath(["account", "list"]).kind).toBe("capability");
+  });
+
+  test("access aliases resolve nested help without changing exact root help", () => {
+    const root = resolveHelpPath(["api-key"]);
+    expect(root).toMatchObject({ kind: "entry", entry: { name: "api-key" }, canonicalName: "access key" });
+    const rootOutput = help(["help", "api-key"]);
+    expect(rootOutput.status).toBe(0);
+    expect(rootOutput.stdout).toContain("Usage: ocx api-key ");
+    expect(rootOutput.stdout).toContain("Canonical help: ocx help access key");
+    expect(rootOutput.stdout).toContain("ocx help access key list");
+    const canonical = help(["help", "access", "key", "remove"]);
+    expect(canonical.status).toBe(0);
+    for (const path of [["api-key", "delete"], ["api-key", "remove"], ["access", "keys", "delete"], ["access", "key", "delete"]]) {
+      const before = [...path];
+      expect(resolveHelpPath(path)).toMatchObject({ kind: "capability", path: ["access", "key", "remove"] });
+      expect(path).toEqual(before);
+      for (const args of [["help", ...path], [...path, "--help"]]) {
+        const output = help(args);
+        expect(output.status).toBe(0);
+        expect(output.stderr).toBe("");
+        expect(output.stdout).toBe(canonical.stdout);
+      }
+    }
+    const rotate = help(["help", "api-key", "rotate", "commit"]);
+    expect(rotate.status).toBe(0);
+    expect(rotate.stdout).toContain("Parent help: ocx help access key rotate");
+    const operand = ["access", "keys", "get", "delete"];
+    expect(resolveHelpPath(operand)).toMatchObject({
+      kind: "unavailable", path: ["access", "key", "get", "delete"], parent: ["access", "key", "get"],
+    });
+    expect(operand).toEqual(["access", "keys", "get", "delete"]);
+    for (const path of [["access", "delete"], ["provider", "delete"], ["access", "key", "rotate", "delete"]]) {
+      expect(resolveHelpPath(path)).toMatchObject({ kind: "unavailable", path });
+    }
   });
 
   test("help lookup and rendering preserve machine capability JSON", async () => {

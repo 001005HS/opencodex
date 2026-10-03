@@ -474,7 +474,7 @@ Drives no management route.
 
 | Flag | Value | Meaning |
 |---|---|---|
-| `--protocol` | string | chat | responses | messages; default chat. |
+| `--protocol` | string | chat \| responses \| messages; default chat. |
 | `--json` | boolean | Emit the result as JSON. |
 
 JSON mode: `payload`.

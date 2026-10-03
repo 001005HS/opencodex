@@ -111,7 +111,7 @@ notices. Null, absent or `not-requested` refresh can exit 0 without a client syn
 Read back before recovery; do not repeat a persisted write to repair convergence.
 Errors use safe prose on stderr, including in JSON mode, rather than a JSON error envelope.
 
-`provider test` is separate: it checks upstream model discovery connectivity.
+`provider test` is separate: it checks upstream model discovery connectivity. A failed connection exits 1; success and a static catalog with no applicable discovery endpoint exit 0.
 `applicable: false` is an expected static-catalog result, not successful inference
 or a failed connection.
 

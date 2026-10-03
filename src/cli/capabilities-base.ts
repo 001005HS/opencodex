@@ -314,7 +314,7 @@ export const CAPABILITIES: readonly Capability[] = [
     flags: [{"name":"--range","value":"string","summary":"today | 1d | 7d | 30d | all; default 30d."},{"name":"--surface","value":"string","summary":"all | codex | claude | grok; default all."},{"name":"--since","value":"string","summary":"Inclusive epoch milliseconds or ISO datetime with timezone; requires --until."},{"name":"--until","value":"string","summary":"Inclusive end; requires --since. Custom bounds override --range."},{"name":"--provider","value":"string","summary":"Filter provider."},{"name":"--model","value":"string","summary":"Filter model."},{"name":"--json","value":"boolean","summary":"Emit the result as JSON."}],
     mutates: false,
     json: "payload",
-    details: ["Alias of usage. Connected clients instead read their own enrolled-key Hub report through /v1/usage; this is not whole-Hub management usage.","Custom bounds require the server to confirm customWindow, since and until."],
+    details: ["Alias of observe usage. Connected clients instead read their own enrolled-key Hub report through /v1/usage; this is not whole-Hub management usage.","Custom bounds require the server to confirm customWindow, since and until."],
     usage: "ocx usage [--range <today|1d|7d|30d|all>] [--surface <all|codex|claude|grok>] [--since <epoch-ms|ISO-datetime>] [--until <epoch-ms|ISO-datetime>] [--provider <name>] [--model <id>] [--json]",
   },
   {

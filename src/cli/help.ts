@@ -163,6 +163,10 @@ export function printSubcommandUsage(
       }
     }
     if (capability.details?.length) write(`\n${capability.details.join("\n")}`);
+    if (result.children.length) {
+      write("\nDeclared commands (incomplete):");
+      for (const child of result.children) write(`  ocx help ${child.command.join(" ")}  ${child.summary}`);
+    }
     if (capability.usage === undefined) {
       write("\nCapability metadata is incomplete; this is not the full operand grammar.");
     }

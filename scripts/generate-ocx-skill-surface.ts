@@ -75,7 +75,7 @@ function renderIndex(assignments: Map<Capability, string>): string {
     "These answer in the CLI head and never reach the proxy, so they work with nothing running.", "",
     "| Invocation | Purpose |", "|---|---|"];
   for (const head of HEAD_CAPABILITIES) {
-    lines.push(`| \`${head.invocations.join("` `")}\` | ${head.summary} |`);
+    lines.push(`| \`${head.invocations.join("` `")}\` | ${tableCell(head.summary)} |`);
   }
   lines.push("", "## Task chapters", "", "| Chapter | Declared capabilities |", "|---|---|");
   for (const domain of DOMAINS) {
@@ -101,6 +101,11 @@ function renderIndex(assignments: Map<Capability, string>): string {
   return lines.join("\n");
 }
 
+/** Preserve literal prose inside a Markdown table cell, including enum separators. */
+function tableCell(value: string | undefined): string {
+  return (value ?? "").replaceAll("\\", "\\\\").replaceAll("|", "\\|").replace(/\r\n|[\r\n]/g, "<br>");
+}
+
 function renderCapability(cap: Capability): string[] {
   const invocation = capabilityInvocation(cap);
   const handoff = SECRET_HANDOFFS.has(invocation);
@@ -117,7 +122,7 @@ function renderCapability(cap: Capability): string[] {
   lines.push("");
   if (cap.flags.length > 0) {
     lines.push("| Flag | Value | Meaning |", "|---|---|---|");
-    for (const flag of cap.flags) lines.push(`| \`${flag.name}\` | ${flag.value} | ${flag.summary} |`);
+    for (const flag of cap.flags) lines.push(`| \`${flag.name}\` | ${tableCell(flag.value)} | ${tableCell(flag.summary)} |`);
     lines.push("");
   }
   lines.push(`JSON mode: \`${cap.json}\`.`, "");

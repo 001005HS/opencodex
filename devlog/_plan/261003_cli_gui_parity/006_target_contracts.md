@@ -57,12 +57,12 @@ Exact live grammar/mapping:
 | Existing root + proposed option | Exact live operation |
 |---|---|
 | `v2 status --live --json` | GET `/api/v2` |
-| `v2 mode v1|default|v2 --live [--acknowledge-surface-advisory] --json` | PUT `{multiAgentMode, multiAgentSurfaceAdvisoryAcknowledged?:true}`; omission preserves unacknowledged state; default remains string `default`, not null. |
-| `v2 keep-native-v1 on|off --live --json` | PUT `{keepNativeChatGptOnV1:boolean}` |
+| `v2 mode v1\|default\|v2 --live [--acknowledge-surface-advisory] --json` | PUT `{multiAgentMode, multiAgentSurfaceAdvisoryAcknowledged?:true}`; omission preserves unacknowledged state; default remains string `default`, not null. |
+| `v2 keep-native-v1 on\|off --live --json` | PUT `{keepNativeChatGptOnV1:boolean}` |
 | `v2 threads N --live --json` | PUT `{maxConcurrentThreadsPerSession:N}`, integer >=1 |
 | `v2 mode-hint TEXT --live --json` | PUT `{multiAgentModeHintText:TEXT}`; nonblank raw text retained. |
 | `v2 mode-hint --clear --live --json` | PUT `{multiAgentModeHintText:null}` |
-| `v2 on|off --live --json` | PUT `{enabled:boolean}`; retain server hybrid conflict refusal. |
+| `v2 on\|off --live --json` | PUT `{enabled:boolean}`; retain server hybrid conflict refusal. |
 
 Use the same strict parser for local/live flags. `--json` must be consumed and unknown/trailing args rejected before local writers run; it must not be silently ignored. Local JSON must report `transport:local`, actual helper changed/no-op state and sync outcome without manufacturing server advisory or catalog receipts. Live JSON should preserve server returned state/warnings/catalogRefresh. If catalog refresh fails after persistence, do not claim rollback.
 
