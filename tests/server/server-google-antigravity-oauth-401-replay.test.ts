@@ -1,10 +1,11 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { saveConfig } from "../../src/config";
+import * as configModule from "../../src/config";
 import { forceRefreshOAuthAccessSnapshot, getValidAccessTokenSnapshot } from "../../src/oauth";
-import { credentialGeneration, getAccountSet, saveCredential, setAccountPaused, setActiveAccount } from "../../src/oauth/store";
+import { credentialGeneration, getAccountSet, getAuthStorePath, saveCredential, setAccountPaused, setActiveAccount } from "../../src/oauth/store";
 import { startServer } from "../../src/server";
 import { ANTIGRAVITY_VALIDATION_REQUIRED_PREFIX } from "../../src/adapters/google-errors";
 import { readUsageEntries } from "../../src/usage/log";
@@ -332,6 +333,47 @@ function installOAuthFetch(
 }
 
 describe("Google Antigravity OAuth upstream 401 replay", () => {
+  test.each([1, 2])("verify 403 survives when quarantine persistence fails in a %i-account pool", async count => {
+    await seedOAuth();
+    if (count === 2) await seedSibling();
+    const config = antigravityConfig();
+    config.providers["google-antigravity"]!.reasoningEfforts = ["low", "high"];
+    saveConfig(config);
+    const observed = installOAuthFetch([
+      { status: 403, message: "Please verify your account to continue. Unsupported reasoning effort high." },
+      200,
+    ]);
+    const server = startServer(0);
+    const authPath = getAuthStorePath();
+    const atomicWrite = configModule.atomicWriteFile;
+    let failedWrites = 0;
+    const writeSpy = spyOn(configModule, "atomicWriteFile").mockImplementation((...args) => {
+      if (args[0] === authPath && args[1].includes('"verify_account"')) {
+        failedWrites += 1;
+        throw new Error(`EACCES ${POSIX_PATH_CANARY} persist-secret-canary`);
+      }
+      return atomicWrite(...args);
+    });
+    try {
+      const response = await originalFetch(new URL("/v1/responses", server.url), {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ model: "google-antigravity/gemini-3.8-flash", input: "hello", reasoning: { effort: "high" } }),
+      });
+      const body = await response.text();
+      expect(failedWrites).toBe(1);
+      expect(response.status).toBe(403);
+      expect(body).toContain("verify your account");
+      expect(body).not.toContain(POSIX_PATH_CANARY);
+      expect(body).not.toContain("persist-secret-canary");
+      expect(observed.chatAuth).toEqual(["Bearer rejected-access"]);
+      expect(observed.counts.refresh).toBe(0);
+      expect(getAccountSet("google-antigravity")!.accounts.every(row => !row.needsReauth)).toBe(true);
+    } finally {
+      writeSpy.mockRestore();
+      await server.stop(true);
+    }
+  });
+
   test.each([1, 2])("verify 403 quarantines every refused credential in a %i-account pool", async count => {
     await seedOAuth();
     if (count === 2) await seedSibling();

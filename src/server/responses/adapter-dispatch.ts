@@ -1265,7 +1265,12 @@ export async function prepareAdapterExchange(
         // re-login) must not quarantine the new login. Without the matching sent
         // snapshot there is no owner for this write, so skip marking.
         if (!sent || sent.accountId !== failedAccountId) break;
-        await markAccountNeedsReauthIfGeneration(route.providerName, failedAccountId, sent.generation, undefined, "verify_account");
+        try {
+          await markAccountNeedsReauthIfGeneration(route.providerName, failedAccountId, sent.generation, undefined, "verify_account");
+        } catch {
+          // A failed quarantine write must preserve the refusal, not authorize another send.
+          break recovery;
+        }
         if (!antigravityPoolActivated || transportState.genericFailovers >= transportState.genericFailoverLimit) break;
         const adapterOwnsDispatch = transportState.activeAdapter.fetchResponse !== undefined;
         const hop = reserveCredentialHop(
