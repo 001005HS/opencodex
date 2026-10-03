@@ -7,10 +7,49 @@ The opencodex CLI is `ocx`. It dispatches on the first command name, with docume
 as `setup`/`init`, `restore`/`eject`, and `models`/`model` reaching the same operation. Unknown
 commands and invalid command shapes are errors.
 
-Run `ocx help` (or `ocx --help` / `ocx -h`) for top-level usage. Run `ocx help <command>`,
-`ocx <command> --help`, or `ocx <command> -h` for a command registered in the help table. Help and
-version commands are read-only: they do not start, stop, install, uninstall, or rewrite Codex or
+Run `ocx help` (or `ocx --help` / `ocx -h`) for the full top-level reference.
+`ocx help --all` and `ocx --help --all` explicitly select the same full reference.
+Run `ocx help <command>`, `ocx <command> --help`, or `ocx <command> -h` for a command
+registered in the help table; `ocx <command> help` also remains supported. Help and version
+commands are read-only: they do not start, stop, install, uninstall, or rewrite Codex or
 opencodex state.
+
+## Nested help
+
+Help accepts a path with more than one command word:
+
+```bash
+ocx help models context
+ocx models context --help
+ocx model context --help
+ocx help account list
+ocx help account main
+```
+
+The first three forms show the same context-cap topic, including the `model` alias:
+
+```text
+ocx models context <status|value <tokens> [--set-all]|provider <name> on [--value <tokens>]|provider <name> off|all <on|off>> [--json]
+```
+
+`ocx models context status --json` reads the current settings. `value <tokens>` sets the
+default for future toggles; adding `--set-all` applies it to all routed providers.
+`provider <name> on` enables a provider cap, optionally with `--value <tokens>`; `off`
+disables it. `all on|off` changes all routed providers together.
+
+Declared capability topics such as `account list` show their summary, known flags and
+details, with a pointer to parent help. This metadata does not cover every operand or runtime
+subcommand, so a topic can show `Command: ocx ...` without claiming a complete `Usage:` grammar.
+A prefix such as `account main` lists its declared children and marks that coverage as incomplete.
+An undeclared explicit topic (`ocx help <path>`) exits nonzero with a detailed-help-unavailable
+message and a known-parent pointer; that does not establish whether the runtime command is valid.
+Appended `--help`/`-h` preserves existing command-help behavior: when detailed metadata is unavailable,
+it displays known parent help successfully, without executing the command.
+
+In the Bun CLI head, bare `help` is recognized only at the root or immediately after the root
+command. Use `--help` or `-h` for nested paths. Later values such as the `help` in
+`ocx alias set demo help` remain command arguments. An exact `--` ends head help scanning,
+so `ocx claude -- --help` preserves the arguments for command dispatch.
 
 ## Command families
 
@@ -119,8 +158,9 @@ a prompt an automated caller can answer is not a safety boundary, so the flag is
 
 ## Driving the CLI from an agent
 
-`ocx capabilities --json` is the machine-readable index of every command, the management routes it
-drives, its flags, and whether it mutates state. Start there rather than parsing help text:
+`ocx capabilities --json` is the machine-readable index of declared capabilities, their management
+routes, known flags, and mutation metadata. It is not an exhaustive command grammar or a list of
+every runtime subcommand. Start there rather than parsing help text:
 
 ```bash
 ocx capabilities --json

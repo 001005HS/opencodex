@@ -116,3 +116,24 @@ No production code changed. The rejected direction was adding client support;
 the user's corrected objective is terminal command discovery and recovery.
 Next direction: revalidate 010 against the unchanged runtime source and implement
 wp1's explicit help paths/full reference without shortening the root yet.
+
+wp1 B amendment: existing mutating-help regression exposed a compatibility gap.
+Flag-appended help falls back to known parent when detailed metadata is missing;
+explicit `ocx help <path>` remains strict. This keeps service/shim help safe and
+successful. Exact amendment and activation tests are in010.
+Same architect reflected ALIGNED on wp1's compatibility amendment after tracing
+runCli -> renderer and real CLI safety fixtures. Builder reports 85 focused tests
+passing plus the final explicit service-install regression; main verification and
+independent implementation review remain pending.
+
+## wp1 Done (implementation scope; review readiness pending)
+
+Explicit help paths, complete reference, shared context grammar, safe appended
+flag-help fallback, tests and docs are implemented. Independent review PASS and
+all affected-scope gates/11CLI scenarios pass. Full local suite has four failures,
+three reproduced on untouched baseline and one unresolved snapshot failure;
+011 records them without a waiver. Publication is draft until wp4 resolves the
+required hosted evidence. The loop goal remains active.
+Next direction: consume020 to make root/family navigation concise while retaining
+wp1's full reference and compatibility behavior. No service/runtime changes are
+inferred from the unrelated verification investigation.

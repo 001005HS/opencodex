@@ -70,3 +70,18 @@ Verification: new focused test plus existing cli-head/help/registry/capabilities
 suites and `tests/cli/cli-models-runtime-dispatch.test.ts` (the whitespace-prefixed
 context usage row stays byte-identical); typecheck; test:changed; structure and skill surface checks; privacy scan;
 English docs build. See wp0 evidence for baseline commands already run.
+
+## B compatibility amendment
+
+Existing cli-help.test.ts:246 requires `service uninstall --help` and
+`codex-shim uninstall --help` to exit0 with safe parent usage, without changing
+state. The incomplete capability catalog cannot reject these established forms.
+For appended flag help (`ocx <command> ... --help|-h`), resolve the full known
+path first; when detail is unavailable but a parent is known, render that parent
+successfully. Explicit `ocx help <path>` remains a strict topic request and reports
+unavailable detail with nonzero status. This preserves prior flag-help safety and
+keeps the declared context forms identical. Rendering takes a transient optional
+`fallbackToParent` option derived by runCli from original argv/head command; it
+is not serialized or persisted and never changes command execution.
+Add regressions for flagged service/shim uninstall and explicit unavailable
+service install. Public/runtime docs must distinguish these two forms.
