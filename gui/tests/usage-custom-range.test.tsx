@@ -571,7 +571,7 @@ test("throughput renders in summary, Models and Providers with honest missing-sa
   }
 });
 
-for (const invalid of [null, "20", "Infinity", NaN, Infinity, -Infinity]) {
+for (const invalid of [null, "20", "Infinity", NaN, Infinity, -Infinity, 0, -5]) {
   test(`invalid throughput ${String(invalid)} is unavailable in every display`, async () => {
     await mount();
     const base = report(requests[0], "invalid-throughput-model");

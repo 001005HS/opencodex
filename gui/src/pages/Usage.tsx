@@ -212,7 +212,7 @@ function cacheHitRateTitle(model: UsageModel, locale: Locale, t: TFn): string | 
 }
 
 function hasThroughput(value: unknown): value is number {
-  return typeof value === "number" && Number.isFinite(value);
+  return typeof value === "number" && Number.isFinite(value) && value > 0;
 }
 
 function throughputTitle(row: { throughputTokensPerSec?: number; throughputSamples?: number }, t: TFn): string {
