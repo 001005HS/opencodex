@@ -1,8 +1,9 @@
 # Recovered contributor changes
 
 The train preserves 31 original carry commits. #6474 already landed separately;
-this batch therefore contributes 30 remaining source-PR changes plus the separately
-reviewed issue implementations. Source PRs are carried or reimplemented, not claimed
+the original recovery scope therefore contained 30 remaining source-PR changes plus
+the separately reviewed issue implementations. Three source PRs subsequently landed
+independently, leaving 27 source changes for the A-D integration PR. Source PRs are carried or reimplemented, not claimed
 to be merged by retaining the carry commit ancestry.
 
 | Source PR | Carry commit | Contributor |
@@ -53,3 +54,16 @@ acceptance. #6406/#6290 are references only. #5253 contributes no carried conten
 Maintainer requests on #6416, #6192, #6119, #6149 and #6151 require explicit
 evidence-backed dispositions. Current source-head review state is not proof of
 a defect in the recovered carry, but it must not be silently discarded.
+
+## Progressive source landings
+
+Under the updated delivery direction, #6459 landed at ee2e15f86da111bfac527842aade9ad7780e15fa,
+#6455 at 115fa0322cd938da846957e237d4b97b38527bf6, and #6457 at
+9fb79230ba8f1df8b6af13bbb6067c359a4f9344. Each retained successful exact-head PR CI,
+no unresolved review threads or maintainer objection, and a recorded owner-integration
+decision. The reviewed runtime/test blobs matched the recovery carries. Source PR
+changes now in dev are reconciled into the train without duplicating their content.
+
+The selected pt-BR contribution supersedes #5253. Although no file content from that
+proposal was copied, the superseded author's trailer is included in final delivery
+as required by the repository's attribution policy.
