@@ -1,4 +1,3 @@
-import { handleSubagentModelRoutes } from "./subagent-model-routes";
 import { ensureManagementClaudeIntercept, interceptStartRefusal, interceptStatus } from "./claude-intercept-routes";
 import { persistCommittedDesktopGateway } from "../../claude/desktop-gateway-state";
 import { captureDesktopAppliedMarker, commitDesktopAppliedMarker } from "../../claude/desktop-applied-marker";
@@ -763,6 +762,7 @@ export async function handleAgentSettingsRoutes(ctx: ManagementContext): Promise
   }
 
   if (url.pathname === "/api/subagent-models") {
+    const { handleSubagentModelRoutes } = await import("./subagent-model-routes");
     return handleSubagentModelRoutes(ctx, autoApplyDesktopBestEffort);
   }
 
