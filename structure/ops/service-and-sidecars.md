@@ -97,7 +97,10 @@ On Windows, the generated-wrapper check accepts package installs that invoke the
 A standalone wrapper that invokes `start` directly must carry the generated protocol and runtime
 markers, one quoted `OCX_BUN` assignment, and no `OCX_CLI` assignment in either quoting form.
 Its executable lines and control-flow order must match the standalone script emitted by
-`src/service/windows-taskxml.ts`; added jumps, exits, calls, labels, or commands make the probe unknown.
+`src/service/windows-taskxml.ts` or exact prior forms retained for read-only upgrade recognition:
+the preceding backup-log variant and the forms before the Bun-placeholder size gate, with either
+old or fixed backup logging. The generator never emits those legacy variants. Added jumps, exits, calls,
+labels, altered logging commands, or partially combined variants make the probe unknown.
 When Task Scheduler reports a registered task, the probe also requires its action to contain exactly
 one Exec with the generated `wscript.exe` command and exact `/b /nologo` launcher arguments.
 A foreign command or additional action makes ownership unknown even if the wrapper and homes agree.
@@ -352,14 +355,41 @@ lease boundary before exiting, and thrown failures release it after owner-aware 
 Replacement and recovery inspect both the captured endpoint and the freshly read runtime record.
 Malformed or unreadable records remain unknown. Recovery requires the same complete owner
 identity and proven-dead liveness; unknown or transferred ownership never starts another proxy.
-Direct recovery retains the lease until readiness or its bounded deadline. The normal successful
-manual-runtime update still prints the existing restart hint.
+The lease is released before any service-manager-mediated start (`service repair` in recovery
+or the post-install refresh): the manager's `ocx start` child cannot join it, and holding it
+through the repair's health wait keeps that proxy from starting (#5760). The recovery decision
+is made again after the release, and the lease is re-acquired before each fallback's ownership
+re-read so a claim landing in the unleased window is vetoed rather than killed unleased.
+Direct recovery retains the lease until readiness or its bounded deadline. The normal successful manual-runtime update still prints the existing
+restart hint.
 
-The npm launcher in `bin/ocx.mjs` makes one exception after a failed update: a service recovery
-releases the lease before the service refresh, as a successful update does. The service manager
-starts the proxy outside the updater's process tree, so that proxy has to take the lease itself;
-held through the repair's health wait, the lease kept it from starting, and recovery fell through
-to a second, directly started proxy (#5760). The recovery decision is made again after the release.
+Every updater lane makes the same exception where the service manager starts the proxy outside
+the updater's process tree, so that proxy has to take the lease itself; held through the
+repair's health wait, the lease kept it from starting, and recovery fell through to a second,
+directly started proxy (#5760). The npm launcher in `bin/ocx.mjs` releases the lease before a
+post-failure service recovery, as a successful update does, and makes the recovery decision
+again after the release. The Bun updater releases before `service repair` in both the recovery
+branch and the post-install refresh — the port reclaim that authorizes kills already ran under
+the lease — and re-acquires before each fallback's ownership re-read, so the re-read and any
+direct start stay serialized with a claim that landed in the unleased window; after the package
+swap, a lease that stays claimed is reported with manual recovery steps and a non-zero exit. The
+dashboard restart worker in `src/update/job.ts` releases the lease immediately before `ocx
+service repair` and re-acquires it at the direct-start fallthrough, waiting long enough to
+outlast one service-wrapper respawn, then re-runs the recorded-owner veto under it before
+mutating the port, because a claim could have landed during the now-unleased refresh window. A
+lease that stays claimed fails closed: nothing is started, and the job is marked failed, since
+the refresh before it produced no serving proxy; an ownership veto still ends as succeeded.
+
+On Windows, `src/update/npm-invocation.mjs` admits only the exact
+`%USERPROFILE%\scoop\apps\nodejs{,-lts}\current` and `current\bin` PATH entries
+from outside that Node installation. It resolves the home, junction, PATH entry, npm candidate,
+and cwd to physical paths; `current` must remain within its Scoop app directory and
+the npm candidate within the admitted entry. `current\bin` may point to the default
+`%USERPROFILE%\scoop\persist\nodejs{,-lts}\bin`; cwd inside that persistent bin
+is excluded too. The fixed persist suffix is appended to the physical home, accepting 8.3 home
+aliases without trusting a redirected persist subtree. Unreadable paths fail closed. Other Scoop apps, version-directory
+PATH entries (`NO_JUNCTION`), custom home-root Scoop installs, arbitrary descendants,
+and cwd inside the resolved Node installation are not admitted.
 
 The npm transaction creates each staging directory exclusively and may clean that fresh path
 while the creating process still owns it. On POSIX it also creates the stage's `lib` directory,
@@ -396,6 +426,17 @@ so an override can never shorten the budgets that prevent a duplicate proxy, and
 30 s ceiling is ignored so the single-shot stop deadline (`timeoutMs * attempts + 250` in
 `src/service/orchestration.ts`) stays bounded. `tests/server/probe-timeout-env.test.ts` reads the
 constants in child processes.
+
+The npm and Bun updaters confirm the stop with the plain-ESM tri-state probe
+`src/update/proxy-liveness-probe.mjs`, decided by
+`src/update/stop-decision.mjs`. A refused dial is `dead`. A dial that is only dropped or times
+out, which is what a listener bound to a tailnet address produces once it is gone, falls back to
+one transient exclusive bind of the same host and port, only when the host is a literal IP address
+(a name can resolve differently for the dial and the bind, so it stays `unknown`): success is `dead`,
+any failed bind (`EADDRINUSE`, `EADDRNOTAVAIL`) is `unknown` and still aborts the update. The probe's ceiling is
+its dial timeout plus a 1500 ms child-spawn limit, after which the answer is `unknown`. A
+successful bind records that nothing held the port at that instant; it does not claim the
+endpoint can never restart. Focused coverage is `tests/update/update-stop-classification.test.ts`.
 
 `src/update/install-detection.mjs` examines both lexical and resolved package paths. An enclosing mise installation owns its nested npm/aube package only when the adjacent `.mise.backend.toml` identifies the containing tool alias and the canonical `npm:@bitkyc08/opencodex` backend. That verified outer owner takes precedence over the inner npm layout. Two verified owners whose tool roots differ only by a symlinked ancestor (macOS `/var` -> `/private/var`) are compared by canonical directory and count as one install. An unreadable or contradictory ownership boundary on either path takes precedence over a verified owner on the other path, refusing mutation without inventing a tool name or recovery command. One boundary is not OpenCodex's at all: on Windows, npm -g under a mise-managed Node puts the package directly in `<mise>/installs/node/<version>/node_modules`, whose adjacent record is Node's own (`short = "node"`, `full = "core:node"`). That exact record with the package directly in the runtime's global `node_modules` is an npm install and falls through to npm detection; any other backend, alias or deeper layout stays fail-closed (`tests/update/update-mise-node-runtime.test.ts`). `ocx update`, dashboard update checks, and update workers expose `installer: "mise"`; checks remain read-only, while mutation is refused with `mise upgrade <verified-alias>` before any proxy stop, package write, or worker creation. The package-tree integrity guard remains active for mise packages, and the managed Linux service additionally follows its mise package launcher onto an upgraded version ([package-tree integrity fence](docs-and-release.md#package-tree-integrity-fence)).
 

@@ -581,7 +581,7 @@ modes, the preview, and the per-request trace.
 | `protocols.unrepresentable?` | `"legacy" \| "reject"` | `"legacy"` | `legacy` sends a request whose path drops a feature and records the loss in the trace. `reject` refuses it with HTTP 400 before any send, naming only the feature keys. |
 | `protocols.rollout.nativeChatCombos?` | `boolean` | `false` | Send an eligible Chat candidate inside a combo natively from its own copy of the client body. |
 | `protocols.rollout.managedMessagesNative?` | `boolean` | `false` | Send Messages natively to a direct, key-authenticated Anthropic provider instead of through the internal Responses bridge. |
-| `protocols.rollout.managedMessagesNativeOAuth?` | `boolean` | `false` | Native Messages for the unpooled `anthropic` OAuth provider on `api.anthropic.com`. Read as off unless `managedMessagesNative` is on; a pooled account set stays on the bridge. |
+| `protocols.rollout.managedMessagesNativeOAuth?` | `boolean` | `false` | Native Messages for the unpooled `anthropic` OAuth provider on `api.anthropic.com`. Read as off unless `managedMessagesNative` is on; a pooled account set stays on the bridge. Recognized JSON-string `metadata.user_id` account UUIDs are aligned with the serving OAuth credential; device and session fields are preserved. |
 | `protocols.rollout.directEncoders?` | `boolean` | `false` | Encode Chat and Messages answers from a non-Responses upstream directly from adapter events. |
 | `protocols.rollout.shadowPlan?` | `boolean` | `false` | Compare each Chat or Messages request's path with the plan a preview predicts and mark a disagreement as `planMismatch` on its log row. Sends nothing extra. |
 
@@ -643,8 +643,10 @@ subscription with a warning when detection is inconclusive. See
 ## Compaction routing
 
 In **Dashboard → Overview → Compaction routing**, choose a model, which triggers it applies to,
-and an optional reasoning effort, then click **Save**. Select **Use conversation model** and save
-to remove the override. Changes apply to the next compaction request without restarting the proxy.
+an optional reasoning effort, and whether the override covers all source models or only selected
+sources. For selected sources, check individual models or provider-wide `provider/*` entries,
+then click **Save**. Select **Use conversation model** and save to remove the override. Changes
+apply to the next compaction request without restarting the proxy.
 
 Set `compactionRouting` in OpenCodex `config.json` to override the model Codex's compaction
 requests use. The setting is disabled when omitted.
@@ -660,6 +662,17 @@ requests use. The setting is disabled when omitted.
 ```
 
 `model` accepts native model IDs, provider-qualified model IDs, and configured combos.
+Optional `sourceModels` limits the override to exact incoming model IDs or `provider/*` patterns,
+for example `["kimi/*", "google-antigravity/*"]`. Matching is case-sensitive. Omit it for the
+existing all-model behavior; empty, duplicate, or malformed lists are invalid. The Dashboard
+source-scope picker can edit the allowlist and preserves saved selectors absent from the current
+catalog. The model checklist shows at most 300 matching entries; use its search field to narrow
+large catalogs without removing saved selections. You can also edit it through `config.json` or `PUT /api/settings`.
+This checks the incoming compaction model, not an inferred conversation model. If Codex sends a
+bare native compaction model for a routed thread, it does not match those provider patterns and
+keeps its existing route. This conservative behavior protects GPT but can leave some automatic
+compactions on the native path. Ordinary non-compaction turns are never changed.
+
 `reasoningEffort` is optional; omit it to preserve the incoming effort. Supported declarations
 are `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`, and `ultra`.
 Existing provider effort rules still apply. The native `/responses/compact` endpoint keeps
@@ -676,7 +689,9 @@ the canonical OpenAI quota is exhausted. Codex picks a bare native model for the
 turn, and OpenCodex reserves that for an enabled canonical `openai` provider whenever one
 exists, so the compaction fails with a quota error before the routed turn begins even though
 the thread itself runs elsewhere. Naming `"auto"` here points the compaction at a
-provider-qualified model with its own credentials and quota.
+provider-qualified model with its own credentials and quota only when `sourceModels` is omitted
+or matches the incoming model. A list containing only `provider/*` entries does not cover a bare
+native compaction model.
 
 OpenCodex changes only requests with explicit `request_kind: "compaction"` metadata whose
 `compaction.trigger` is one of the values you listed, sent to `/v1/responses/compact` or to
@@ -687,8 +702,8 @@ metadata are supplied they must name the same trigger. WebSocket requests use ea
 metadata rather than the connection's earlier handshake metadata.
 
 The selected model's provider receives the entire conversation for summarization, including
-conversations that normally run on another provider. A combo selector sends it to every combo
-target, including failover targets. The dashboard panel states this next to the model picker
+conversations that normally run on another provider. A combo selects a target by its routing strategy and may retry the same conversation on another
+target after a retryable failure, so one or more targets can receive it. The dashboard panel states this next to the model picker
 and names the destination provider, or the combo's target providers, once a model is chosen.
 When the override covers automatic compaction, that transfer happens without you asking for it,
 at whatever point Codex decides to compact; the dashboard panel says so as well.
@@ -805,6 +820,8 @@ Explicit selection fails closed when the provider is missing, disabled, incompat
 usable key; it never falls back to another paid upstream. The endpoint must implement the OpenAI
 Images API paths and response shape expected by Codex.
 
+Both search loops keep `web_search` declared after the search budget is exhausted. Further calls receive a paired limit-reached result without another physical search; at most `maxSearchesPerTurn + 3` model iterations run before a terminal error. Ordinary caller tools and cancellation still end the loop. Empty-answer recovery alone removes all tools.
+
 ### `webSearchSidecar` (`OcxWebSearchSidecarConfig`)
 
 RunTurn adapters also use the configured search sidecar. Search turns preserve progress heartbeats. A first-event OAuth 429 rotates the account on the initial request and on each post-search answer request. The replay keeps the search tool and the gathered results. With `emptyCompletionRetry: true`, an empty answer before the search limit receives one retry using the current conversation and gathered results. The existing tool-free recovery after the search limit remains available independently of that setting. Upstream failures stop the turn instead of triggering another search.
@@ -896,6 +913,17 @@ WebSocket control paths. See the canonical guide for
 [typed result and approval continuations](/guides/codex-integration/#rich-tool-results-and-explicit-approvals-after-response-completion),
 and [confirmation deadlines and retained context](/guides/codex-integration/#steering-confirmation-deadlines-and-retained-context).
 
+### Forced Claude Code subagent model
+
+The Subagents page offers **Force all subagents onto one model**, off by default. Select an exposed roster-style id, such as `combo/tev-auto`, then enable the switch. The roster is offered first; unavailable saved roster entries cannot be force targets.
+
+`ocx agent subagents force combo/tev-auto` sets `claudeCode.subagentModelForce`; `ocx agent subagents force -` clears it. `ocx agent status` reports the setting. `GET /api/subagent-models` returns `force`, `forceAvailable`, and `forceStatus`; `PUT` accepts `{ "force": "combo/tev-auto" }` or `{ "force": null }` without changing the roster. Omitting `force` leaves it unchanged. Invalid or unexposed targets are rejected on write; stale targets are reported and skipped at launch.
+
+This takes effect on the **next routed `ocx claude` launch**, injecting `CLAUDE_CODE_SUBAGENT_MODEL` as an explicit proxy alias (with `[1m]` only for an authoritative million-token window; native Claude targets use a reversible native alias) and `CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1`. Each nonempty shell-exported variable independently wins. Native launches inject neither variable; plain `claude` is not affected. No plugin files or `settings.json` are modified by this setting.
+
+Claude Code **2.1.257 or newer** is required for FORCE. Plugin and built-in agents (including Explore/Plan) and per-call model arguments are overridden. Forks and subagent skills with `model: inherit` keep the main conversation model. The main loop and Haiku/small-fast sidecars are unaffected. Existing roster files remain available.
+
+The dashboard warns about old or unknown CLI versions, unavailable targets, and either variable already present in `settings.json` → `env` (which overrides launch env). Detection is read-only and server-local: it cannot inspect another launch shell, another machine, or project-local settings. An unknown result is not proof of force support.
 
 ## Historical pool continuity
 

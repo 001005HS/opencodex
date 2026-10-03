@@ -28,6 +28,7 @@ import { recordDesktopRequest } from "../claude/desktop-health";
 import { stripOneMillionMarker } from "../claude/context-windows";
 import { captureClaudeInbound } from "../claude/inbound-debug";
 import { claudeCodeForIngress } from "../claude/intercept/model-bindings";
+import { classifyInterceptClient } from "../claude/intercept/client-class";
 import { analyzeClaudeCompatibility, isClaudeCompatibilityMode } from "../claude/compatibility";
 import { carriesMessageThread, messageThreadUnsupportedResponse } from "../claude/message-threads";
 import {
@@ -60,6 +61,7 @@ import { resolveWireProtocolOverride } from "./adapter-resolve";
 import type { OcxConfig } from "../types";
 import { readJsonRequestBody, resolveInboundBodyLimitBytes } from "./request-decompress";
 import { addFinalRequestLog, httpStatusForRequestLogTerminal, recordFirstOutput, type RequestLogContext } from "./request-log";
+import { recordGenerationEvent } from "./request-log-generation-window";
 import { createFinalRequestLog } from "./inference/final-log";
 import {
   conversationIdFromClaudeMetadata,
@@ -84,6 +86,7 @@ import { requestPathForLane } from "../protocols/path";
 import { resolveApiSurfaceSettings, resolveProtocolSettings } from "../protocols/settings";
 import { markProtocolBlocked, markProtocolEntry } from "../protocols/trace";
 import { recordProtocolShadowPlan } from "../protocols/shadow-plan";
+import { captureAnthropicClientIdentity } from "../adapters/anthropic/client-identity";
 import { nativeMessagesDeclineReason, type NativeMessagesSelector } from "./messages-native-eligibility";
 import {
   isApiAuthRequired,
@@ -141,10 +144,10 @@ function decodeClaudeFastSelector(raw: string, cc?: OcxConfig["claudeCode"]): st
   return decodedBase === bare ? exact : `${decodedBase}--fast`;
 }
 
-/** Restore the reversible Fable picker alias before Anthropic passthrough checks. */
-function decodeFablePickerAlias(raw: string, cc?: OcxConfig["claudeCode"]): string {
+/** Restore reversible native Claude picker aliases before Anthropic passthrough checks. */
+function decodeNativeClaudePickerAlias(raw: string, cc?: OcxConfig["claudeCode"]): string {
   const decoded = resolveInboundModel(raw, cc);
-  if (!decoded.startsWith("claude-fable-")) return raw;
+  if (!decoded.startsWith("claude-")) return raw;
   // A picker value saved before the ocx-claude spelling keeps the native passthrough too.
   return claudeCodeNativeAlias(decoded) === raw || legacyAliasForNative(decoded) === raw ? decoded : raw;
 }
@@ -332,6 +335,7 @@ export function tapAnthropicSseForLog(
     let data: unknown;
     try { data = JSON.parse(dataLine); } catch { return; }
     if (!isRec(data)) return;
+    recordGenerationEvent(logCtx, data.type);
     if (data.type === "message_start" && isRec(data.message) && isRec(data.message.usage)) {
       usageAcc = { ...usageAcc, ...data.message.usage };
     } else if (data.type === "message_delta" && isRec(data.usage)) {
@@ -892,7 +896,7 @@ async function handleClaudeMessagesWithBudget(
       }
     }
     if (isRec(anthropicBody) && typeof anthropicBody.model === "string") {
-      anthropicBody.model = decodeFablePickerAlias(anthropicBody.model, cc);
+      anthropicBody.model = decodeNativeClaudePickerAlias(anthropicBody.model, cc);
     }
     if (isRec(anthropicBody) && typeof anthropicBody.model === "string") {
       requestedModel = anthropicBody.model;
@@ -922,8 +926,10 @@ async function handleClaudeMessagesWithBudget(
       req.headers.get("anthropic-beta") ?? undefined,
     );
     // Client surface discrimination: Desktop 3P aliases resolve through the
-    // desktop registry; Code uses readable aliases or direct model names.
-    if (isRec(anthropicBody) && typeof anthropicBody.model === "string" && resolveDesktop3pAlias(anthropicBody.model)) {
+    // desktop registry; Code uses readable aliases or direct model names. The CLI's first-party
+    // picker also offers registry aliases, so a CLI-classified User-Agent stays the Code surface.
+    if (isRec(anthropicBody) && typeof anthropicBody.model === "string" && resolveDesktop3pAlias(anthropicBody.model)
+      && classifyInterceptClient(req.headers.get("user-agent")) !== "cli") {
       logCtx.surface = "claude-desktop";
       recordDesktopRequest();
     }
@@ -1199,7 +1205,8 @@ async function handleClaudeMessagesWithBudget(
     return await handleNativeMessages({
       req, config, logCtx, ...(logIds ? { logIds } : {}),
       route: nativeMessagesRoute, body: nativeBody, requestedModel, translatorBudget, selector: nativeSelector,
-      // The one caller header the native lane is given; the builder allowlists it.
+      // Compatibility identity is an opaque request-local handle, separate from credentials.
+      clientIdentity: captureAnthropicClientIdentity(req.headers),
       callerAnthropicBeta: req.headers.get("anthropic-beta"),
     });
   }
@@ -1654,7 +1661,7 @@ export async function handleClaudeCountTokens(
       model = stripOneMillionMarker(countRoute);
       raw.model = model;
     }
-    model = decodeFablePickerAlias(model, cc);
+    model = decodeNativeClaudePickerAlias(model, cc);
     raw.model = model;
     // Fast-only: count_tokens never parsed an effort row, so it must not start. It returns a
     // token estimate and sends no tier, so only the IDENTITY is corrected - without this the
