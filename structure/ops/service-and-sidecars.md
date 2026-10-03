@@ -377,6 +377,16 @@ mutating the port, because a claim could have landed during the now-unleased ref
 lease that stays claimed fails closed: nothing is started, and the job is marked failed, since
 the refresh before it produced no serving proxy; an ownership veto still ends as succeeded.
 
+On Windows, `src/update/npm-invocation.mjs` admits only the exact
+`%USERPROFILE%\scoop\apps\nodejs{,-lts}\current` and `current\bin` PATH entries
+from outside that Node installation. It resolves the junction, PATH entry, npm candidate,
+and cwd to physical paths; `current` must remain within its Scoop app directory and
+the npm candidate within the admitted entry. `current\bin` may point to the default
+`%USERPROFILE%\scoop\persist\nodejs{,-lts}\bin`; cwd inside that persistent bin
+is excluded too. Unreadable paths fail closed. Other Scoop apps, version-directory
+PATH entries (`NO_JUNCTION`), custom home-root Scoop installs, arbitrary descendants,
+and cwd inside the resolved Node installation are not admitted.
+
 The npm transaction creates each staging directory exclusively and may clean that fresh path
 while the creating process still owns it. On POSIX it also creates the stage's `lib` directory,
 because npm's strict script policy plans the global tree before it creates the prefix layout
