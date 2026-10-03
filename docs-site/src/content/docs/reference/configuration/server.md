@@ -167,6 +167,13 @@ named a reason that only a new sign-in fixes (`token_invalidated`, `invalid_refr
 `invalid_workspace_selected`). A `token_invalidated` response indicates a revoked session;
 the row then shows `needsReauth: true` with the last-known plan.
 
+If the token endpoint rejects the stored main refresh grant, automatic requests stop retrying
+that same grant even if a usage refresh succeeds. Sign in again with `codex login` to replace
+the credential. The process keeps up to 64 profile-and-grant refusal records; restarting the
+proxy or evicting an old record permits a fresh check. Rate-limit and server failures remain
+retryable and do not retire the grant. Credentials supplied by the caller remain caller-owned.
+
+
 ### Which proxy path is used?
 
 The running proxy service fetches quota. It uses its own environment, not the
