@@ -43,7 +43,7 @@ interface UsageReportInput {
   models?: CostRow[];
   providers?: CostRow[];
   days?: { date: string; requests: number; totalTokens: number; estimatedCostUsd?: number }[];
-  filter?: { provider: string | null; model: string | null; matched: boolean; comboOverlap: boolean };
+  filter?: { apiKeyId?: string | null; provider: string | null; model: string | null; matched: boolean; comboOverlap: boolean };
   /**
    * Per-account totals the API already returns and the CLI discarded (#2700).
    *
@@ -106,6 +106,7 @@ function describeScope(data: UsageReportInput): string {
   const parts = [`Usage — ${interval}`];
   if (data.surface && data.surface !== "all") parts.push(`surface=${data.surface}`);
   if (data.filter?.provider) parts.push(`provider=${data.filter.provider}`);
+  if (data.filter?.apiKeyId) parts.push(`api-key-id=${data.filter.apiKeyId}`);
   if (data.filter?.model) parts.push(`model=${data.filter.model}`);
   return terminalText(parts.join(", "));
 }
@@ -121,7 +122,7 @@ export function formatUsageReport(data: UsageReportInput): string[] {
   }
 
   if (data.filter && !data.filter.matched) {
-    const what = [data.filter.provider && `provider "${data.filter.provider}"`, data.filter.model && `model "${data.filter.model}"`]
+    const what = [data.filter.apiKeyId && `API key "${data.filter.apiKeyId}"`, data.filter.provider && `provider "${data.filter.provider}"`, data.filter.model && `model "${data.filter.model}"`]
       .filter(Boolean).join(" and ");
     lines.push(data.usageIncomplete === true
       ? `No matching readable usage records for ${terminalText(what)} in this range; skipped records may contain matches.`

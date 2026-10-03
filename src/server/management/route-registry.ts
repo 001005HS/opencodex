@@ -263,7 +263,7 @@ export const MANAGEMENT_ROUTES: readonly ManagementRoute[] = [
   { method: "GET", path: "/api/storage/trash/restore/test-stream", module: "server/management/logs-usage-routes", mutates: false, exempt: { reason: "test-seam", why: "Opt-in streaming seam declared at src/storage/restore-job.ts:34." } },
   { method: "GET", path: "/api/usage", module: "server/management/logs-usage-routes", mutates: false },
   // server/management/usage-timeline-routes
-  { method: "GET", path: "/api/usage/timeline", module: "server/management/usage-timeline-routes", mutates: false, exempt: { reason: "deferred-verb", why: "The earlier capability advertised this route without invoking it; a dedicated CLI operation remains tracked in the parity roadmap.", owner: "261003_cli_gui_parity", ownerDoc: "devlog/_plan/261003_cli_gui_parity/070_observation_api_tools.md" } },
+  { method: "GET", path: "/api/usage/timeline", module: "server/management/usage-timeline-routes", mutates: false },
   // server/management/companion-routes
   { method: "POST", path: "/api/companion/open-in-browser", module: "server/management/companion-routes", mutates: true, exempt: { reason: "session-only", why: "Dashboard-only navigation helper; the GUI session opens its current view in the system browser, and there is no standalone CLI operation to drive." } },
   { method: "GET", path: "/api/companion/settings", module: "server/management/companion-routes", mutates: false },

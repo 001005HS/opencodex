@@ -140,7 +140,12 @@ Codex or npm, control a running process, or write configuration/cache state.
 For Windows x64 installation observation, see [the `attest` command](/reference/cli/agents/#explicit-installation-observation-on-windows-x64). Without explicit paths it observes the selected candidate identified from the proof-bound launcher snapshot; it does not grant update authority or attest runtime selection.
 
 List or status is the default where unambiguous. Use `--json` only on leaves that support it, and
-`ocx observe logs --follow --jsonl` for a streaming request-log feed. Theme, language, navigation,
+`ocx observe logs --follow --jsonl` for amended row output, or
+`ocx logs --follow --events` for versioned observed-window snapshots/appends.
+Neither is lossless history; [follow, timeline and key-scoped usage](/reference/cli/agents/#follow-request-windows-or-injection-sequences)
+document cursor/reset/incomplete-data limits. [Selected-key model/audio checks](/reference/cli/agents/#explicit-key-model-and-audio-checks)
+require operator-authorized upstream work and private stdin handoff; their reports
+are observations, not key-scope certificates. Theme, language, navigation,
 and other purely visual browser state have no CLI equivalent; Cloudflare Tunnel setup is outside
 this command set.
 

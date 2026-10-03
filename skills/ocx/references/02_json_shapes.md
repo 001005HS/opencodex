@@ -377,3 +377,90 @@ Forced link revocation returns `{linkId,remoteCleanup,recovery}`. Cleanup is
 `skipped` after a successful forced write, or `unverified` after idempotent
 link-not-found. This field comes from explicit CLI force intent, not a server
 cleanup report. Both can exit 0 while remote client recovery remains outstanding.
+
+## Request-log events and injection rows
+
+`logs --follow --events` implies JSONL. Each line has exactly the event envelope
+`{schemaVersion:1,type:"snapshot"|"append",rows,cursor,limit}`. For example, an
+empty legacy-window observation (no server cursor) is:
+
+```json
+{"schemaVersion":1,"type":"snapshot","rows":[],"cursor":null,"limit":200}
+```
+
+Replace on snapshot; append and retain only the newest limit rows on append.
+Preserve repeated IDs and order. The initial empty and reset/removal snapshots
+are meaningful; stable empty polls emit nothing. An opaque validated cursor is
+transport state, not a request ID or durable replay checkpoint. This reconstructs
+observed windows only, not traffic missed between polls or evicted beforehand.
+Legacy `--follow --jsonl` keeps row-shaped output and emits changed occurrences,
+including same-ID amendments and duplicates, but cannot encode removals/resets.
+
+Injection follow instead emits `{seq,at,line}` with positive strictly advancing
+sequence and epoch-millisecond timestamp. Its internal `after` advances; there is
+no epoch/gap marker, so no lossless/restart-safe claim is possible. Empty polls
+cannot distinguish no new data, disabled capture or missed history.
+
+## Timeline, health, key-scoped usage and rename
+
+Timeline JSON contains `appliedFilters:{models,hiddenProviders}`, epoch-second
+`start/end`, `bucketSeconds`, `buckets`, metric/aggregation/grouping, `series`,
+`availableModels`, `missingMeasurements`, `truncated`. Points are aligned to
+buckets; `end` is exclusive. Null models means all, hiddenProviders excludes.
+Empty series retains metadata. Positive missingMeasurements/truncated makes
+plotted zeros incomplete evidence, not measured zero usage.
+
+`system health --json` is `{status:"ok",service:"opencodex",version,uptime,pid,
+spendLedger}` with uptime in seconds. Ledger fields are ownership held/unheld,
+initialized/configured/degraded booleans, persistFailures and corruptRecords.
+A valid degraded observation can exit 0. Root health is only liveness; neither
+certifies every subsystem healthy.
+
+Non-client `usage --api-key-id` requires the response's exact `filter.apiKeyId`
+acknowledgment. `filter.matched:false` with empty traffic can be a valid unknown-ID
+result, not 404; retain incomplete/custom-window metadata. Connected self-only
+usage has its existing Hub envelope and rejects caller key-ID selection.
+Rename returns `{id,name,createdAt}` plus allowedProviders/allowedModels when
+present. It returns no plaintext or key prefix; list remains masked. Omitted
+scope fields in the PATCH preserve policy, and rename is not rotation or CAS.
+
+## Selected-key model report
+
+Unlike the unkeyed legacy payload, `access test ... --api-key-stdin --json` returns:
+
+```json
+{"schemaVersion":1,"control":{"outcome":"credential_required","status":401},"request":{"outcome":"succeeded","status":200},"response":{"protocol":"responses","text":["OK"],"completion":"complete"}}
+```
+
+Control outcomes are `not_run`, `credential_required`, `unavailable`; request
+outcomes are `not_run`, `succeeded`, `failed`, `unsupported_response`. Status is
+present only when HTTP status was observed. Optional safe response contains
+protocol, ordered text, complete/limited completion, and optional nonnegative
+inputTokens/outputTokens/totalTokens under usage. Missing counts are not zero.
+Response IDs, headers, tools, reasoning and metadata are not serialized.
+
+Native usable length-limited replies succeed with `completion:"limited"`; 2xx
+with refusal/content-filter/tool-only or unusable text is unsupported and nonzero.
+Operational failure prints one versioned not-run/failed report plus fixed stderr
+and exits 1. Invalid grammar/key input exits 2 without a fabricated report.
+Signals exit 130/143 without late output. Do not call any result a key-scope or
+billing certificate; it is a two-request observation with a cross-request race.
+Exact supplied-key text is replaced with `[redacted]` in allowed response strings;
+this is not arbitrary-encoding detection.
+
+## Explicit-key audio output
+
+Transcription success JSON is only `{"text":"..."}`, including a valid empty
+string. Failure leaves stdout empty, prints a fixed diagnostic on stderr and
+returns nonzero; no JSON error envelope or raw upstream body is printed.
+Live-check retains a versioned observation even on operational failure:
+
+```json
+{"schemaVersion":1,"ready":true,"close":"unverified","check":"session-readiness","event":"session.started"}
+```
+
+This partial example exits 1. `event` is optional and only session.started or
+session.updated; close is confirmed/unverified. Success requires actual readiness
+and normal closure, with no earlier failure; always inspect the exit code too.
+No key, encoded credential carrier, session ID, raw frame, close reason or tools
+enter this report. It is not a full voice-roundtrip or server lease-release receipt.
