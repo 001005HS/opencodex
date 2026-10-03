@@ -1,8 +1,10 @@
 import type { ManagementContext } from "./context";
 import { catalogModelSlug, filterCatalogVisibleModels, nativeModelRows, listCatalogNativeSlugs } from "../../codex/catalog";
 import { subagentSelectableModels } from "../../codex/subagent-selectable-models";
-import { saveConfigPreservingClaudeCode, deleteConfigTopLevelKey, mutatePersistedConfig, adoptPersistedClaudeCode } from "../../config";
+import { saveConfigPreservingClaudeCode, deleteConfigTopLevelKey, mutatePersistedConfig, adoptPersistedClaudeCode, initializePersistedConfigIfMissing, observeInitialConfigState } from "../../config";
 import { captureConfigTopLevelRollback, parsedConfigRebaseDeletionKeys, projectConfigRebaseProvenance, deleteConfigObjectChildKey } from "../../config/rebase-provenance";
+import { InitialConfigPublicationError } from "../../config/initialize";
+import { ConfigWritePublishedError } from "../../config/persist-unlocked";
 import { commitClaudeCodeBlock } from "../../claude/claude-code-block";
 import { resolveSubagentForceModel, SAFE_AGENT_MODEL_ID } from "../../claude/subagent-model";
 import { inspectSubagentForceStatus } from "../../claude/subagent-force-status";
@@ -50,6 +52,9 @@ export async function handleSubagentModelRoutes(ctx: ManagementContext, autoAppl
     });
   }
   if (url.pathname === "/api/subagent-models" && req.method === "PUT") {
+    // Observe before body/discovery awaits: disappearance of an existing config
+    // must never turn a scoped update into first-run initialization.
+    const initialConfigState = deps.saveConfigPreservingClaudeCode ? undefined : observeInitialConfigState();
     let rawBody: unknown;
     try { rawBody = await readManagementJsonBody(req); } catch (error) { rethrowManagementBodyTooLarge(error); return jsonResponse({ error: "invalid JSON body" }, 400); }
     if (!isPlainRecord(rawBody)) return jsonResponse({ error: "JSON body must be an object" }, 400);
@@ -104,6 +109,10 @@ export async function handleSubagentModelRoutes(ctx: ManagementContext, autoAppl
       }
     }
 
+    if (updatesForce && initialConfigState === "invalid") {
+      return jsonResponse({ error: "force settings could not be persisted" }, 409);
+    }
+
     // Everything above can await. From this snapshot through persistence there is no yield.
     // Stage deletion intent before adopting the touched fields through the canonical
     // live deletion owner. A failed save restores both fields and pending intent.
@@ -145,7 +154,15 @@ export async function handleSubagentModelRoutes(ctx: ManagementContext, autoAppl
         else deleteConfigTopLevelKey(config, key);
       }
       if (updatesForce && body.force === null) deleteConfigObjectChildKey(config, "claudeCode", "subagentModelForce");
-      if (updatesForce && !deps.saveConfigPreservingClaudeCode) {
+      if (updatesForce && initialConfigState === "missing") {
+        // Create-only publication rechecks under the canonical lock and never
+        // replaces a file another writer supplied while discovery was pending.
+        if (initializePersistedConfigIfMissing(config) !== "created") {
+          rollback();
+          return jsonResponse({ error: "force settings could not be persisted" }, 409);
+        }
+        adoptPersistedClaudeCode(config, structuredClone(config.claudeCode));
+      } else if (updatesForce && !deps.saveConfigPreservingClaudeCode) {
         const outcome = mutatePersistedConfig(persisted => {
           commitClaudeCodeBlock(persisted, { ...persisted.claudeCode });
           if (body.force === null) delete persisted.claudeCode!.subagentModelForce;
@@ -172,7 +189,10 @@ export async function handleSubagentModelRoutes(ctx: ManagementContext, autoAppl
         (deps.saveConfigPreservingClaudeCode ?? saveConfigPreservingClaudeCode)(config);
       }
     } catch (error) {
-      rollback();
+      // Once publication succeeded (or cannot be ruled out), restoring only the
+      // live object would falsely report the old setting while disk may hold new bytes.
+      if (!(error instanceof ConfigWritePublishedError)
+        && !(error instanceof InitialConfigPublicationError && error.publication !== "not-published")) rollback();
       throw error;
     }
     // Capture the result before convergence yields to another settings mutation.
