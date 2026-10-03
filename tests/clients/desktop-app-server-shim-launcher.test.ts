@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { chmodSync, lstatSync, mkdtempSync, readdirSync, readFileSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { OPENAI_TEAM_ID, untrustedChatgptBundleReason, type BundleTrustDeps } from "../../src/chatgpt/app-server-shim/bundle-trust";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, resolve, sep } from "node:path";
 import { spawnSync } from "node:child_process";
 import {
   buildChatgptShimLauncher,
@@ -252,17 +252,18 @@ describe("restore validates the discovered app before any quit or open", () => {
 
 
 describe("bundle ancestor replacement boundary", () => {
-  const root = "/Applications/ChatGPT.app";
-  const shell = `${root}/Contents/MacOS/ChatGPT`;
+  const root = resolve("/Applications/ChatGPT.app");
+  const parentPath = dirname(root);
+  const shell = join(root, "Contents", "MacOS", "ChatGPT");
   function check(parent: Partial<NonNullable<ReturnType<BundleTrustDeps["stat"]>>> = {}, adminGroupId: number | null = 80) {
     const observed: string[] = [];
     const reason = untrustedChatgptBundleReason(root, undefined, {
       uid: 501, adminGroupId: adminGroupId ?? undefined,
       stat(path) {
         observed.push(path);
-        return { uid: path === shell || path.startsWith(`${root}/`) || path === root ? 501 : 0,
+        return { uid: path === shell || path.startsWith(`${root}${sep}`) || path === root ? 501 : 0,
           gid: 80, mode: 0o755, isFile: path === shell, isDirectory: path !== shell, isSymbolicLink: false,
-          ...(path === "/Applications" ? parent : {}),
+          ...(path === parentPath ? parent : {}),
         };
       },
       codesign: () => ({ status: 0, output: `TeamIdentifier=${OPENAI_TEAM_ID}\n` }),
@@ -272,7 +273,7 @@ describe("bundle ancestor replacement boundary", () => {
   test("ordinary owned ancestry is checked through the filesystem root", () => {
     const result = check();
     expect(result.reason).toBeNull();
-    expect(result.observed.slice(-2)).toEqual(["/Applications", "/"]);
+    expect(result.observed.slice(-2)).toEqual([parentPath, dirname(parentPath)]);
   });
   test("root-owned admin-group installation directories retain compatibility", () => {
     expect(check({ mode: 0o775 }).reason).toBeNull();
