@@ -945,14 +945,14 @@ export async function refreshAnthropicAccountWithLock(
     const generation = credentialGeneration(stored);
     let pendingIntent = readOAuthRefreshIntent(provider, accountId);
     const observed = await newerClaudeCredential(stored, now(), deps.signal, deps.resolveIdentity);
-    const assertOwner = (store: AuthStore) => {
+    const assertOwner = (store: AuthStore, checkDisk = true) => {
       if (observed.kind !== "absent" && deps.signal?.aborted) throw new OAuthTokenRefreshStaleError();
-      if (!owns(store, observed.kind !== "absent" ? observed.diskGeneration : undefined)) {
+      if (!owns(store, checkDisk && observed.kind !== "absent" ? observed.diskGeneration : undefined)) {
         if (store[provider]?.accounts.find(a => a.id === accountId)?.paused) throw new OAuthAccountPausedError();
         throw new OAuthTokenRefreshStaleError();
       }
     };
-    assertOwner({ [provider]: getAccountSet(provider)! });
+    assertOwner({ [provider]: getAccountSet(provider)! }, observed.kind !== "adopt");
     if (observed.kind === "adopt") {
       const outcome = await mergeAccountCredential(provider, accountId, observed.credential, {
         expectedGeneration: generation,

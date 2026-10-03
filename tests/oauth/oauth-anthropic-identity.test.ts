@@ -1,3 +1,4 @@
+import * as localTokens from "../../src/oauth/local-token-detect";
 import * as storeModule from "../../src/oauth/store";
 import { createHash } from "node:crypto";
 import { getLoginStatus, OAUTH_PROVIDERS, refreshAnthropicAccountWithLock } from "../../src/oauth";
@@ -256,7 +257,7 @@ test("explicit import enriches legacy shared-token slot without changing its id 
   expect(getAccountCredential("anthropic", id)!.anthropicIdentity).toEqual(proof("synthetic-old"));
 });
 
-for (const mutation of ["login", "identity", "pause"] as const) {
+for (const mutation of ["login", "identity", "pause", "disk"] as const) {
   test(`serialized adoption guard catches queued ${mutation} after the profile recheck`, async () => {
     const { id, credential } = await seed(); disk();
     const intent = writeOAuthRefreshIntent("anthropic", id, credentialGeneration(credential));
@@ -275,6 +276,7 @@ for (const mutation of ["login", "identity", "pause"] as const) {
       if (mutation === "login") row.loginId = "00000000-0000-4000-8000-000000000002";
       if (mutation === "identity") row.credential.accountId = "synthetic-owner-changed";
       if (mutation === "pause") row.paused = true;
+      if (mutation === "disk") disk("synthetic-newer-disk", "synthetic-newer-refresh");
     });
     try {
       await writerEntered.promise;
@@ -497,4 +499,23 @@ test("different CLI account can clear an obsolete intent after durable same-acco
     expect(readOAuthRefreshIntent("anthropic", id)).toBeUndefined();
     expect(getAccountSet("anthropic")!.accounts[0]!.needsReauth).toBeUndefined();
   } finally { clear.mockRestore(); warn.mockRestore(); }
+});
+
+
+test("adoption reads the CLI generation only at observation and inside persistence", async () => {
+  const { id, credential } = await seed(); disk();
+  const originalDetect = localTokens.detectClaudeCodeToken;
+  const reads: boolean[] = [];
+  let insidePersistence = false;
+  const detect = spyOn(localTokens, "detectClaudeCodeToken").mockImplementation(() => {
+    reads.push(insidePersistence);
+    return originalDetect();
+  });
+  try {
+    await expect(refreshAnthropicAccountWithLock("anthropic", id, noRefresh, credential, {
+      resolveIdentity: async access => proof(access),
+      afterPrePersistRead: () => { insidePersistence = true; },
+    })).resolves.toBe("synthetic-other");
+    expect(reads).toEqual([false, true]);
+  } finally { detect.mockRestore(); }
 });
