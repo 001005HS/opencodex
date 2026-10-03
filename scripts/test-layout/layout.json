@@ -945,6 +945,7 @@
     "gui-management-session.test.ts": "gui",
     "gui-pair-capability.test.ts": "gui",
     "gui-pair-client.test.ts": "gui",
+    "gui-pair-http.test.ts": "gui",
     "gui-static.test.ts": "gui",
     "gui-tray-vibrancy-surface.test.ts": "gui",
     "health-scoring.test.ts": "server",
