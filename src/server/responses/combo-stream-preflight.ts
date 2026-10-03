@@ -1,4 +1,4 @@
-import { codexAccountModelRefusal, codexAccountModelRefusalPayload, type CodexAccountModelRefusal } from "../../combos/failover";
+import { codexAccountModelRefusal, codexAccountModelRefusalPayload, hasConflictingCodexModelRefusalEnvelopes, type CodexAccountModelRefusal } from "../../combos/failover";
 import type { ResponsesTerminalStatus } from "../../bridge";
 import { comboFailureDecision } from "../../combos";
 import { httpStatusFromTerminalError } from "../../lib/errors";
@@ -71,6 +71,7 @@ function bareErrorStatus(payload: unknown): number | undefined {
 
 /** Match the selected SSE error envelope before projection drops competing fields. */
 function terminalModelRefusal(status: number, event: Record<string, unknown>): CodexAccountModelRefusal {
+  if (hasConflictingCodexModelRefusalEnvelopes(status, event)) return "ambiguous";
   const outer = codexAccountModelRefusalPayload(status, event);
   if (outer === "ambiguous") return outer;
   const nested = event.response;
@@ -79,8 +80,7 @@ function terminalModelRefusal(status: number, event: Record<string, unknown>): C
     if (nestedKind === "ambiguous") return nestedKind;
     const nestedError = (nested as Record<string, unknown>).error;
     if (nestedError && typeof nestedError === "object" && !Array.isArray(nestedError)) {
-      // An outer recognized detail and the selected nested error are competing evidence.
-      return outer === "refusal" ? "ambiguous" : nestedKind;
+      return nestedKind;
     }
   }
   if (event.type === "error" && !Object.hasOwn(event, "error") && typeof event.message === "string") {

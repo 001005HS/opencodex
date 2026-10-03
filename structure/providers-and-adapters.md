@@ -569,4 +569,5 @@ Known Claude Sonnet and Opus 5.5 base and low/medium/high IDs share a determinis
 `src/server/responses/combo-stream-preflight.ts` preserves it before rebuilding terminal SSE errors.
 `src/server/responses/core-options.ts` carries the value to the combo decision. An inspected non-match
 remains authoritative. No raw body is retained in that field, serialized into client errors, or logged.
+Presence of both `detail` and `error` across the original root and its own non-array `response` record is ambiguous, regardless of values; null counts and deeper quoted objects do not. This is checked before selecting an error carrier.
 Committed output, cancellation, hard policy refusals and resend limits remain stronger than model fallback.

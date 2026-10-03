@@ -183,3 +183,23 @@ test.each([false, true])("an unrelated outer quote does not determine nested ref
   expect(sends).toEqual(modelRefusal ? [firstModel, secondModel] : [firstModel]);
   expect(text.includes("fallback succeeded")).toBe(modelRefusal);
 });
+
+for (const detail of ["bad input", null]) {
+  test(`outer detail presence blocks nested refusal even for ${detail}`, async () => {
+    const { response, sends } = await run(undefined, {
+      type: "response.failed", detail,
+      response: { status: "failed", error: { type: "invalid_request_error", message: refusal } },
+    });
+    expect(await response.text()).not.toContain("fallback succeeded");
+    expect(sends).toEqual([firstModel]);
+  });
+}
+
+test("outer error presence blocks nested detail despite a model code", async () => {
+  const { response, sends } = await run(undefined, {
+    type: "error", status: 400, error: { type: "invalid_request_error", code: "unsupported_model", message: "bad input" },
+    response: { detail: refusal },
+  });
+  expect(await response.text()).not.toContain("fallback succeeded");
+  expect(sends).toEqual([firstModel]);
+});

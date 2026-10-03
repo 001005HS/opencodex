@@ -674,6 +674,15 @@ const CODEX_ACCOUNT_MODEL_REFUSAL = /^The '[^']{1,256}' model is not supported w
 
 export type CodexAccountModelRefusal = "other" | "refusal" | "ambiguous";
 
+/** Inspect only the original root and its own response record, before carrier selection. */
+export function hasConflictingCodexModelRefusalEnvelopes(status: number, payload: unknown): boolean {
+  if (status !== 400 || !payload || typeof payload !== "object" || Array.isArray(payload)) return false;
+  const response = Object.hasOwn(payload, "response") ? (payload as Record<string, unknown>).response : undefined;
+  const nested = response && typeof response === "object" && !Array.isArray(response) ? response : undefined;
+  return (Object.hasOwn(payload, "detail") || !!nested && Object.hasOwn(nested, "detail"))
+    && (Object.hasOwn(payload, "error") || !!nested && Object.hasOwn(nested, "error"));
+}
+
 /** Inspect an already parsed, bounded error frame without copying or walking its body. */
 export function codexAccountModelRefusalPayload(status: number, payload: unknown): CodexAccountModelRefusal {
   if (status !== 400 || !payload || typeof payload !== "object" || Array.isArray(payload)) return "other";
@@ -692,7 +701,11 @@ export function codexAccountModelRefusal(status: number, message: string): Codex
   let text = message.trim();
   if (text.startsWith("Provider error 400: ")) text = text.slice("Provider error 400: ".length);
   if (CODEX_ACCOUNT_MODEL_REFUSAL.test(text)) return "refusal";
-  try { return codexAccountModelRefusalPayload(status, JSON.parse(text)); } catch { return "other"; }
+  try {
+    const payload: unknown = JSON.parse(text);
+    return hasConflictingCodexModelRefusalEnvelopes(status, payload)
+      ? "ambiguous" : codexAccountModelRefusalPayload(status, payload);
+  } catch { return "other"; }
 }
 
 export function comboFailureDecision(
