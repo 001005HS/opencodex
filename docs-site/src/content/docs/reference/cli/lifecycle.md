@@ -677,7 +677,9 @@ clears the stale job.
 
 On Windows, `ocx service status` reports Task Scheduler registration separately from
 identity-verified OpenCodex proxy reachability. It does not print the localized `schtasks` table,
-so the summary remains readable across Windows code pages.
+so the summary remains readable across Windows code pages. Transactional-backup recovery
+logs a fixed success message rather than the backup directory name; backup names containing
+shell metacharacters do not become commands in that log message.
 
 On Windows, creating the Task Scheduler entry requires elevation. Recognized localized
 access-denied text keeps the existing guidance path. If that text is unreadable, the fallback
