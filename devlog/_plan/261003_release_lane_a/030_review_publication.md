@@ -10,3 +10,7 @@ Depends on verified transport and Messages changes. No runtime edits are pre-pla
 6. NEW/UPDATE .tmp/release-stabilization/report.md with exact local/PR head, URL, source heads/credit/dispositions, test outputs, review evidence and residual native limitations. Do not expose private data. DONE only after all required applicable exact-head checks actually succeed and blocking reviews resolve.
 
 Publication changes only Git history and PR metadata. Checklist claims are evidence-based; security review is technical, not a substitute for any maintainer decision.
+
+## Prepared handoff
+
+Transport PR6513 has independent code/security PASS and all applicable local checks. Its CodeRabbit threshold wording finding is fixed atdb094c49c7 and the thread resolved; corrected-head hosted CI remains the integration gate. Messages has independent code/security PASS and238 local tests plus typecheck/privacy/structure/docs success. Its child branch includes the parent threshold wording fix without runtime drift. Report and live exact-head CI/review snapshots are retained in ignored .tmp/release-stabilization; no merge or release is performed by this lane. This plan stays open for coordinator integration, rather than claiming the changes shipped.
