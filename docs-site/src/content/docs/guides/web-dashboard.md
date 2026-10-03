@@ -159,6 +159,8 @@ rows and returns keyboard focus to the All surface control; “No matching reque
 differs from an empty log ring. Use arrow keys or Home/End in
 the surface selector. These controls do not query historical records beyond the loaded ring.
 
+The language picker includes **Português** (Brazilian Portuguese, `pt-BR`). Portuguese browser languages select it automatically unless a supported language preference is already saved.
+
 ### Linking to a section
 
 There is a single layout, so there is no layout switch to configure. Dashboard sections are
