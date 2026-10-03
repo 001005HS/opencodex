@@ -2,7 +2,7 @@
 
 Depends on: both implementation outcomes, including an explicitly unresolved Antigravity live issue when access prevents causal verification. MODIFY this unit with each cycle conclusion and actual evidence; NEW ignored .tmp/release-stabilization/report.md with exact own branch/head and PR URL, source heads and dispositions, local test commands/counts, hosted event/head/check SHA/run ID/attempt/conclusion, review outcomes and native limits. No runtime changes in this phase.
 
-Before publishing, dispatch two independent inherited-model/effort leaf reviewers in parallel: one examines Antigravity changed contracts and regression evidence, one examines Ollama changed replay/validation contracts. Neither writes, owns a goal/FSM, spawns, or changes branches. Main synthesizes and fixes valid findings, then re-verifies before publication. This is a separate final adversarial phase beyond each implementation cycle review.
+Each slice publishes after its ordinary independent code/security review and focused verification; main resolves valid findings and re-verifies that slice. Publication does not wait for the other slice. The coordinator owns the separate full parallel adversarial regression phase on the integrated candidate before deployment. This handoff collects both slices' evidence after their independent publication.
 
 Before publishing, fetch current dev/source heads and compare patch IDs/changed paths to avoid duplicate landed content. Preserve source authors in Co-authored-by trailers; use every repository PR template section. Both ordinary PRs target dev, do not alter source branches or close source PRs. The first PR carries its own documentation; the second excludes unrelated Antigravity changes. Verify native stack membership read-only; never register one.
 
@@ -10,4 +10,4 @@ At C, read expected workflow job conditions and compare to observed check-runs. 
 
 Before completion, review every source item: #6501 preserved; #6497 adapted/deferred chunks and credit; #6502 reproduced/fixed or unresolved with actual access/status evidence; #6509 adopted delta and added validation proof. A fresh reader must be able to identify safe integration heads and remaining blockers from the report. Unmet checks or unresolved material reviews prevent DONE. No user-set time/token cap; waiting is not exhaustion.
 
-Superseding coordinator instruction: the full final parallel adversarial phase belongs to the coordinator integrated candidate before deployment. Lane performs ordinary independent slice review and may publish each coherent verified slice promptly; do not wait for the other slice. c-4 collects both exact-head PR CI receipts and reviews for final handoff.
+Criterion c-4 collects both exact-head PR CI receipts and resolved reviews for final handoff; it does not impose a cross-slice publication prerequisite.

@@ -18,9 +18,9 @@ Reader: the release coordinator deciding which independently reviewed changes ar
 ## Dependency map and publication
 
 1. roadmap: docs-only proposal, same-architect reflection, independent A audit, explicit coordinator unlock, docs-only B/C/D.
-2. antigravity: consume 010; revalidate #6501/current dev and source #6497, collect bounded upstream evidence, implement the audited safe subset, verify and preserve local head on codex/release-261003-c; publication waits for final parallel review.
-3. ollama: consume 020 independently of Antigravity runtime; execute sequentially in this worktree on codex/release-261003-c-ollama cut from fresh dev, preserving both branch heads. No parallel branch-changing subagents.
-4. handoff: consume 030; run the final parallel adversarial phase across both preserved local heads, resolve findings and re-verify, then publish both PRs, validate each separately and give coordinator exact heads/source dispositions. Coordinator owns merges and lane=all CI.
+2. antigravity: consume 010; revalidate #6501/current dev and source #6497, collect bounded upstream evidence, implement the audited safe subset, run its ordinary independent code/security review and focused verification, then publish the coherent slice on codex/release-261003-c with its own required PR CI.
+3. ollama: consume 020 independently of Antigravity runtime; execute sequentially in this worktree on codex/release-261003-c-ollama cut from fresh dev, preserving both branch heads. Publish after its own independent review and verification without waiting for the other slice. No parallel branch-changing subagents.
+4. handoff: consume 030; collect each published slice's exact-head CI and resolved review evidence, then give the coordinator both heads/source dispositions. The coordinator owns serial merges, lane=all CI, and the full parallel adversarial phase on its integrated candidate before deployment.
 
 These are independent PRs, not a native stack. Both source PRs currently target dev in contributor forks; successful stack API inspection returned [] for each.
 
@@ -32,16 +32,16 @@ V1 architect handle 01a1020f-0150-7a62-ba3e-e2b7bad4494a used a fresh context wi
 
 Alternatives rejected: wholesale #6497 cherry-pick conflicts with landed discovery and changes saved generation/effort without adequate evidence; generic suffix stripping invents historical usage mappings; one combined PR imposes a false dependency; global history reorder weakens per-batch validation.
 
-Same-architect reflection: ALIGNED D1-D6, no material design gaps. Independent audit pending. No runtime delta, push, CI dispatch or live provider probe has occurred.
+Same-architect reflection: ALIGNED D1-D6, no material design gaps. The independent roadmap audit subsequently passed; implementation/publication evidence is recorded in each PR's Verification section.
 
-Coordinator steering: add a distinct final parallel inherited-subagent adversarial regression phase before publication; mandatory local lane checks remain. Initial runtime/push/CI gate released. No merge/release authority added.
+Coordinator gate: the final parallel inherited-subagent regression phase applies to the integrated candidate before deployment. Each lane slice retains its ordinary independent review, local verification and exact-head PR CI. ROADMAP LOCKED released the initial runtime/push/CI gate; no merge/release authority was added.
 
 Vendor-price evidence opened 2026-10-03: https://platform.claude.com/docs/en/about-claude/pricing lists Sonnet 5.5 input/output/cache-read/5-minute-cache-write 2/10/0.2/2.5 and Opus 5.5 4/20/0.2/5 USD/MTok. This supports underlying reference prices only, not CCA billing. Initial baseline test could not load zod/v4; frozen-lockfile dependency install with lifecycle scripts disabled completed without a lockfile change.
 
 Post-unlock bounded native evidence: configured daily-cloudcode endpoint returned HTTP 200 discovery with six Claude 5.5 low/medium/high IDs, each maxTokens 1,000,000 and image support. Current unmodified adapter returned HTTP 200/candidates for saved claude-sonnet-5-5-high with conflicting low effort; wire remained high and no thinkingConfig was sent. No token refresh, account writes or installed-app replacement. This single-account evidence cannot establish the original Windows/multi-account cause. #6497 static metadata of 250,000 differs from this live response; no static routing or metadata carry is justified for the observed working path.
 
-A audit round 1 GO-WITH-FIXES: accepted publication-order blocker, moved both pushes/PR creation after the separate final parallel review. Accepted explicit eight-row membership assertion update (baseline 152 to 160); no architecture/routing change. Same reviewer recheck requested.
+The roadmap audit accepted the explicit eight-row membership assertion update (baseline 152 to 160). Its initial publication hold was superseded by the coordinator's integrated-candidate clarification; the dependency map above states the operative workflow.
 
 Roadmap A round 2: independent reviewer 01a10216-e0dd-7dc1-8e81-805e9fe2cfcb PASS, no blockers. Fresh-reader check understood safe scope and remaining verification boundaries. Docs-only B finalized this roadmap; next cycle executes 010, preserving current routing. Baselines: usage-cost 102 pass; Ollama native 26 pass; reviewer independently ran discovered families 9 pass. Ordinary bun-run gates exposed the skipped local Bun package postinstall; use the installed Bun binary directly for equivalent checker entrypoints, preserving dependencies and global install.
 
-Coordinator sequencing correction supersedes the earlier hold: the separate final parallel adversarial regression is the coordinator integrated-candidate gate before deployment. Each independently reviewed and locally verified slice may publish immediately and run its own PR CI; do not delay Antigravity behind Ollama. Lane retains scoped independent code/security review and reports incrementally.
+Each independently reviewed and locally verified slice may publish immediately and run its own PR CI. Antigravity is not delayed behind Ollama; the lane reports evidence incrementally.

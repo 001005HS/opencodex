@@ -8,7 +8,7 @@ The new branch activates with an open batch, unresolvedCount > 0, assistant role
 
 ## Negative verification delta beyond source PR
 
-MODIFY tests/providers/ollama/ollama-native.test.ts (or NEW tests/providers/ollama/ollama-native-commentary.test.ts plus both layout registrations if the ratchet requires it): construct batches with commentary interleaved before orphan IDs, duplicate result IDs, mismatched tool names and mismatched namespaces; each must throw the existing error. Add old-batch result after a new tool-call batch (must reject), unresolved EOF (must emit exactly one unknown result before commentary), fully resolved result then commentary (must not defer past subsequent conversation), reverse-arrival results in a multi-call batch (must output call order), and deep-frozen parsed context with nested content/call argument objects (must build unchanged). Assert output payload order and values rather than internal counters. Keep all existing malformed-input tests.
+MODIFY tests/providers/ollama/ollama-native.test.ts (the existing uncapped file; no additional registry entry is needed): construct batches with commentary interleaved before orphan IDs, duplicate result IDs, mismatched tool names and mismatched namespaces; each must throw the existing error. Add old-batch result after a new tool-call batch (must reject), unresolved EOF (must emit exactly one unknown result before commentary), fully resolved result then commentary (must not defer past subsequent conversation), reverse-arrival results in a multi-call batch (must output call order), and deep-frozen parsed context with nested content/call argument objects (must build unchanged). Assert output payload order and values rather than internal counters. Keep all existing malformed-input tests.
 
 Commands planned, NOT RUN under initial gate: bun test tests/providers/ollama/ollama-native.test.ts; native-parser/native-v4/native-reasoning-wire/native-structured-output files in separate Bun processes; tests/adapters/adapter-tool-conformance.test.ts and adapter-buffered-tool-conformance.test.ts; typecheck/privacy/structure/layout/file-size/test:changed gates. Document full-local-suite exception for concurrent worktrees. No live Ollama service is assumed; absence is an explicit evidence limit.
 
@@ -16,7 +16,11 @@ Review all src/adapters ownership docs; preserve OpenAI behavior and touch only 
 
 Credit: Co-authored-by: potota90 <85318310+adtumk@users.noreply.github.com>.
 
-## Executable source delta
+## Source-PR snapshot and final regression evidence
+
+The embedded diff below records original #6509, before the carry's additional adversarial tests. Its JSON snapshot assertion is not the deep-freeze proof. The implemented obligation lives in separate [PR #6519](https://github.com/lidge-jun/opencodex/pull/6519): [deep-frozen replay regression at commit 917fa41229, line 589](https://github.com/lidge-jun/opencodex/blob/917fa4122977b7d890ba1115724e2b5a9a7940cd/tests/providers/ollama/ollama-native.test.ts#L589). That test recursively freezes the entire parsed request, including content arrays and the non-empty `{ cmd: "pwd" }` call arguments, before building. It verifies unchanged input plus output call/deferred ordering, thinking and argument values. The ten additional cases and all 42 native tests passed there. No Ollama runtime or test changes are included in the Antigravity pricing PR.
+
+## Original source diff (before carry additions)
 
 ```diff
 diff --git a/docs-site/src/content/docs/reference/adapters.md b/docs-site/src/content/docs/reference/adapters.md
