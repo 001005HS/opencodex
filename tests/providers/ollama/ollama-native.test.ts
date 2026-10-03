@@ -9,6 +9,7 @@ import { getProviderRegistryEntry } from "../../../src/providers/registry";
 import { withStubbedProviderFetch } from "../../helpers/catalog-provider-fetch";
 import type { OcxParsedRequest, OcxProviderConfig } from "../../../src/types";
 
+/** Discover routed test models with provider fetches stubbed to avoid live requests. */
 const gatherRoutedModels: typeof gatherRoutedModelsDirect = (config, options) =>
   gatherRoutedModelsDirect(withStubbedProviderFetch(config), options);
 
