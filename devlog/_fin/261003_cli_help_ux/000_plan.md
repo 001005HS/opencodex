@@ -200,3 +200,25 @@ aaf3672bd0 before this layer's source commit, preserving stack ancestry.
 Local full-suite four-failure limitation remains in011. No full-green/merge-ready
 claim. Next direction: finish040 publication/stack maps, inspect every current
 head's CI, record the terminal published-draft outcome and close the loop.
+
+wp4 P revalidation accepts the delivery architect's five amendments in040:
+reuse6498/6500/6503, separate topology/native membership, retain concrete draft
+limitation, bind CI to actual publication heads, and archive only a recorded
+published-draft outcome with final-head receipt outside the self-referential doc.
+No remaining implementation scope is inferred from this delivery phase.
+Delivery architect final reflection: ALIGNED on040. Fresh read-only PR snapshots
+confirm three existing drafts; local ancestor checks pass for both dependency
+edges. Final-head CI will be re-read after the closure/archive commit.
+041 CI prerequisite plan: independent source/cause/regression audit PASS and same
+architect delivery reflection ALIGNED. Capture one clock observation; keep all
+assertions/timeouts. Separate prerequisite plus the three retained UX PRs will
+be restacked serially with explicit old-head leases and fresh CI on every head.
+
+CI prerequisite published as6506 at19136566a3. Deterministic RED received6001
+instead of6000; after the one-clock fix,43tray tests/117assertions, typecheck,
+structure and privacy checks pass. Independent three-file review and five extra
+boundary probes pass. No timeouts/assertions were relaxed.
+The owned UX heads were restacked atomically with explicit old-SHA leases:
+foundation b82c5a9d9f, navigation13c0e829df, recoveryd642e2f78f. Range-diff proves
+all five UX commits patch-equivalent to their pre-rewrite counterparts. Foundation
+PR6498 now targets the prerequisite branch;6500/6503 keep their predecessor bases.
