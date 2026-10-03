@@ -522,7 +522,7 @@ instead emits one `response.incomplete` with `adapter_eof`, followed by one `[DO
 EOF candidates follow the owning repair policy: the native boundary accepts a structurally valid
 terminal tail, while an opted-in terminal repair keeps its unframed suffix tainted and emits
 `missing_terminal_event`. Pull/tee and eager relays therefore agree on terminal, sentinel, and
-request-log accounting without promoting a truncated repair candidate.
+request-log accounting without promoting a truncated repair candidate. Terminal repair reconciles one delayed LF after a consumed CR delimiter, preserving its byte without treating it as an unframed EOF suffix; additional suffix bytes remain subject to the same strict check.
 
 > Decision record: [ADR-0044](../decisions/ADR-0044-responses-http-sse.md)
 

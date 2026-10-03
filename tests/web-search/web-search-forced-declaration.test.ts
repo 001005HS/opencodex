@@ -103,6 +103,29 @@ for (const transport of ["runTurn", "fetch"] as const) {
       expect(result.text).toContain("shell");
     });
 
+    test("an empty answer at the ceiling cannot dispatch an unused recovery", async () => {
+      const fetchMock = spyOn(globalThis, "fetch").mockResolvedValue(Response.json({ results: [] }));
+      const result = await drive([search("first"), search("second"), search("third"), [done]]);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(result.seen).toHaveLength(plan.maxSearches + 3);
+      expect(result.failed).toBe(true);
+      expect(result.text).toContain("iteration cap");
+    });
+
+    test("empty-answer recovery can use the last remaining iteration", async () => {
+      const fetchMock = spyOn(globalThis, "fetch").mockResolvedValue(Response.json({ results: [] }));
+      const result = await drive([search("first"), search("second"), [done], answer]);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(result.seen).toHaveLength(plan.maxSearches + 3);
+      expect(result.seen.at(-1)!.context.tools).toEqual([]);
+      expect(result.seen.at(-1)!.context.messages).toContainEqual(expect.objectContaining({
+        role: "toolResult", toolCallId: "second", isError: true,
+        content: expect.stringContaining("web search limit reached for this turn"),
+      }));
+      expect(result.failed).toBe(false);
+      expect(result.text).toContain("answer");
+    });
+
     test("cancellation prevents another forced-pass dispatch or physical search", async () => {
       const fetchMock = spyOn(globalThis, "fetch").mockResolvedValue(Response.json({ results: [] }));
       const result = await drive([search("first"), search("again")], new AbortController());
