@@ -4,6 +4,7 @@
   "explicit": {
     "cli-capability-data.test.ts": "cli",
     "skill-ocx-generated.test.ts": "ci-workflows",
+    "usage-antigravity-55.test.ts": "usage",
     "provider-antigravity-wire-snapshot.test.ts": "providers",
     "antigravity-discovered-families.test.ts": "adapters/google",
     "provider-antigravity-effort-families.test.ts": "providers",
@@ -14,6 +15,7 @@
     "compaction-event-ownership.test.ts": "responses",
     "zed-retained-budget.test.ts": "providers",
     "jev-decision-scope.test.ts": "server",
+    "codex-main-token-invalidated.test.ts": "codex-integration",
     "codex-shim-path-readiness.test.ts": "codex-integration",
     "codex-shim-fnm.test.ts": "codex-integration",
     "claude-intercept-cleanup.test.ts": "claude-integration",
