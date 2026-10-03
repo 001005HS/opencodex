@@ -81,3 +81,13 @@ answer (preserve and review the recovered train), evidence (pinned git objects a
 workflow/policy contracts), and next action (bounded implementation handoff). No
 reader-structure repair remained. Document checker passed on numbered documents,
 source object existence/parentage, workflow inputs and diff whitespace.
+
+## Integration cycle entry
+
+Previous D: roadmap 995dee54a0 locked after semantic audit and document receipt.
+Direction remains to integrate five lane handoffs. The executable 010 design is
+unchanged. Fresh preflight confirms the contributor train is clean, original work
+remains preserved, and current dev is 2e3acab46e. Five lane tasks now own bounded
+implementation/verification, with production code changes limited to demonstrated
+defects and the two authorized issue implementations. Root/GUI dependency manifests
+and lockfiles match an available existing dependency tree; no install is required.
