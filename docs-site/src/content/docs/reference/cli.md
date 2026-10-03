@@ -7,14 +7,22 @@ The opencodex CLI is `ocx`. It dispatches on the first command name, with docume
 as `setup`/`init`, `restore`/`eject`, and `models`/`model` reaching the same operation. Unknown
 commands and invalid command shapes are errors.
 
-Run `ocx help` (or `ocx --help` / `ocx -h`) for the full top-level reference.
-`ocx help --all` and `ocx --help --all` explicitly select the same full reference.
+Run `ocx`, `ocx help`, `ocx --help`, or `ocx -h` for the same compact command index,
+grouped into Start here, Common tasks, Explore, and More help.
+Use `ocx help --all` or `ocx --help --all` for the full top-level reference, including
+the detailed command variants omitted from the compact index.
 Run `ocx help <command>`, `ocx <command> --help`, or `ocx <command> -h` for a command
 registered in the help table; `ocx <command> help` also remains supported. Help and version
 commands are read-only: they do not start, stop, install, uninstall, or rewrite Codex or
 opencodex state.
 
 ## Nested help
+
+Family help such as `ocx help models` preserves the family's usage and details, then
+lists known declared child paths with summaries. These lists are marked as partial;
+they do not enumerate every runtime operation. Alias help retains the alias's own usage
+and details and points to its canonical family: `ocx help model` leads to `ocx help models`.
+Models help also links the curated `models context` topic separately from declared capabilities.
 
 Help accepts a path with more than one command word:
 
@@ -52,6 +60,15 @@ command. Use `--help` or `-h` for nested paths. Later values such as the `help` 
 so `ocx claude -- --help` preserves the arguments for command dispatch.
 
 ## Command families
+
+### `ocx provider`
+
+`ocx provider`, `ocx help provider`, `ocx provider help`, `ocx provider --help`, and
+`ocx provider -h` show the same provider help, with command syntax, examples, preset/custom
+guidance, and declared topic pointers. Successful help prints to standard output and exits 0.
+Bare `ocx provider` still follows ordinary command preflight; explicit head-help forms exit
+before that preflight. An unknown provider action prints its diagnostic and provider help
+to standard error, leaves standard output empty, and exits 1.
 
 ### `ocx alias`
 
