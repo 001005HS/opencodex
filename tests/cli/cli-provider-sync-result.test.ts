@@ -44,6 +44,25 @@ const receipt = (status: CodexSyncResult["status"], ok: boolean): CodexSyncResul
 
 describe("provider add keeps requested local sync independent of JSON output", () => {
   test.each([
+    { result: { ok: false, error: "fixture connection refused" }, code: 1 },
+    { result: { ok: true, message: "fixture connected" }, code: 0 },
+    { result: { applicable: false, reason: "static catalog" }, code: 0 },
+  ])("provider test preserves its observed exit $code", async ({ result, code }) => {
+    let requests = 0;
+    await handleProviderCommand(["test", "example", "--json"], {
+      baseUrl: "http://fixture.test",
+      fetchImpl: (async (input, init) => {
+        requests++;
+        expect(String(input)).toBe("http://fixture.test/api/providers/test?name=example");
+        expect(init?.method).toBe("POST");
+        return Response.json(result);
+      }) as typeof fetch,
+    });
+    expect(requests).toBe(1);
+    expect(JSON.parse(printed())).toEqual(result);
+    expect(process.exitCode ?? 0).toBe(code);
+  });
+  test.each([
     ["deepseek", "--auth-mode", "local"],
     ["deepseek", "--auth-mode", "forward"],
     ["google-antigravity", "--auth-mode", "local"],
