@@ -737,6 +737,7 @@ export async function prepareResponsesRequest(
     // recovery or a profile drain fences the physical identity, final auth drops main and preview
     // has to drop it too. A hardcoded `true` would be wrong in the second case and `false` in
     // the first.
+    requestOwnedMainCredential: previewRequestScopedMainCredential,
     isMainAccountTokenLive: previewRequestScopedMainCredential
       ? () => previewRequestOwnedMainCredentialLive
       : undefined,
@@ -995,6 +996,7 @@ export async function prepareResponsesRequest(
               const recoverySelectionOptions = {
                 nativeMainSelectionOnly: !recoveryNativeMainBlocked
                   && recoverySelectionAdmission?.mainProfileDraining === true,
+                requestOwnedMainCredential: recoveryRequestScopedMainCredential,
                 isMainAccountTokenLive: recoveryRequestScopedMainCredential
                   ? () => recoveryRequestOwnedMainCredentialLive
                   : undefined,

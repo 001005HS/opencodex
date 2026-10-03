@@ -1,3 +1,4 @@
+import { sharedStateSelectionOptions } from "../../src/codex/routing/selection";
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -235,6 +236,8 @@ describe("native main refresh refusal is scoped to the physical path and grant",
   test.each([
     { nativeMainSelectionOnly: true },
     { requestOwnedMainCredential: true, isMainAccountTokenLive: () => true },
+    sharedStateSelectionOptions({ requestOwnedMainCredential: true, isMainAccountTokenLive: () => true,
+      modelEligibleAccountIds: new Set(["some-pool-account"]) })!,
   ].flatMap(options => [false, true].map(ordinaryReauth => ({ options, ordinaryReauth }))))(
     "selection fences do not inspect stored refusal: %j", async ({ options, ordinaryReauth }) => {
     const access = writeCredential();

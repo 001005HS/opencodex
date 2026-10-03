@@ -201,7 +201,10 @@ sidecar candidate and cannot hide a failed Codex credential with separately bill
 `src/server/audio-upstream.ts` uses the same selection for standalone transcription. Explicit
 native Direct auth remains caller-owned; proxy-key-only Direct claims stored main before
 materialization, replacing both bearer and account identity exclusively from that credential.
-Credential OWNERSHIP is decided by provenance, not by the shape of the bearer. The Claude Messages
+Credential OWNERSHIP is decided by provenance, not by the shape of the bearer. Initial and
+recovery previews and shared-state selection projections retain the caller-owned read fence;
+`src/codex/routing/selection.ts` delegates main quarantine/grant eligibility to the canonical
+`src/codex/account-usability.ts` checks instead of reading a refresh grant independently. The Claude Messages
 ingress attaches the stored native-main credential to a translated turn so forward sidecars stay
 reachable, and that credential is indistinguishable from a caller's own by inspection. It is never
 request-scoped: a translated Claude turn resolves through Pool selection like any other, so native
