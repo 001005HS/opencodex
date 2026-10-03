@@ -53,11 +53,13 @@ export function useModelVisibility(apiBase: string, options: Options) {
         try {
           const response = await putModelVisibility(apiBase, mutation.scope, mutation.provider,
             mutation.targets, mutation.enabled, fetch, bounded.signal);
-          if (!current.active) return;
-          if (!response.ok) error = "models.saveFailed";
-          else {
-            const body: unknown = await response.json();
-            if (current.active) callbacks.current.onResponse(body);
+          // Target changes during the write must discard its response before parsing it.
+          if (current.active) {
+            if (!response.ok) error = "models.saveFailed";
+            else {
+              const body: unknown = await response.json();
+              if (current.active) callbacks.current.onResponse(body);
+            }
           }
         } catch {
           if (!current.active) return;

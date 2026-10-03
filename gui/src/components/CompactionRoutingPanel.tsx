@@ -213,7 +213,7 @@ function CompactionRoutingControls({ apiBase, models, providers: providerList = 
   // provider-qualified ids, so their wildcard must be selectable here.
   const providerWildcards = [...new Set([
     ...providerList.map(provider => provider.name),
-    ...models.map(item => item.provider).filter(Boolean),
+    ...models.flatMap(item => item.provider ? [item.provider] : []),
   ])].map(provider => `${provider}/*`);
   const knownSelectors = new Set([...providerWildcards, ...models.map(item => item.namespaced)]);
   // Saved selectors the catalog no longer lists stay visible, so saving never drops them by
@@ -221,13 +221,14 @@ function CompactionRoutingControls({ apiBase, models, providers: providerList = 
   const savedOnlySelectors = (saved?.sourceModels ?? []).filter(selector => !knownSelectors.has(selector));
   const disabled = busy || saved === undefined || loadError;
   const savedScope = saved?.sourceModels ? "selected" : "all";
+  const savedSources = new Set(saved?.sourceModels);
   const dirty = model !== (saved?.model ?? "")
     || effort !== (saved?.reasoningEffort ?? "")
     || triggers !== triggersToChoice(saved?.triggers)
     || scope !== savedScope
     || (scope === "selected"
       && (sources.length !== (saved?.sourceModels?.length ?? 0)
-        || sources.some(selector => !saved?.sourceModels?.includes(selector))));
+        || sources.some(selector => !savedSources.has(selector))));
   const scopeEmpty = scope === "selected" && sources.length === 0;
   const selectedSources = new Set(sources);
   const filteredSources = [...new Set(models.map(item => item.namespaced))]
