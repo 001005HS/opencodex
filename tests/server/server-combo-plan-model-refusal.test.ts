@@ -2,6 +2,8 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { consumeComboFailure } from "../../src/server/responses/core-combo-failure";
+import { isNonReplayableResponse } from "../../src/lib/upstream-retry";
 import { handleResponses } from "../../src/server/responses";
 import { captureCallerDirectAuth } from "../../src/providers/caller-authorization";
 import { clearComboSelectionState, clearComboTargetCooldowns } from "../../src/combos";
@@ -294,4 +296,51 @@ test("SSE structured model code does not borrow a hard stop from quoted HTTP JSO
   });
   expect(await response.text()).toContain("fallback succeeded");
   expect(sends).toEqual([firstModel, secondModel]);
+});
+
+for (const nested of [false, true]) {
+  for (const type of ["cyber_policy", "upstream_no_response", "upstream_closed_before_response", "upstream_reset_replay_refused"]) {
+    test.each(["fixture failure", refusal])(`HTTP code overrides diagnostic ${type} (nested=${nested}, message=%s)`, async message => {
+      const record = { error: { code: "unsupported_model", type, message } };
+      const { response, sends } = await run(nested ? { response: record } : record);
+      expect(response.status).toBe(200);
+      await response.text();
+      expect(sends).toEqual([firstModel, secondModel]);
+    });
+  }
+}
+
+test("diagnostic type cannot manufacture consumed/serialized codes, retry headers or replay markers", async () => {
+  for (const nested of [false, true]) {
+    for (const code of ["unsupported_model", "unknown_code", "", "  ", undefined, null, 17, {}]) {
+      for (const type of ["cyber_policy", "upstream_no_response", "upstream_reset_replay_refused", "origin_rejected"]) {
+        const record = { error: { code, type, message: "fixture failure" } };
+        const consumed = await consumeComboFailure(Response.json(nested ? { response: record } : record, { status: 400 }));
+        expect(consumed.upstreamCode).toBe(typeof code === "string" && code.trim() ? code.trim() : undefined);
+        expect(consumed.upstreamType).toBe(type);
+        expect(consumed.nonReplayable).toBeUndefined();
+        expect(isNonReplayableResponse(consumed.response)).toBe(false);
+        expect(consumed.response.status).toBe(400);
+        expect(consumed.response.headers.get("retry-after")).toBeNull();
+        expect(consumed.response.headers.get("x-should-retry")).toBeNull();
+        const wire = await consumed.response.json();
+        expect(wire.error.code).toBe("invalid_request_error");
+        expect(wire.error.type).toBe("invalid_request_error");
+      }
+    }
+  }
+});
+
+test("genuine hard codes retain formatter identity and non-replayable behavior with benign diagnostic types", async () => {
+  for (const nested of [false, true]) {
+    for (const code of ["cyber_policy", "upstream_no_response", "upstream_reset_replay_refused"]) {
+      const record = { error: { code, type: "invalid_request_error", message: "fixture failure" } };
+      const consumed = await consumeComboFailure(Response.json(nested ? { response: record } : record, { status: 400 }));
+      expect(consumed.upstreamCode).toBe(code);
+      expect((await consumed.response.json()).error.code).toBe(code);
+      expect(consumed.response.status).toBe(code === "upstream_reset_replay_refused" ? 429 : 400);
+      expect(isNonReplayableResponse(consumed.response)).toBe(code !== "cyber_policy");
+      expect(consumed.response.headers.get("x-should-retry")).toBe(code === "upstream_reset_replay_refused" ? "false" : null);
+    }
+  }
 });

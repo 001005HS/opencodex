@@ -716,7 +716,8 @@ export function codexAccountModelRefusalHardStopCode(status: number, message: st
   for (const record of records) {
     const error = record.error && typeof record.error === "object" && !Array.isArray(record.error)
       ? record.error as Record<string, unknown> : undefined;
-    for (const code of [error?.code, error?.type, record.code]) {
+    // Diagnostic type is never code evidence, even when a code is absent or malformed.
+    for (const code of [error?.code, record.code]) {
       if (typeof code !== "string") continue;
       if (isNonReplayableUpstreamCode(code) || isCyberPolicyCode(code)) return code;
       if (normalizedFailureCode(code) === "origin_rejected") return "origin_rejected";

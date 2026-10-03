@@ -61,6 +61,28 @@ function seedAttempt(logCtx: RequestLogContext, provider: string, model: string)
 }
 
 describe("policy candidate fallback", () => {
+  for (const nested of [false, true]) {
+    test.each(["cyber_policy", "upstream_no_response", "upstream_reset_replay_refused"])(
+      `policy preserves explicit model code over diagnostic %s (nested=${nested})`, async type => {
+        let calls = 0;
+        const response = await handleResponsesWithPolicyFallback(request(), fixtureConfig(), {} as RequestLogContext, {}, {
+          runCore: async (req, _config, context, options) => {
+            calls++;
+            options.onRequestBodyParsed?.(await req.json());
+            context.routeDecision = policyTrace();
+            if (calls !== 1) return Response.json({ status: "completed" });
+            const record = { error: { code: "unsupported_model", type,
+              message: nested ? "The 'gpt-6-astra' model is not supported when using Codex with a ChatGPT account."
+                : "fixture failure" } };
+            return Response.json(nested ? { response: record } : record, { status: 400 });
+          },
+        });
+        expect(calls).toBe(2);
+        expect(response.status).toBe(200);
+      },
+    );
+  }
+
   test.each([undefined, "upstream_no_response", "origin_rejected", "cyber_policy"])(
     "nested plan refusal preserves policy hard-stop code %s", async code => {
       let calls = 0;
