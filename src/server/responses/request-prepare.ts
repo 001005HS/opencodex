@@ -676,6 +676,7 @@ export async function prepareResponsesRequest(
     route,
     options,
     credentialDomainWasRewritten,
+    config,
   );
   // Does the CALLER own the credential this request will authenticate with? Validated exactly
   // the way final auth validates it: the route ownership predicate AND the caller-bearer check
@@ -962,6 +963,7 @@ export async function prepareResponsesRequest(
                 route,
                 options,
                 credentialDomainWasRewritten,
+                config,
               );
               const recoveryRequestScopedMainCredential = codexRouteCredentialOwnership(
                 recoveryAuthHeaders,

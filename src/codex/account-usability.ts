@@ -4,6 +4,7 @@ import {
   MAIN_CODEX_ACCOUNT_ID,
   hasMainAccountRefreshGrant,
   isMainAccountCredentialUsable,
+  isMainAccountRefreshGrantRejected,
   isMainAccountTokenLive,
 } from "./main-account";
 import { hasLegacyMainCodexPoolAccount, isSelectableCodexPoolAccount } from "./account-id";
@@ -88,11 +89,14 @@ export function codexAccountUnusableReason(
     // A legacy pool row with the sentinel makes an active `__main__` ambiguous.
     // Fail closed until the authenticated compatibility-delete path removes it.
     if (hasLegacyMainCodexPoolAccount(config.codexAccounts)) return "legacy_pool_sentinel";
-    if (isAccountNeedsReauth(accountId) && !hasMainAccountRefreshGrant()) return "needs_reauth";
-    // A selection-only caller owns the recovery/drain fence and will reject main
-    // before reservation or token materialization. Treat cached main as a routing
-    // candidate without touching the credential file so affinity is not rebound.
+    // These scopes cannot consume physical stored-main state, even indirectly through an
+    // ordinary quarantine plus hasMainAccountRefreshGrant(). Caller liveness is request-owned.
     if (options.nativeMainSelectionOnly) return undefined;
+    if (options.requestOwnedMainCredential) {
+      return options.isMainAccountTokenLive?.() === false ? "main_credential_unavailable" : undefined;
+    }
+    if (isMainAccountRefreshGrantRejected()) return "needs_reauth";
+    if (isAccountNeedsReauth(accountId) && !hasMainAccountRefreshGrant()) return "needs_reauth";
     // Main account: a refresh grant is enough to route; materialization refreshes before I/O.
     const mainLive = options.isMainAccountTokenLive
       ? options.isMainAccountTokenLive()

@@ -59,7 +59,7 @@ import {
 import { ACCOUNT_GATED_NATIVE_OPENAI_MODELS } from "../../codex/catalog/native-models";
 import { isRequestExecutionBudget } from "../../lib/request-execution-budget";
 import type { SingleUseDispatchPermit } from "../../lib/request-execution-budget";
-import { hasForwardableCodexBearer } from "../auth-cors";
+import { codexRouteCredentialOwnership, type CodexCredentialOwnershipOptions } from "./core-auth";
 import { bindRouteReasoningReplayScope } from "./core-replay";
 import {
   conversationStateBindingFromAuth,
@@ -360,7 +360,7 @@ export interface CodexPoolAccountRetryArgs {
   route: Pick<RouteResult, "providerName" | "modelId" | "provider" | "staticPolicy">;
   parsed: OcxParsedRequest;
   logCtx: RequestLogContext;
-  options: {
+  options: CodexCredentialOwnershipOptions & {
     admission?: DataPlaneAdmission;
     codexAuthPolicy?: CodexAuthPolicyConfig;
     visionDescribeTerminal?: boolean;
@@ -644,7 +644,9 @@ export async function retryCodexPoolOnAlternateAccount(
           admission: options.admission,
           codexAuthPolicy: options.codexAuthPolicy,
           modelId: route.modelId,
-          requestScopedMainCredential: hasForwardableCodexBearer(callerAuthHeaders, config),
+          requestScopedMainCredential: codexRouteCredentialOwnership(callerAuthHeaders, config, {
+            provider: route.provider, codexAccountMode: "pool",
+          }, options).requestScopedMainCredential,
           beginCodexAccountSelection: codexAccountSelectionForTurn(options.turnAdmissionLease),
           resolveCodexModelEntitlements: entitlementResolver,
         },
