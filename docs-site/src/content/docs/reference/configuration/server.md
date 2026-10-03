@@ -804,6 +804,8 @@ Explicit selection fails closed when the provider is missing, disabled, incompat
 usable key; it never falls back to another paid upstream. The endpoint must implement the OpenAI
 Images API paths and response shape expected by Codex.
 
+Both search loops keep `web_search` declared after the search budget is exhausted. Further calls receive a paired limit-reached result without another physical search; at most `maxSearchesPerTurn + 3` model iterations run before a terminal error. Ordinary caller tools and cancellation still end the loop. Empty-answer recovery alone removes all tools.
+
 ### `webSearchSidecar` (`OcxWebSearchSidecarConfig`)
 
 RunTurn adapters also use the configured search sidecar. Search turns preserve progress heartbeats. A first-event OAuth 429 rotates the account on the initial request and on each post-search answer request. The replay keeps the search tool and the gathered results. With `emptyCompletionRetry: true`, an empty answer before the search limit receives one retry using the current conversation and gathered results. The existing tool-free recovery after the search limit remains available independently of that setting. Upstream failures stop the turn instead of triggering another search.
