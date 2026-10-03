@@ -808,6 +808,76 @@ test("discovery loading, empty setup and rescan retain keyboard-accessible manua
   expect(win.document.activeElement?.textContent).toContain("Add child");
 });
 
+test("rescan after host confirmation preserves alias and requires fresh fingerprint confirmation", async () => {
+  const posts: Array<{ path: string; body: unknown }> = [];
+  let candidateRequests = 0;
+  let probes = 0;
+  let completeRescan!: (value: Response) => void;
+  globalThis.fetch = (async (input, init) => {
+    const path = new URL(String(input)).pathname;
+    if (path.endsWith("/candidates")) {
+      if (++candidateRequests === 1) return response({ candidates: [] });
+      return new Promise<Response>(resolve => { completeRescan = resolve; });
+    }
+    if (init?.method === "POST") posts.push({ path, body: JSON.parse(String(init.body)) });
+    if (path.endsWith("/probe")) return response({ alias: "manual-child", fingerprint: ++probes === 1 ? "SHA256:old" : "SHA256:fresh", keyType: "ed25519" });
+    if (path.endsWith("/confirm-host")) return response({ alias: "manual-child", fingerprint: probes === 1 ? "SHA256:old" : "SHA256:fresh", ocxVersion: "2.66.0" });
+    if (path.endsWith("/apply")) return response({ linkId: "fresh-link" });
+    return response(baseStatus);
+  }) as typeof fetch;
+  const host = await mount();
+  const sheet = await openHomeSheet(host);
+  await flush();
+  await enterAlias(sheet, "manual-child");
+  await act(async () => { sheetButton(sheet, "Test connection").click(); });
+  await flush();
+  expect(sheet.querySelector(".remote-link-fingerprint code")?.textContent).toBe("SHA256:old");
+  await act(async () => { (sheet.querySelector('[type="checkbox"]') as HTMLInputElement).click(); });
+  await act(async () => { sheetButton(sheet, "Confirm host").click(); });
+  await flush();
+  expect(sheetButton(sheet, "Connect child").disabled).toBe(false);
+
+  await act(async () => { sheetButton(sheet, "Rescan hosts").click(); });
+  expect(sheet.querySelector('[role="status"]')?.textContent).toContain("Loading");
+  expect((sheet.querySelector("#remote-link-alias") as HTMLInputElement).value).toBe("manual-child");
+  expect(sheet.querySelector(".remote-link-fingerprint")).toBeNull();
+  expect(sheet.querySelector('[type="checkbox"]')).toBeNull();
+  expect([...sheet.querySelectorAll("button")].some(button => button.textContent === "Connect child")).toBe(false);
+  expect(sheetButton(sheet, "Test connection").disabled).toBe(true);
+  completeRescan(response({ candidates: [{ alias: "other-child", source: "ssh_config" }] }));
+  await flush();
+  expect(candidateRequests).toBe(2);
+  expect((sheet.querySelector("#remote-link-alias") as HTMLInputElement).value).toBe("manual-child");
+  expect([...sheet.querySelectorAll("button")].some(button => button.textContent === "Connect child")).toBe(false);
+  expect(posts).toEqual([
+    { path: "/api/link/probe", body: { alias: "manual-child" } },
+    { path: "/api/link/confirm-host", body: { alias: "manual-child", fingerprint: "SHA256:old" } },
+  ]);
+
+  await act(async () => { sheetButton(sheet, "Test connection").click(); });
+  await flush();
+  expect(sheet.querySelector(".remote-link-fingerprint code")?.textContent).toBe("SHA256:fresh");
+  expect((sheet.querySelector('[type="checkbox"]') as HTMLInputElement).checked).toBe(false);
+  expect(sheetButton(sheet, "Confirm host").disabled).toBe(true);
+  expect([...sheet.querySelectorAll("button")].some(button => button.textContent === "Connect child")).toBe(false);
+  await act(async () => { sheetButton(sheet, "Confirm host").click(); });
+  expect(posts).toHaveLength(3);
+  await act(async () => { (sheet.querySelector('[type="checkbox"]') as HTMLInputElement).click(); });
+  await act(async () => { sheetButton(sheet, "Confirm host").click(); });
+  await flush();
+  expect(sheetButton(sheet, "Connect child").disabled).toBe(false);
+  await act(async () => { sheetButton(sheet, "Connect child").click(); });
+  await flush();
+  expect(posts).toEqual([
+    { path: "/api/link/probe", body: { alias: "manual-child" } },
+    { path: "/api/link/confirm-host", body: { alias: "manual-child", fingerprint: "SHA256:old" } },
+    { path: "/api/link/probe", body: { alias: "manual-child" } },
+    { path: "/api/link/confirm-host", body: { alias: "manual-child", fingerprint: "SHA256:fresh" } },
+    { path: "/api/link/apply", body: { alias: "manual-child" } },
+  ]);
+  expect(sheet.open).toBe(false);
+});
+
 for (const recoveredCandidates of [[], [{ alias: "recovered-child", source: "ssh_config" }]]) {
   test(`failed discovery retries to ${recoveredCandidates.length ? "candidates" : "empty success"} without duplicate errors`, async () => {
     let calls = 0;
