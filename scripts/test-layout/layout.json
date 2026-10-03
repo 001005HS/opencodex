@@ -2,6 +2,8 @@
   "version": 1,
   "root": "tests",
   "explicit": {
+    "compaction-event-ownership.test.ts": "responses",
+    "zed-retained-budget.test.ts": "providers",
     "jev-decision-scope.test.ts": "server",
     "claude-intercept-on-demand.test.ts": "claude-integration",
     "main-account-hard-lock-thresholds.test.ts": "codex-integration",
