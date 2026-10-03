@@ -144,3 +144,22 @@ test("a stale main 401 cannot attribute a later credential failure while pool pr
     await pending;
   }
 });
+
+
+test.each([
+  { status: 401, live: true, code: undefined, reason: "refresh_failed" },
+  { status: 401, live: true, code: "server_error", reason: "refresh_failed" },
+  { status: 401, live: false, code: undefined, reason: "unauthorized" },
+  { status: 403, live: true, code: "invalid_workspace_selected", reason: "unauthorized" },
+  { status: 403, live: true, code: "permission_denied", reason: "refresh_failed" },
+])("reauth attribution follows terminal probe evidence: %j", async ({ status, live, code, reason }) => {
+  writeFileSync(join(process.env.CODEX_HOME!, "auth.json"), JSON.stringify({
+    tokens: { access_token: jwtWithExp(Math.floor(Date.now() / 1000) + (live ? 3600 : -60)), account_id: "acct-main" },
+  }));
+  markAccountNeedsReauth(MAIN_CODEX_ACCOUNT_ID);
+  globalThis.fetch = (async () => Response.json({ error: { code } }, { status })) as typeof fetch;
+  const row = await mainRow();
+  expect(row).toMatchObject({ needsReauth: true, reauthReason: reason,
+    quotaRefresh: { status: "http_error", httpStatus: status } });
+  expect(row).not.toHaveProperty("terminalAuthFailure");
+});

@@ -108,6 +108,8 @@ export interface MainAccountInfoFetchResult {
   quotaRefresh?: CodexQuotaRefreshOutcome;
   /** Internal dispatch fence for diagnostics only; never copied into a public DTO or cache. */
   quotaRefreshGeneration?: number;
+  /** This current-credential usage response supplied terminal auth evidence; never public. */
+  terminalAuthFailure?: true;
   /** Whether this attempt safely inspected the physical native-main credential. */
   credentialChecked: boolean;
   /** Meaningful only when credentialChecked is true. */
@@ -316,6 +318,7 @@ export async function fetchMainAccountInfoWhileOwned(
           quotaRefresh: { status: "http_error", httpStatus: resp.status,
             ...(authFailure.code ? { code: authFailure.code } : {}) },
           quotaRefreshGeneration,
+          ...(terminalAuthFailure ? { terminalAuthFailure: true as const } : {}),
         };
       }
       quotaPhase = "body";

@@ -362,12 +362,12 @@ export async function listCodexAuthAccountsSnapshot(
     needsReauth: mainNeedsReauth,
   });
   // The main row carries the same attribution as a pool row. Reaching this point without
-  // `mainMissingCredential` means the runtime reauth flag is what set `mainNeedsReauth`: a usage
-  // read this call rejected with 401 names that cause, anything else is a refresh that did not complete.
+  // A diagnostic status is not causal evidence: a live bare 401 can be transient while an
+  // earlier refresh failure still owns the quarantine. Only a current terminal probe attributes it.
   const mainReauthReason: CodexAccountReauthReason | undefined = mainMissingCredential
     ? "missing_credential"
     : mainNeedsReauth
-      ? liveQuotaRefresh?.status === "http_error" && liveQuotaRefresh.httpStatus === 401
+      ? mainResult.terminalAuthFailure === true && liveQuotaRefresh?.status === "http_error"
         ? "unauthorized" : "refresh_failed"
       : mainHealth.status === "reauth_required" ? mainHealth.reason : undefined;
   const main: CodexAuthAccountDto = {
