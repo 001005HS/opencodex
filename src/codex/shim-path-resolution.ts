@@ -1,4 +1,4 @@
-import { existsSync, lstatSync, readFileSync, realpathSync } from "node:fs";
+import { closeSync, constants, existsSync, fstatSync, lstatSync, openSync, readSync, realpathSync, statSync } from "node:fs";
 import { posix, win32 } from "node:path";
 import { isWslRuntime, wslAutomountRoot } from "./home";
 import { SHIM_MARKER } from "./shim-templates";
@@ -39,11 +39,30 @@ export function realIsDirectory(path: string): boolean {
   }
 }
 
-function isShimFile(path: string): boolean {
+const SHIM_HEADER_MAX_BYTES = 16 * 1024;
+
+function inspectShimFile(path: string): boolean | null {
+  let fd: number | undefined;
   try {
-    return readFileSync(path, "utf8").includes(SHIM_MARKER);
+    // Follow npm launcher symlinks, but never read a known special file.
+    if (!statSync(path).isFile()) return null;
+    const flags = constants.O_RDONLY | (process.platform === "win32" ? 0 : constants.O_NONBLOCK);
+    fd = openSync(path, flags);
+    // The entry can change after stat; a replacement FIFO must not block open or read.
+    if (!fstatSync(fd).isFile()) return null;
+    const header = Buffer.allocUnsafe(SHIM_HEADER_MAX_BYTES);
+    let total = 0;
+    while (total < header.length) {
+      const count = readSync(fd, header, total, header.length - total, total);
+      if (count === 0) break;
+      total += count;
+    }
+    return header.subarray(0, total).toString("utf8").includes(SHIM_MARKER);
   } catch {
+    // An unreadable command still shadows later PATH entries; do not claim they are active.
     return false;
+  } finally {
+    if (fd !== undefined) closeSync(fd);
   }
 }
 
@@ -64,7 +83,7 @@ export function isFnmMultishellPath(path: string, posixPaths: boolean): boolean 
 /** Find the command the shell would actually use, including an OpenCodex shim. */
 export function findFirstCodexOnPath(deps: CodexPathScanDeps = {}): CodexPathCandidate | null {
   const exists = deps.exists ?? existsSync;
-  const shimFile = deps.isShimFile ?? isShimFile;
+  const shimFile = deps.isShimFile ?? inspectShimFile;
   const isDir = deps.isDirectory ?? realIsDirectory;
   const wsl = deps.wsl ?? (process.platform === "linux" && isWslRuntime());
   const usePosix = deps.posixPaths ?? (wsl || process.platform !== "win32");
@@ -79,7 +98,8 @@ export function findFirstCodexOnPath(deps: CodexPathScanDeps = {}): CodexPathCan
     for (const name of names) {
       const path = joinPath(dir, name);
       if (!exists(path) || isDir(path)) continue;
-      return { path, isShim: shimFile(path) };
+      const isShim = shimFile(path);
+      if (isShim !== null) return { path, isShim };
     }
   }
   return null;
