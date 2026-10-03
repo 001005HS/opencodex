@@ -303,6 +303,12 @@ function assistantTextThinkingAndCalls(message: OcxAssistantMessage): {
   };
 }
 
+/**
+ * Build native replay messages without mutating the parsed history. Keep tool results
+ * beside their originating batch, deferring intervening conversation until settlement.
+ * Reserve replayed call IDs for response translation and mark missing results explicitly.
+ * @throws When call IDs are invalid or results are orphaned, duplicated, or mismatched.
+ */
 function buildNativeMessages(
   parsed: OcxParsedRequest,
   reservedToolCallIds: Set<string>,
