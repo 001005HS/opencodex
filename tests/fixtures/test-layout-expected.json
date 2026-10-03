@@ -1,5 +1,4 @@
 {
-  "oauth-anthropic-identity.test.ts": "oauth",
   "usage-antigravity-55.test.ts": "usage", "provider-antigravity-wire-snapshot.test.ts": "providers",
   "antigravity-discovered-families.test.ts": "adapters/google",
   "provider-antigravity-effort-families.test.ts": "providers",
@@ -1226,6 +1225,7 @@
   "oauth-account-id-collision.test.ts": "oauth",
   "oauth-account-quota-rank.test.ts": "oauth",
   "oauth-accounts-api.test.ts": "oauth",
+  "oauth-anthropic-identity.test.ts": "oauth",
   "oauth-callback-binds.test.ts": "oauth",
   "oauth-callback-server.test.ts": "oauth",
   "oauth-device-code-contract.test.ts": "oauth",
