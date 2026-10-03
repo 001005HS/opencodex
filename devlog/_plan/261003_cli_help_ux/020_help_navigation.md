@@ -103,3 +103,10 @@ printUsage and expects a full command row. MODIFY that test to call
 printFullUsage, retaining every client-id and `ocx integration client` assertion.
 This is the same complete-reference coverage migration, not reduced coverage or
 new client support. Add this exact file to the focused verification commands.
+
+Hosted C follow-up: PR6500 test2/4 found a subprocess-only help consumer in
+`tests/cli/cli-restore-back.test.ts` that import-graph selection did not discover.
+MODIFY its help-documents-both-directions case to invoke `help --all` instead of
+compact `help`; retain every restore/back assertion. Verify this file explicitly.
+This follow-up belongs to the navigation layer and is committed before wp3's
+source, with the parent ref advanced to retain a clean dependency chain.
