@@ -118,6 +118,10 @@ For Antigravity, an upstream `401` can refresh the rejected account’s OAuth cr
 retry the request once. The retry uses that credential’s Cloud Code Assist project. If refresh
 fails or no usable project is available, the request returns an authentication error; use the
 reauthentication flow above. A second `401` does not start another refresh/retry cycle.
+A `403` asking to verify the account quarantines that credential as `needs-reauth(verify)`;
+when account failover is enabled, the request can retry on another eligible account. Complete
+Google's account verification, then run `ocx login google-antigravity`. Silent token refresh
+does not clear this verification requirement.
 
 A proxy that is already running picks up the new credential without a restart: the CLI asks it to
 reload that one provider from disk, and the request carries no credential of its own. If the
