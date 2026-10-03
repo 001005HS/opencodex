@@ -499,6 +499,7 @@ export async function* runTurnWebSearchLoop(
               eventTypes: [...new Set(split.passthrough.map(event => event.type))],
             }));
             if (!split.hasMalformedToolCall && !split.hasRealToolCall && emptyAnswerRetries === 0) {
+              if (i + 1 === HARD_CAP) break;
               emptyAnswerRetries++;
               console.warn("[web-search-runturn] empty forced answer — retrying once without tools");
               yield { type: "heartbeat" };
