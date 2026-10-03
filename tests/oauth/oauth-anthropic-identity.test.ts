@@ -1,7 +1,7 @@
 import * as storeModule from "../../src/oauth/store";
 import { createHash } from "node:crypto";
 import { getLoginStatus, OAUTH_PROVIDERS, refreshAnthropicAccountWithLock } from "../../src/oauth";
-import { loginAnthropic, refreshAnthropicToken } from "../../src/oauth/anthropic";
+import { AnthropicTokenError, loginAnthropic, refreshAnthropicToken } from "../../src/oauth/anthropic";
 import { resolveAnthropicAccountIdentity } from "../../src/oauth/anthropic-identity";
 import { captureOAuthAccountSelection, loadAuthStore, mutateStore, removeAccount, saveAccountCredential, setAccountPaused } from "../../src/oauth/store";
 import type { OAuthCredentials } from "../../src/oauth/types";
@@ -393,3 +393,76 @@ for (const mutation of ["relogin", "metadata", "health", "removal"] as const) {
     } finally { read.mockRestore(); }
   });
 }
+
+
+for (const cleanup of ["definitive-rejection", "pre-dispatch"] as const) {
+  for (const persistent of [false, true]) {
+    test(`different CLI account resumes ${cleanup} cleanup with ${persistent ? "persistent" : "temporary"} I/O failure`, async () => {
+      const { id, credential } = await seed();
+      const observed = async (access: string) => proof(access,
+        access === credential.access ? "synthetic-account-a" : "synthetic-account-b");
+      if (cleanup === "definitive-rejection") disk();
+      const rejected = cleanup === "definitive-rejection"
+        ? new AnthropicTokenError("synthetic rejection", 503, undefined) : new Error("synthetic pre-dispatch abort");
+      const controller = new AbortController();
+      if (cleanup === "pre-dispatch") controller.abort(rejected);
+      const realClear = storeModule.clearOAuthRefreshIntentIfMatch;
+      let clears = 0;
+      const clear = spyOn(storeModule, "clearOAuthRefreshIntentIfMatch").mockImplementation((...args) => {
+        clears++;
+        if (persistent || clears === 1) throw new Error("synthetic intent unlink failure");
+        return realClear(...args);
+      });
+      const warn = spyOn(console, "warn").mockImplementation(() => {});
+      const refreshTokens: string[] = [];
+      try {
+        await expect(refreshAnthropicAccountWithLock("anthropic", id, {
+          ...OAUTH_PROVIDERS.anthropic!, refresh: async token => { refreshTokens.push(token); throw rejected; },
+        }, credential, { signal: controller.signal, resolveIdentity: observed })).rejects.toBe(rejected);
+        const pending = readOAuthRefreshIntent("anthropic", id)!;
+        expect(pending.cleanupPending).toBe(cleanup);
+        expect(clears).toBe(1);
+        disk();
+        const retry = refreshAnthropicAccountWithLock("anthropic", id, {
+          ...OAUTH_PROVIDERS.anthropic!, refresh: async token => {
+            expect(clears).toBe(2);
+            expect(readOAuthRefreshIntent("anthropic", id)?.cleanupPending).toBeUndefined();
+            expect(readOAuthRefreshIntent("anthropic", id)?.attemptId).not.toBe(pending.attemptId);
+            refreshTokens.push(token);
+            return { access: "synthetic-a-refreshed", refresh: "synthetic-a-refresh", expires: Date.now() + 3600_000 };
+          },
+        }, credential, { resolveIdentity: observed });
+        if (persistent) {
+          await expect(retry).rejects.toMatchObject({ operation: "resume-cleanup", code: "OAUTH_REFRESH_INTENT_IO" });
+          expect(clears).toBe(2);
+          expect(getAccountCredential("anthropic", id)).toEqual(credential);
+          expect(readOAuthRefreshIntent("anthropic", id)).toEqual(pending);
+          expect(refreshTokens).toEqual(cleanup === "definitive-rejection" ? [credential.refresh] : []);
+        } else {
+          await expect(retry).resolves.toBe("synthetic-a-refreshed");
+          expect(refreshTokens).toEqual(cleanup === "definitive-rejection"
+            ? [credential.refresh, credential.refresh] : [credential.refresh]);
+          expect(readOAuthRefreshIntent("anthropic", id)).toBeUndefined();
+          expect(getAccountCredential("anthropic", id)?.access).toBe("synthetic-a-refreshed");
+        }
+        expect(getAccountSet("anthropic")!.accounts[0]!.needsReauth).toBeUndefined();
+      } finally { clear.mockRestore(); warn.mockRestore(); }
+    });
+  }
+}
+
+test("different CLI account never clears or replays an uncertain refresh intent", async () => {
+  const { id, credential } = await seed(); disk();
+  writeFileSync(storeModule.getAuthRefreshIntentPath("anthropic", id), "synthetic malformed intent");
+  const pending = readOAuthRefreshIntent("anthropic", id);
+  expect(pending?.uncertain).toBe(true);
+  const clear = spyOn(storeModule, "clearOAuthRefreshIntentIfMatch");
+  try {
+    await expect(refreshAnthropicAccountWithLock("anthropic", id, noRefresh, credential, {
+      resolveIdentity: async access => proof(access, access === credential.access ? "synthetic-account-a" : "synthetic-account-b"),
+    })).rejects.toThrow();
+    expect(clear).not.toHaveBeenCalled();
+    expect(getAccountCredential("anthropic", id)).toEqual(credential);
+    expect(readOAuthRefreshIntent("anthropic", id)).toEqual(pending);
+  } finally { clear.mockRestore(); }
+});

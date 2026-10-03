@@ -965,13 +965,12 @@ export async function refreshAnthropicAccountWithLock(
       return observed.credential.access;
     }
     // Unknown rotation may have consumed this refresh token. Refuse without replay or changing health.
-    if (observed.kind === "unresolved" || (observed.kind === "different" && pendingIntent)) {
-      throw new OAuthLoginRequiredError(provider);
-    }
+    if (observed.kind === "unresolved") throw new OAuthLoginRequiredError(provider);
     if (pendingIntent?.cleanupPending && pendingIntent.generation === generation) {
       resumeAnthropicRefreshIntentCleanup(provider, accountId, pendingIntent);
       pendingIntent = undefined;
     }
+    if (observed.kind === "different" && pendingIntent) throw new OAuthLoginRequiredError(provider);
     if (!pendingIntent?.uncertain && pendingIntent?.generation === generation) {
       if (pendingIntent.staleOwner) throw new OAuthTokenRefreshStaleError();
       if (deps.replacedStaleFlight && pendingIntent.flightId === deps.replacedStaleFlight.flightId) {
