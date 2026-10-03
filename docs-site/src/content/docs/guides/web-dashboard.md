@@ -201,6 +201,11 @@ new or that every upstream measurement was refreshed.
 
 The **Models** switches show final Codex visibility: a routed model is on only when its provider allowlist includes it (or no allowlist is set) and it is not disabled. Turning a model on reconciles both filters atomically; **All on** clears the provider allowlist so newly discovered models are also on.
 
+Switches respond immediately so you can keep changing models while saves run in the background in
+click order. Saved feedback appears after the queue finishes and the list is reconciled with the
+server. Failed saves restore the server's state when it can be read and show an error. Wait for that
+feedback before leaving Models or changing servers: unsent queued changes are discarded on departure.
+
 ### Managing models in a provider workspace
 
 In a provider’s **Models** tab, **Delete** removes the stored custom definition. An underlying
