@@ -895,7 +895,7 @@ export const ko: Record<TKey, string> = {
   "models.selectedCount": "{n}개 선택",
 
   // subagents
-  "sub.forceTitle": "모든 서브에이전트에 같은 모델 강제 적용",
+  "sub.forceTitle": "모든 서브에이전트 모델 고정",
   "sub.forceModel": "Claude Code 서브에이전트 모델",
   "sub.forceChoose": "공개된 모델 선택",
   "sub.forceHelp": "플러그인 및 내장 에이전트(Explore/Plan 포함)에 적용되며, 호출별 모델 지정을 덮어씁니다. 포크와 model: inherit를 지정한 스킬은 메인 대화의 모델을 그대로 사용합니다. 메인 모델과 Haiku/small-fast 사이드카에는 영향을 주지 않습니다.",
