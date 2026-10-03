@@ -116,6 +116,62 @@ describe("combo failure hop/stop verdicts", () => {
     }
   });
 
+  test("a Codex model the ChatGPT plan cannot use hops instead of ending the chain", () => {
+    const body = JSON.stringify({ detail: "The 'gpt-6-astra' model is not supported when using Codex with a ChatGPT account." });
+    expect(comboFailureDecision(400, body)).toBe("hop");
+    expect(comboFailureDecision(400, JSON.stringify({ detail: "The 'gpt-6-astra' model is invalid." }))).toBe("stop");
+    const refusal = "The 'gpt-6-astra' model is not supported when using Codex with a ChatGPT account.";
+    expect(comboFailureDecision(400, refusal)).toBe("hop");
+    expect(comboFailureDecision(400, JSON.stringify({ error: { message: refusal } }))).toBe("hop");
+    // Quoted in an unrelated field, or embedded in other prose, it is not the refusal.
+    expect(comboFailureDecision(400, JSON.stringify({ detail: "bad input", echo: refusal }))).toBe("stop");
+    expect(comboFailureDecision(400, `Your prompt said: ${refusal}`)).toBe("stop");
+  });
+
+  test("ambiguous plan refusal stops before a conflicting model-code hop", () => {
+    const refusal = "The 'gpt-6-astra' model is not supported when using Codex with a ChatGPT account.";
+    for (const error of [null, { message: "bad input" }, { code: "unsupported_model", message: "bad input" }]) {
+      const body = JSON.stringify({ detail: refusal, error });
+      expect(comboFailureDecision(400, body, { code: "unsupported_model" })).toBe("stop");
+      expect(comboFailureDecision(400, `Provider error 400: ${body}`, { code: "unsupported_model" })).toBe("stop");
+    }
+    expect(comboFailureDecision(400, refusal, { code: "origin_rejected" })).toBe("stop");
+    expect(comboFailureDecision(400, refusal, { code: "upstream_no_response" })).toBe("stop");
+    expect(comboFailureDecision(499, refusal)).toBe("stop");
+    expect(comboFailureDecision(503, refusal)).toBe("hop");
+    expect(comboFailureDecision(400, refusal, { codexModelRefusal: "other" })).toBe("stop");
+    expect(comboFailureDecision(400, JSON.stringify({ error: [{ message: refusal }] }))).toBe("stop");
+    expect(comboFailureDecision(400, JSON.stringify({ detail: refusal, extra: "x".repeat(16_384) }))).toBe("stop");
+  });
+
+  test("plan ambiguity depends on field presence across exactly two supported levels", () => {
+    const refusal = "The 'gpt-6-astra' model is not supported when using Codex with a ChatGPT account.";
+    const details = [refusal, "bad input", null, undefined];
+    const errors = [{ message: refusal }, { message: "bad input" }, null, undefined];
+    for (const detailLevel of ["root", "response"]) {
+      for (const errorLevel of ["root", "response"]) {
+        for (const detail of details) {
+          for (const error of errors) {
+            const root: Record<string, unknown> = {};
+            const response: Record<string, unknown> = {};
+            (detailLevel === "root" ? root : response).detail = detail;
+            (errorLevel === "root" ? root : response).error = error;
+            root.response = response;
+            // Undefined keys disappear on the wire; null remains a present carrier.
+            const expected = detail !== undefined && error !== undefined ? "stop" : "hop";
+            expect(comboFailureDecision(400, JSON.stringify(root), { code: "unsupported_model" })).toBe(expected);
+          }
+        }
+      }
+    }
+    for (const response of [null, [], [{ error: null }], { quoted: { detail: null, error: null } },
+      { detail: refusal }, { response: { error: null } }]) {
+      expect(comboFailureDecision(400, JSON.stringify({ detail: refusal, response }))).toBe("hop");
+    }
+    expect(comboFailureDecision(400, JSON.stringify({ error: { message: refusal },
+      response: { error: null } }))).toBe("hop");
+  });
+
   test("402 and 425 hop instead of ending the chain", () => {
     expect(comboFailureDecision(402, "payment required")).toBe("hop");
     expect(comboFailureDecision(425, "too early")).toBe("hop");

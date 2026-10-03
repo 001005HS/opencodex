@@ -670,10 +670,48 @@ function isDefiniteContextOverflow(status: number, message: string): boolean {
   return false;
 }
 
+const CODEX_ACCOUNT_MODEL_REFUSAL = /^The '[^']{1,256}' model is not supported when using Codex with a ChatGPT account\.$/;
+
+export type CodexAccountModelRefusal = "other" | "refusal" | "ambiguous";
+
+/** Inspect only the original root and its own response record, before carrier selection. */
+export function hasConflictingCodexModelRefusalEnvelopes(status: number, payload: unknown): boolean {
+  if (status !== 400 || !payload || typeof payload !== "object" || Array.isArray(payload)) return false;
+  const response = Object.hasOwn(payload, "response") ? (payload as Record<string, unknown>).response : undefined;
+  const nested = response && typeof response === "object" && !Array.isArray(response) ? response : undefined;
+  return (Object.hasOwn(payload, "detail") || !!nested && Object.hasOwn(nested, "detail"))
+    && (Object.hasOwn(payload, "error") || !!nested && Object.hasOwn(nested, "error"));
+}
+
+/** Inspect an already parsed, bounded error frame without copying or walking its body. */
+export function codexAccountModelRefusalPayload(status: number, payload: unknown): CodexAccountModelRefusal {
+  if (status !== 400 || !payload || typeof payload !== "object" || Array.isArray(payload)) return "other";
+  if (Object.hasOwn(payload, "detail") && Object.hasOwn(payload, "error")) return "ambiguous";
+  const { detail, error } = payload as { detail?: unknown; error?: unknown };
+  const field = typeof detail === "string" ? detail
+    : error && typeof error === "object" && !Array.isArray(error)
+      && typeof (error as Record<string, unknown>).message === "string"
+      ? (error as { message: string }).message : undefined;
+  return field !== undefined && CODEX_ACCOUNT_MODEL_REFUSAL.test(field) ? "refusal" : "other";
+}
+
+/** A bounded fallback signal, never credential or account-entitlement evidence. */
+export function codexAccountModelRefusal(status: number, message: string): CodexAccountModelRefusal {
+  if (status !== 400 || message.length > 16_384) return "other";
+  let text = message.trim();
+  if (text.startsWith("Provider error 400: ")) text = text.slice("Provider error 400: ".length);
+  if (CODEX_ACCOUNT_MODEL_REFUSAL.test(text)) return "refusal";
+  try {
+    const payload: unknown = JSON.parse(text);
+    return hasConflictingCodexModelRefusalEnvelopes(status, payload)
+      ? "ambiguous" : codexAccountModelRefusalPayload(status, payload);
+  } catch { return "other"; }
+}
+
 export function comboFailureDecision(
   status: number,
   message: string,
-  options?: { code?: string | null },
+  options?: { code?: string | null; codexModelRefusal?: CodexAccountModelRefusal },
 ): ComboFailureDecision {
   if (status === 499) return "stop";
   if (message.toLowerCase().includes("origin_rejected")) return "stop";
@@ -688,6 +726,10 @@ export function comboFailureDecision(
   // Cyber policy is a hard non-retryable refusal — honor structured code even when
   // classificationText was truncated before the JSON code field.
   if (isCyberPolicyCode(options?.code)) return "stop";
+  const modelRefusal = status === 400
+    ? options?.codexModelRefusal ?? codexAccountModelRefusal(status, message) : "other";
+  // Competing envelopes cannot grant a hop through an earlier structured-code rule either.
+  if (modelRefusal === "ambiguous") return "stop";
   // HTTP 410 is normally terminal. A model-specific lifecycle verdict is target-local,
   // however: another provider/model in the declared combo can still serve the request.
   // Require structured lifecycle code or explicit model+lifecycle prose so unrelated
@@ -738,6 +780,7 @@ export function comboFailureDecision(
   if (["model_not_found", "model_unavailable", "unsupported_model"].includes(failureCode)) {
     return "hop";
   }
+  if (modelRefusal === "refusal") return "hop";
   // `free_rate_limited` no longer routes through `isProviderScopedQuotaCap` (it is a
   // per-request cap, not provider-wide evidence), so keep its hop verdict explicit here.
   if (failureCode === "free_rate_limited") return "hop";
