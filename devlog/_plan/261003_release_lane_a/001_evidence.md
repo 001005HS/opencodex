@@ -18,3 +18,9 @@
 - Independent A reviewer 01a10218-d4e7-7f63-9f01-8582de5584be: GO-WITH-FIXES (blockers=0). Main accepted all four clarifications: failed-JSON reachability, prior exact assertion update, non2xx400 versus precedence negatives, baseline freshness/exact future command. No design/ownership expansion.
 
 - Docs-only B finalized the approved roadmap and checked that no runtime paths changed. Synthetic isolated Claude Code2.1.288 local HTTP400 probe exited1 in0.38s displaying API Error400; two local Messages requests were observed, so this proves surfacing/prompt termination only, not zero retry or automatic compaction. No private conversation or real provider was used; ignored probe artifact retained.
+
+- Transport P revalidation: previous D direction was carry6508 then Messages. Rebased docs commit onto cb2d1736a8; transport paths are byte-identical to the architect/auditor reviewed source. 010 remains the executable plan with unchanged D4 decisions; existing proposal/reflection and whole-roadmap audit remain applicable.
+
+- Transport B: cherry-picked6508 with -x (0076dc5b0b), original author retained; added UTF-8 exact threshold, destination-away and AbortError executor tests. Focused initial green exit0. Removing byte conversion made the boundary tests fail (transport-mutation-red.log); source restored before broader affected transport checks. No retries or credential policy altered.
+
+- Transport C/D: 199 passed,0 failed,1 older-runtime skip; mutation6fail. Typecheck/privacy/structure exit0; docs561 pages/77932links pass. Pinned Bun postinstall was completed after ignore-scripts prevented bun-run commands; no lockfile change. Independent code/security reviewer01a10221-1acd-7f90-92c9-ae96f95229f1 returned PASS, no blockers, four extra synthetic boundary probes passed. Next: publish transport and continue Messages.

@@ -100,6 +100,48 @@ describe("native Codex HTTP upload representation", () => {
     await expect(sendWithConnectionPolicy(nested, endpoint, { method: "POST", body })).rejects.toBe(failure);
     expect(calls).toBe(1);
   });
+
+  test.each([1024 * 1024 - 1, 1024 * 1024, 1024 * 1024 + 1])("uses the UTF-8 threshold at %i bytes", async size => {
+    const body = "x".repeat(size);
+    const capture = captureFetch();
+    await sendWithConnectionPolicy(capture.execute, endpoint, { method: "POST", body });
+    expect(capture.calls).toHaveLength(1);
+    const sent = capture.calls[0]!.init?.body;
+    if (size < 1024 * 1024) expect(sent).toBe(body);
+    else {
+      expect(sent instanceof Uint8Array).toBe(true);
+      expect(Buffer.from(sent as Uint8Array).equals(Buffer.from(body, "utf8"))).toBe(true);
+    }
+  });
+
+  test("a dispatch rebuilt away from native preserves the original string", async () => {
+    const body = "한글🦊".repeat(150_000);
+    const capture = captureFetch();
+    const send = providerFetch({ adapter: "openai-responses", baseUrl: "https://chatgpt.com/backend-api/codex", fetch: capture.execute }, undefined, {
+      httpOnly: true,
+      dispatchOverride: (_input, init, execute) => execute("https://gateway.example/v1/responses", init),
+    });
+    await send(endpoint, { method: "POST", body });
+    expect(capture.calls).toHaveLength(1);
+    expect(capture.calls[0]!.init?.body).toBe(body);
+  });
+
+  test("preserves abort rejection and signal without retrying the executor", async () => {
+    const controller = new AbortController();
+    const failure = new DOMException("synthetic cancellation", "AbortError");
+    controller.abort(failure);
+    let calls = 0;
+    const physical = (async (_input, init) => {
+      calls++;
+      expect(init?.signal).toBe(controller.signal);
+      expect(init?.body instanceof Uint8Array).toBe(true);
+      throw controller.signal.reason;
+    }) as typeof fetch;
+    await expect(sendWithConnectionPolicy(physical, endpoint, {
+      method: "POST", body: "x".repeat(1024 * 1024), signal: controller.signal,
+    })).rejects.toBe(failure);
+    expect(calls).toBe(1);
+  });
 });
 
 interface RuntimeImportScan {
