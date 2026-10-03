@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { Window } from "happy-dom";
-import { act } from "react";
+import { act, StrictMode } from "react";
 import type { Root } from "react-dom/client";
 import { LanguageProvider } from "../src/i18n/provider";
 import { en } from "../src/i18n/en";
@@ -101,4 +101,33 @@ test("failed save leaves committed selection intact and in-flight writes disable
   expect(host.querySelector("select")?.value).toBe("combo/featured");
   expect(host.textContent).toContain(en["sub.saveFailed"]);
   expect(host.textContent).not.toContain(en["sub.forceSaved"]);
+});
+
+test.each(["resolve", "reject"] as const)("cancelled load body %s cannot update a replayed effect or finish its loading state", async outcome => {
+  const reads: Array<{ signal: AbortSignal; resolve: (body: string) => void; reject: (error: Error) => void }> = [];
+  Object.defineProperty(globalThis, "fetch", { configurable: true, value: async (_url: unknown, init: RequestInit) => {
+    const response = Response.json({});
+    const body = new Promise<string>((resolve, reject) => { reads.push({ signal: init.signal!, resolve, reject }); });
+    response.text = () => body;
+    return response;
+  } });
+  await act(async () => {
+    root!.render(<StrictMode><LanguageProvider><SubagentForceControl apiBase="" roster={[]} /></LanguageProvider></StrictMode>);
+  });
+  expect(reads).toHaveLength(2);
+  expect(reads[0]!.signal.aborted).toBe(true);
+  expect(reads[1]!.signal.aborted).toBe(false);
+  await act(async () => {
+    if (outcome === "resolve") reads[0]!.resolve(JSON.stringify({ force: "retired/model", forceAvailable: ["retired/model"] }));
+    else reads[0]!.reject(new Error("cancelled body"));
+  });
+  expect(host.querySelector("select")?.value).toBe("");
+  expect(host.querySelector("option[value='retired/model']")).toBeNull();
+  expect(host.textContent).not.toContain(en["sub.loadFail"]);
+  expect(toggle().disabled).toBe(true);
+  expect(host.querySelector("select")?.disabled).toBe(true);
+  await act(async () => { reads[1]!.resolve(JSON.stringify({ force: "combo/featured", forceAvailable: ["combo/featured"] })); });
+  expect(host.querySelector("select")?.value).toBe("combo/featured");
+  expect(toggle().disabled).toBe(false);
+  expect(host.querySelector("select")?.disabled).toBe(false);
 });

@@ -38,22 +38,23 @@ export default function SubagentForceControl({ apiBase, roster }: { apiBase: str
     active.current = true;
     inFlight.current = true;
     const controller = new AbortController();
+    let cancelled = false;
     void (async () => {
       try {
         const response = await fetch(`${apiBase}/api/subagent-models`, { signal: controller.signal });
         const data = await readJsonOrThrow<Partial<ForceState>>(response, t("sub.loadFail"));
-        if (controller.signal.aborted) return;
+        if (cancelled) return;
         const next = { force: data?.force ?? null, forceAvailable: data?.forceAvailable ?? [], forceStatus: data?.forceStatus ?? null };
         setState(next);
         setSelection(next.force ?? "");
         setError("");
       } catch {
-        if (!controller.signal.aborted) setError(t("sub.loadFail"));
+        if (!cancelled) setError(t("sub.loadFail"));
       } finally {
-        if (!controller.signal.aborted) { inFlight.current = false; setLoaded({ retry, t }); }
+        if (!cancelled) { inFlight.current = false; setLoaded({ retry, t }); }
       }
     })();
-    return () => { active.current = false; controller.abort(); };
+    return () => { cancelled = true; active.current = false; controller.abort(); };
   }, [apiBase, retry, t]);
 
   async function save(force: string | null) {
