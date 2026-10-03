@@ -580,3 +580,5 @@ complete ownership, exact Cline paths and result fingerprints before either nati
 Native pair writes replace the named directory entries without following final symlinks. A symlink
 present at validation is refused, and one exchanged into place during a mutation is refused rather
 than redirecting OpenCodex's write outside Cline's settings directory.
+
+Routed `ocx claude` launches apply opt-in `claudeCode.subagentModelForce` via independent user-wins defaults for `CLAUDE_CODE_SUBAGENT_MODEL` and `CLAUDE_CODE_SUBAGENT_MODEL_FORCE`. Native launches add neither; plain Claude and persistent settings remain unchanged. Claude Code 2.1.257+ implements force, excluding forks and inherit-model skills; main and small-fast models remain separate.

@@ -219,6 +219,8 @@ export interface OcxClaudeCodeConfig {
    * definition. Unset inherits the parent session effort.
    */
   subagentEffort?: "low" | "medium" | "high" | "xhigh" | "max";
+  /** Optional roster-style model forced on subagents at the next routed Claude Code launch. */
+  subagentModelForce?: string;
   /** Claude-originated web-search override. Unset fields inherit the global sidecar settings. */
   webSearchSidecar?: { backend?: "openai" | "anthropic" | "xai" | "gemini" | "exa"; model?: string };
   /** Claude-originated vision override. Unset fields inherit the global sidecar settings. */
