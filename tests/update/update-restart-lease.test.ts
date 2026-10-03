@@ -73,6 +73,7 @@ type FixtureChild = {
   reaped: boolean;
   drained: boolean;
   forced: boolean;
+  cleanupProven: boolean;
   released?: string;
   cleanup?: Promise<void>;
   failureObserved?: boolean;
@@ -162,7 +163,7 @@ async function bounded<T>(work: Promise<T>, label: string, ms = isolationBudgetM
 
 function trackChild(box: Sandbox, child: FixtureChild["process"]): FixtureChild {
   const entry: FixtureChild = {
-    box, process: child, output: [], abort: new AbortController(), drains: [], reaped: false, drained: false, forced: false,
+    box, process: child, output: [], abort: new AbortController(), drains: [], reaped: false, drained: false, forced: false, cleanupProven: false,
   };
   children.push(entry);
   for (const stream of [child.stdout, child.stderr]) {
@@ -277,20 +278,37 @@ function cleanupChild(child: FixtureChild, graceMs = isolationBudgetMs(5_000)): 
         }
       } catch (fallbackError) { failures.push(fallbackError); }
     } finally {
+      const outcomes: Array<PromiseSettledResult<unknown> | undefined> = child.drains.map(() => undefined);
+      const settled = Promise.all(child.drains.map((drain, index) => drain.then(
+        value => { outcomes[index] = { status: "fulfilled", value }; },
+        reason => { outcomes[index] = { status: "rejected", reason }; },
+      )));
+      const ownedCancellation = new Error("fixture-owned drain cancellation");
       try {
         await bounded(Promise.all(child.drains), "fixture child drains timed out");
         child.drained = true;
       } catch (error) {
-        failures.push(error);
-        child.abort.abort();
+        // A drain rejection is collected by index below; only the wait's own error is added here.
+        if (!outcomes.some(result => result?.status === "rejected" && result.reason === error)) failures.push(error);
+        child.abort.abort(ownedCancellation);
         try {
-          await bounded(Promise.allSettled(child.drains), "fixture child drain cancellation timed out");
+          await bounded(settled, "fixture child drain cancellation timed out");
           child.drained = true;
         } catch (drainError) { failures.push(drainError); }
       }
+      // Preserve late and same-object rejections from every drain, even after a bounded wait fails.
+      for (const result of outcomes) {
+        if (result?.status === "rejected" && result.reason !== ownedCancellation) failures.push(result.reason);
+      }
     }
     if (failures.length) throw new AggregateError(failures, `fixture cleanup failed: ${failures.map(String).join("; ")}`);
+    child.cleanupProven = true;
   })();
+}
+
+function canRemoveSandbox(box: Sandbox): boolean {
+  return children.filter(child => child.box === box).every(child =>
+    child.reaped && child.drained && (child.cleanupProven || child.failureObserved === true));
 }
 
 function expectOnlyCleanupFailure(error: unknown, message: string): void {
@@ -393,7 +411,7 @@ afterEach(async () => {
       catch (error) { if (!child.failureObserved) failures.push(error); }
     }
     for (const box of sandboxes) {
-      if (children.some(child => child.box === box && (!child.reaped || !child.drained))) {
+      if (!canRemoveSandbox(box)) {
         failures.push(new Error(`retaining fixture with unconfirmed child cleanup: ${box.root}`));
       } else {
         try { removeTreeWithRetry(box.root); }
@@ -723,6 +741,8 @@ describe("lease fixture containment and cleanup controls", () => {
     expect(existsSync(box.lockDir)).toBe(true);
     await cleanupChild(holder);
     expect(holder.process.exitCode).toBe(0);
+    expect(holder.cleanupProven).toBe(true);
+    expect(canRemoveSandbox(box)).toBe(true);
     expect(holder.reaped && holder.drained).toBe(true);
     expect(readFileSync(holder.released!, "utf8")).toBe(String(holder.process.pid));
     expect(existsSync(box.lockDir)).toBe(false);
@@ -741,7 +761,75 @@ describe("lease fixture containment and cleanup controls", () => {
       "fixture child graceful exit timed out", "injected drain failure",
     ]);
     expect(holder.reaped && holder.drained && holder.forced).toBe(true);
+    expect(holder.cleanupProven).toBe(false);
+    expect(canRemoveSandbox(box)).toBe(false);
     // This control consumes exactly its two deliberately injected failures, never arbitrary errors.
+    holder.failureObserved = true;
+    expect(canRemoveSandbox(box)).toBe(true);
+  }, watchdogMs(20_000));
+
+  test("a delayed second drain rejection cannot hide behind the expected cleanup pair", async () => {
+    const box = sandbox();
+    const holder = spawnHolder(box, "ignore-eof");
+    const late = new Promise<never>((_, reject) => {
+      holder.abort.signal.addEventListener("abort", () => {
+        void Promise.resolve().then(() => reject(new Error("unexpected delayed stdout failure")));
+      }, { once: true });
+    });
+    holder.drains.push(Promise.reject(new Error("injected drain failure")), late);
+    void Promise.allSettled(holder.drains);
+    const error = await cleanupChild(holder, isolationBudgetMs(200)).catch(error => error);
+    expect(error).toBeInstanceOf(AggregateError);
+    const messages = error.errors.map((failure: Error) => failure.message);
+    expect(() => expect(messages).toEqual([
+      "fixture child graceful exit timed out", "injected drain failure",
+    ])).toThrow();
+    expect(messages).toEqual([
+      "fixture child graceful exit timed out", "injected drain failure", "unexpected delayed stdout failure",
+    ]);
+    expect(holder.reaped && holder.drained && holder.forced).toBe(true);
+    expect(canRemoveSandbox(box)).toBe(false);
+    holder.failureObserved = true;
+  }, watchdogMs(20_000));
+
+  test("drain cleanup excludes only its own cancellation reason", async () => {
+    const box = sandbox();
+    const holder = spawnHolder(box);
+    const cancellation = new Promise<never>((_, reject) => {
+      holder.abort.signal.addEventListener("abort", () => reject(holder.abort.signal.reason), { once: true });
+    });
+    const foreignAbort = new Promise<never>((_, reject) => {
+      holder.abort.signal.addEventListener("abort", () => reject(new DOMException("unrelated stream abort", "AbortError")), { once: true });
+    });
+    holder.drains.push(Promise.reject(new Error("first drain failure")), cancellation, foreignAbort);
+    void Promise.allSettled(holder.drains);
+    const error = await cleanupChild(holder).catch(error => error);
+    expect(error).toBeInstanceOf(AggregateError);
+    expect(error.errors.map((failure: Error) => failure.message)).toEqual(["first drain failure", "unrelated stream abort"]);
+    expect(holder.reaped && holder.drained).toBe(true);
+    expect(holder.forced).toBe(false);
+    expect(canRemoveSandbox(box)).toBe(false);
+    holder.failureObserved = true;
+  }, watchdogMs(20_000));
+
+  test("a drain timeout retains the later independent rejection", async () => {
+    const box = sandbox();
+    const holder = spawnHolder(box);
+    const independent = new Promise<never>((_, reject) => {
+      holder.abort.signal.addEventListener("abort", () => reject(new Error("late failure after drain timeout")), { once: true });
+    });
+    const cancellation = new Promise<never>((_, reject) => {
+      holder.abort.signal.addEventListener("abort", () => reject(holder.abort.signal.reason), { once: true });
+    });
+    holder.drains.push(independent, cancellation);
+    void Promise.allSettled(holder.drains);
+    const error = await cleanupChild(holder).catch(error => error);
+    expect(error).toBeInstanceOf(AggregateError);
+    expect(error.errors.map((failure: Error) => failure.message)).toEqual([
+      "fixture child drains timed out", "late failure after drain timeout",
+    ]);
+    expect(holder.reaped && holder.drained).toBe(true);
+    expect(canRemoveSandbox(box)).toBe(false);
     holder.failureObserved = true;
   }, watchdogMs(20_000));
 
@@ -758,8 +846,11 @@ describe("lease fixture containment and cleanup controls", () => {
       expect(existsSync(box.lockDir)).toBe(behavior === "ignore-eof");
       expect(holder.forced).toBe(behavior === "ignore-eof");
       if (behavior === "missing-ack") expect(holder.process.exitCode).toBe(0);
-      // Only this negative control consumes its expected rejection; ordinary teardown propagates it.
+      expect(holder.cleanupProven).toBe(false);
+      expect(canRemoveSandbox(box)).toBe(false);
+      // Only this negative control consumes its expected rejection; ordinary teardown retains failures.
       holder.failureObserved = true;
+      expect(canRemoveSandbox(box)).toBe(true);
     }, watchdogMs(20_000));
   }
 });
