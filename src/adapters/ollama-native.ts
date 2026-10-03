@@ -330,12 +330,14 @@ function buildNativeMessages(
   // early. The openai-chat adapter defers them the same way; refusing the replay killed the turn.
   let deferred: OllamaNativeMessage[] = [];
 
+  /** Emit held conversation messages in their recorded arrival order after settlement. */
   const releaseDeferred = (): void => {
     if (deferred.length === 0) return;
     messages.push(...deferred);
     deferred = [];
   };
 
+  /** Settle the open batch with genuine results or unknown markers, then release deferred messages. */
   const flushPending = (): void => {
     if (!pending) return;
     for (const call of pending.calls) {

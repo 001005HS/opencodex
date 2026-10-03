@@ -15,6 +15,7 @@ const gatherRoutedModels: typeof gatherRoutedModelsDirect = (config, options) =>
 /** The four ids this transport is maintained against. */
 const TARGETS = ["glm-5.3-flash", "deepseek-v4-flash:0731", "glm-5.2", "kimi-k3"] as const;
 
+/** Configure a native Ollama test provider with inert credentials and caller overrides. */
 function ollamaProvider(overrides: Partial<OcxProviderConfig> = {}): OcxProviderConfig {
   return {
     adapter: "ollama-native",
@@ -28,6 +29,7 @@ function ollamaProvider(overrides: Partial<OcxProviderConfig> = {}): OcxProvider
   } as OcxProviderConfig;
 }
 
+/** Build a minimal streamed replay request from synthetic messages and caller options. */
 function parsedWith(
   messages: unknown[],
   options: Record<string, unknown> = {},
