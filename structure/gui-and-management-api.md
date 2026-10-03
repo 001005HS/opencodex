@@ -407,7 +407,7 @@ Models visibility switches update immediately while writes execute in click orde
 Only visibility controls remain editable during that queue; preset and other settings writes retain
 their mutual exclusion. Once the queue drains, one authoritative catalog read reconciles the
 switches before saved feedback appears. Refused writes or failed reconciliation show error feedback;
-client integration refresh failures retain their separate warning. Stale reads cannot override newer
+client integration refresh failures retain their separate warning. A successful empty or non-JSON write response omits optional integration details but still reconciles visibility; it is not a network failure. Stale reads cannot override newer
 intent. Changing the API target or unmounting the page aborts observations and drops unsent queued
 changes. The queue lives in `gui/src/use-model-visibility.ts`; the dashboard page contract is in
 [Dashboard surfaces](dashboard-and-usage.md).
