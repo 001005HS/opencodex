@@ -713,7 +713,10 @@ Node installation while preserving the launcher filename. If that directory cann
 installation refuses instead of wrapping a temporary path. When Codex is selected, `ocx connect`
 also reports shim readiness. This readiness check skips special-file PATH entries while preserving
 the order of regular launchers, including npm and fnm symlinks. If a different PATH wrapper hides a healthy shim, fix PATH order;
-reinstalling the same shim does not change which command your shell finds first.
+reinstalling the same shim does not change which command your shell finds first. If the tracked shim
+is healthy but no `codex` command is found, connect reports it as inactive and asks you to add its
+directory to PATH. A failed PATH inspection reports activation as unverified instead of claiming
+that no command exists. These warnings do not change the connect command's exit status.
 
 Before an install or repair is committed, OpenCodex runs the saved launcher with `--version` while
 service startup is bypassed. It refuses the change and rolls back when the launcher resolves
