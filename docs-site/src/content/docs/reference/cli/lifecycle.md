@@ -708,6 +708,12 @@ If installation is refused or the resulting shim is unhealthy, the command exits
 the dashboard reports the failure reason. A healthy existing shim still counts as success.
 For Windows installations that expose only `codex.exe`, use `ocx service install` for autostart.
 
+For fnm-managed Codex, installation resolves the temporary multishell directory to the durable
+Node installation while preserving the launcher filename. If that directory cannot be resolved,
+installation refuses instead of wrapping a temporary path. When Codex is selected, `ocx connect`
+also reports shim readiness. If a different PATH wrapper hides a healthy shim, fix PATH order;
+reinstalling the same shim does not change which command your shell finds first.
+
 Before an install or repair is committed, OpenCodex runs the saved launcher with `--version` while
 service startup is bypassed. It refuses the change and rolls back when the launcher resolves
 `codex` back to the shim, exits nonzero, exceeds five seconds, leaves descendants running, or
