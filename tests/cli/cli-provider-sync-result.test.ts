@@ -43,6 +43,54 @@ const receipt = (status: CodexSyncResult["status"], ok: boolean): CodexSyncResul
 });
 
 describe("provider add keeps requested local sync independent of JSON output", () => {
+  test.each([
+    ["deepseek", "--auth-mode", "local"],
+    ["deepseek", "--auth-mode", "forward"],
+    ["google-antigravity", "--auth-mode", "local"],
+    ["deepseek", "--auth-mode", "local", "--base-url", "http://127.0.0.1:8000/v1", "--allow-private-network"],
+    ["example", "--adapter", "openai-responses", "--base-url", "https://example.test/v1", "--auth-mode", "forward"],
+    ["example", "--adapter", "openai-chat", "--base-url", "http://127.0.0.1:8000/v1", "--auth-mode", "local"],
+    ["openai", "--auth-mode", "forward", "--allow-private-network"],
+    ["openai", "--responses-path", "/other-responses"],
+  ])("completed local row refuses owner-invalid overrides: %j", async (...options) => {
+    const before = readFileSync(home.path("config.json"), "utf8");
+    let discoveries = 0, syncs = 0, requests = 0;
+    const fetch = spyOn(globalThis, "fetch").mockImplementation(async () => {
+      requests++; throw new Error("fixture network forbidden");
+    });
+    try {
+      await handleProviderCommand(["add", ...options, "--force", "--sync", "--set-default", "--json"], {
+        findLiveProxy: async () => { discoveries++; return { port: 19223 } as LiveProxy; },
+        syncModels: async () => { syncs++; return receipt("applied", true); },
+      });
+      expect(process.exitCode).toBe(2);
+      expect(readFileSync(home.path("config.json"), "utf8")).toBe(before);
+      expect({ discoveries, syncs, requests }).toEqual({ discoveries: 0, syncs: 0, requests: 0 });
+      expect(printed()).toBe("");
+      expect(stderr.mock.calls.flat().join(" ")).toContain("Invalid provider configuration");
+    } finally { fetch.mockRestore(); }
+  });
+  test.each([
+    { name: "deepseek", flags: [], authMode: "key" },
+    { name: "deepseek", flags: ["--auth-mode", "key"], authMode: "key" },
+    { name: "ollama", flags: ["--auth-mode", "local"], authMode: "local" },
+    { name: "google-antigravity", flags: ["--auth-mode", "oauth"], authMode: "oauth" },
+    { name: "google-antigravity", flags: ["--auth-mode", "key"], authMode: "key" },
+    { name: "google-antigravity", flags: ["--auth-mode", "oauth", "--base-url", "https://example.test/v1"], authMode: "oauth" },
+    { name: "example", flags: ["--adapter", "openai-chat", "--base-url", "http://127.0.0.1:8000/v1", "--auth-mode", "local", "--allow-private-network"], authMode: "local" },
+    { name: "example", flags: ["--adapter", "openai-chat", "--base-url", "https://example.test/v1", "--auth-mode", "oauth"], authMode: "oauth" },
+    { name: "example", flags: ["--adapter", "openai-chat", "--base-url", "https://example.test/v1", "--responses-path", "/responses"], authMode: undefined },
+  ])("owner-valid completed row remains saveable: $name $authMode", async ({ name, flags, authMode }) => {
+    let discoveries = 0;
+    await handleProviderCommand(["add", name, ...flags, "--json"], {
+      findLiveProxy: async () => { discoveries++; return null; },
+    });
+    expect(process.exitCode ?? 0).toBe(0);
+    expect(configured().providers[name].authMode).toBe(authMode);
+    expect(JSON.parse(printed()).action).toBe("added");
+    expect(discoveries).toBe(0);
+    expect(stderr.mock.calls).toEqual([]);
+  });
   test.each(["throw", "unchanged", "refused"])("real backend %s catalog outcome remains distinct from config injection", async kind => {
     const result = await syncModelsToCodex(19223, configured(), null, {
       admitCodexWrite: () => ({ kind: "admitted" }),
