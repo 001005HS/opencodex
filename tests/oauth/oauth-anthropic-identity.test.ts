@@ -88,6 +88,7 @@ test("profile boundary uses fixed origin, exact bearer, no redirects and private
   expect(request!.init!.redirect).toBe("error");
   const headers = new Headers(request!.init!.headers);
   expect(headers.get("authorization")).toBe("Bearer synthetic-access");
+  expect(headers.get("anthropic-beta")).toBe("oauth-2025-04-20");
   expect(headers.get("cache-control")).toBe("no-cache");
   expect(request!.init!.signal).toBeInstanceOf(AbortSignal);
 });

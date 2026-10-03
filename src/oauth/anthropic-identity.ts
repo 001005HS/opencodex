@@ -33,6 +33,7 @@ export const resolveAnthropicAccountIdentity: AnthropicIdentityResolver = async 
     const response = await fetch(PROFILE_URL, {
       method: "GET", redirect: "error", signal: combined,
       headers: { Authorization: `Bearer ${access}`, Accept: "application/json",
+        "anthropic-beta": "oauth-2025-04-20",
         "Cache-Control": "no-cache", "User-Agent": CLAUDE_CLI_USER_AGENT },
     });
     if (!response.ok || response.redirected) {
