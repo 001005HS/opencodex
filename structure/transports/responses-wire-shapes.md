@@ -60,9 +60,9 @@ string on this wire instead of the numeric `thinking_budget` the Chat wire appli
 stays unpinned. `tests/providers/alibaba-token-plan-wire-defaults.test.ts` covers the pins and the
 replay flag.
 
-xAI keeps `openai-chat` as its provider-wide compatibility wire, but Grok 4.5/4.6/4.7 subscription
-Responses requests default to native `openai-responses`. Existing namespace, hosted-search and
-reasoning-replay normalization remains in force. The reserved `xai` OAuth transport is name-pinned
+Trusted custom Responses relays may opt into `preserveResponsesInputItemIds` and `preserveResponsesMessageMetadata` for launcher replay (#6220). Ordinary destinations still strip IDs when `store: false` and private `internal_chat_message_metadata_passthrough`; xAI custom-call ID repair remains active.
+
+xAI keeps `openai-chat` provider-wide; Grok 4.5/4.6/4.7 subscription Responses default to native `openai-responses`, retaining namespace, hosted-search and reasoning-replay normalization. The reserved `xai` OAuth transport is name-pinned
 to the Grok CLI gateway even if its saved base URL differs; custom provider IDs do not inherit this
 default. API-key requests, translated Chat/Anthropic defaults and other Grok models retain their
 existing wire and tier policy. The OAuth lane is service-tier classified per model

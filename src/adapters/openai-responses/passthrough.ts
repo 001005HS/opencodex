@@ -374,7 +374,9 @@ export function createResponsesPassthroughAdapter(provider: OcxProviderConfig): 
       // OpenAI model inheriting history a routed provider had damaged.
       outBody = repairLegacyDottedToolCallNames(outBody);
       if (!isCanonicalOpenAiForwardProvider(provider)) {
-        outBody = stripInternalChatMessageMetadataPassthrough(outBody);
+        if (provider.preserveResponsesMessageMetadata !== true) {
+          outBody = stripInternalChatMessageMetadataPassthrough(outBody);
+        }
         // The same class of private field, one level up, but keyed on the DESTINATION rather than
         // on the canonical surface alone. `src/server/responses/compact.ts` spreads the caller's
         // raw body into the native `/responses/compact` request without passing through this
@@ -486,6 +488,7 @@ export function createResponsesPassthroughAdapter(provider: OcxProviderConfig): 
             ),
           ),
           isXaiResponsesDestination(provider),
+          provider.preserveResponsesInputItemIds === true,
         ),
         isXaiSchemaTarget(provider),
       );
