@@ -271,7 +271,9 @@ or turn it off with `ocx claude desktop picker off`. The dashboard has the same 
 **Claude → Desktop**. After the picker profile is selected, fully quit and reopen Claude Desktop.
 
 Picker mode is part of first-party mode, so the [first-party account risk](#first-party-opt-in)
-applies to it as well.
+applies to it as well. Desktop and CLI catalog rewrites share bounded row and metadata limits:
+if adding routed models would exceed a limit, OpenCodex returns the original Anthropic catalog
+unchanged rather than publishing a partial list.
 
 ### Use opencodex models from the Desktop Code tab (first-party bindings)
 
