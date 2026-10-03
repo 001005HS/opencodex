@@ -16,10 +16,10 @@ Optional Codex memory selection enters `src/server/responses/request-prepare.ts`
 provider, lets the selected adapter speak the upstream protocol, then bridges adapter events back to
 Responses-compatible streaming output. The routed provider name follows every adapter build, including retries and continuations; only `github-copilot` injects a configured `modelContextTiers` value as upstream `contextTier`, while unconfigured passthrough retains the caller field. For an opted-in key-auth provider, a hosted-search continuation stays bound to the API-key selection that served the first leg; the contract is the [hosted-search continuation binding](../providers-and-adapters.md#hosted-search-continuation-binding).
 
-The `openai-responses` adapter preserves the incoming `User-Agent` as a non-credential fallback in
-both key and forward modes. A configured provider header with that name wins case-insensitively;
-when the caller omits it, the adapter invents no client identity. This does not widen the canonical
-forward credential/metadata allowlist or copy any other caller header.
+The `openai-responses` adapter preserves caller `User-Agent` unless provider headers own it, in either auth mode.
+`forwardClientHeaders` additionally opts into `originator`, `x-client-request-id`, `x-codex-app-version`, or `user-agent`.
+Provider headers win case-insensitively; arbitrary names are rejected on load/write and ignored at runtime.
+Canonical forward auth retains its separate fixed credential/metadata allowlist; absent caller identity is not invented.
 
 Retired Codex Spark has no model-specific tool or Responses Lite override; general Lite handling and
 namespace scrubbing remain shared compatibility behavior. Codex quota/reset evidence follows the
