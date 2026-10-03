@@ -1,10 +1,11 @@
 import type { OcxConfig } from "../types";
-import { claudeCodeAlias, claudeCodeNativeAlias } from "./alias";
+import { claudeCodeAlias, claudeCodeNativeAlias, resolveAlias } from "./alias";
 import { AUTO_CONTEXT_OFF, shouldMarkOneMillion, stripOneMillionMarker, withOneMillionMarker } from "./context-windows";
 import { hasOwnProvider } from "../config";
 import { knownModelIdsForProvider } from "../router";
 import { decodeRoutedModelIdOrThrow } from "../providers/slug-codec";
 import { SAFE_AGENT_MODEL_ID } from "../config/subagent-models";
+import { resolveDesktop3pAlias } from "./desktop-3p";
 export { SAFE_AGENT_MODEL_ID } from "../config/subagent-models";
 
 /** Roster entry -> alias + display parts. Entries are bare native slugs or "provider/id".
@@ -44,20 +45,37 @@ export function entryParts(entry: string, config: OcxConfig): { alias: string; i
   return { alias: claudeCodeNativeAlias(entry), id: entry, provider: "native" };
 }
 
+export type SubagentForceExposure = { entries: readonly string[] } | { selectors: readonly string[] };
+
+function selectorIdentity(selector: string): string {
+  const bare = stripOneMillionMarker(selector);
+  const route = resolveAlias(bare) ?? resolveDesktop3pAlias(bare) ?? bare;
+  return route.startsWith("native/") ? route.slice("native/".length) : route;
+}
+
 /** Resolve only currently exposed entries; retained roster rows are not exposure proof. */
-export function resolveSubagentForceModel(config: OcxConfig, windows: Record<string, number>, available: readonly string[]): string | null {
+export function resolveSubagentForceModel(config: OcxConfig, windows: Record<string, number>, available: SubagentForceExposure): string | null {
   const entry = config.claudeCode?.subagentModelForce;
   if (typeof entry !== "string" || !SAFE_AGENT_MODEL_ID.test(entry)) return null;
   try {
     const parts = entryParts(entry, config);
     if ((config.disabledModels ?? []).some(disabled => {
-      try { return entryParts(disabled, config).alias === parts.alias; } catch { return false; }
+      try { return selectorIdentity(entryParts(disabled, config).alias) === selectorIdentity(parts.alias); } catch { return false; }
     })) return null;
-    const exposed = available.some(candidate => {
-      try { return entryParts(candidate, config).alias === parts.alias; } catch { return false; }
+    const selectors = "selectors" in available ? available.selectors : available.entries.flatMap(candidate => {
+      try { return [entryParts(candidate, config).alias]; } catch { return []; }
     });
+    const exposed = selectors.some(candidate => selectorIdentity(candidate) === selectorIdentity(parts.alias));
     if (!exposed) return null;
-    return withSubagentContextMarker(parts.alias, windows);
+    const marked = withSubagentContextMarker(parts.alias, windows);
+    // Bare Anthropic names are indistinguishable from the old CLI's fallback.
+    // Encode only the force selector; handlers restore native identity before
+    // their existing credential/model-map checks. Roster generation is unchanged.
+    if (parts.alias.startsWith("claude-") && !resolveAlias(parts.alias) && !resolveDesktop3pAlias(parts.alias)) {
+      const native = claudeCodeNativeAlias(stripOneMillionMarker(marked));
+      return marked === stripOneMillionMarker(marked) ? native : `${native}[1m]`;
+    }
+    return marked;
   } catch {
     return null;
   }

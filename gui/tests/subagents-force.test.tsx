@@ -4,7 +4,7 @@ import { act } from "react";
 import type { Root } from "react-dom/client";
 import { LanguageProvider } from "../src/i18n/provider";
 import { en } from "../src/i18n/en";
-import SubagentForceControl, { forceModelOptions } from "../src/components/subagents-workspace/SubagentForceControl";
+import SubagentForceControl from "../src/components/subagents-workspace/SubagentForceControl";
 
 let root: Root | undefined;
 let host: HTMLElement;
@@ -31,7 +31,7 @@ beforeEach(async () => {
       force = (writes.at(-1) as { force: string | null }).force;
       return Response.json({ force });
     }
-    return Response.json({ force, forceAvailable: ["combo/other", "combo/featured"], forceStatus: {
+    return Response.json({ force, forceAvailable: ["combo/other", "combo/featured", "combo/other"], forceStatus: {
       targetValid: force !== "retired/model", version: "2.1.256", support: "unsupported", settingsOverride: true, settingsReadable: true,
     } });
   } });
@@ -60,10 +60,6 @@ async function select(value: string) {
     element.dispatchEvent(new window.Event("change", { bubbles: true }));
   });
 }
-
-test("only exposed models, roster first, deduplicated", () => {
-  expect(forceModelOptions(["missing", "b"], ["a", "b", "a"])).toEqual(["b", "a"]);
-});
 
 test("default off requires a model; labeled native controls save enable and clear", async () => {
   await render();

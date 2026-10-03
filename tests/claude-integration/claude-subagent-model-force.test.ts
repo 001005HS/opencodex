@@ -43,8 +43,8 @@ test("alias resolution reuses roster provider/native semantics and authoritative
   for (const entry of deps.forceAvailable) {
     const c = config(entry);
     const { alias } = entryParts(entry, c);
-    expect(resolveSubagentForceModel(c, { [alias]: 999999 }, deps.forceAvailable)).toBe(alias);
-    expect(resolveSubagentForceModel(c, { [alias]: 1000000 }, deps.forceAvailable)).toBe(`${alias}[1m]`);
+    expect(resolveSubagentForceModel(c, { [alias]: 999999 }, { entries: deps.forceAvailable })).toBe(alias);
+    expect(resolveSubagentForceModel(c, { [alias]: 1000000 }, { entries: deps.forceAvailable })).toBe(`${alias}[1m]`);
   }
 });
 
@@ -65,10 +65,10 @@ test("invalid hand edits degrade without losing providers; strict candidate vali
   expect(diagnostics.warnings.some(warning => warning.includes("subagentModelForce"))).toBe(true);
 });
 
-test("forced wire model outranks legacy roster directive without changing unset routing", () => {
+test("explicit wire model outranks legacy roster directive even without saved force", () => {
   const body = { model: "ocx-claude-combo--tev-auto", system: "<!-- ocx-route: ocx-claude-other--model -->" };
-  expect(extractOcxRouteDirective(body, config())).toBe("ocx-claude-other--model");
-  expect(extractOcxRouteDirective(body, config("combo/tev-auto"))).toBe(body.model);
+  expect(extractOcxRouteDirective(body)).toBe(body.model);
+  expect(extractOcxRouteDirective(body)).toBe(body.model);
 });
 
 test("version boundary and read-only settings key presence are bounded and private", async () => {
@@ -88,4 +88,47 @@ test("version boundary and read-only settings key presence are bounded and priva
     writeFileSync(join(dir, "settings.json"), "{");
     expect(await inspectSubagentForceStatus(false, dir, async () => null)).toMatchObject({ targetValid: false, support: "unknown", settingsReadable: false });
   } finally { removeTreeWithRetry(dir); }
+});
+
+
+test("wire selection survives exported overrides and saved force changed or cleared after launch", () => {
+  const launched = buildClaudeEnv(config("combo/tev-auto"), 10100, { [MODEL]: "ocx-claude-mock--model" }, {}, deps);
+  const body = { model: launched[MODEL], system: "<!-- ocx-route: ocx-claude-other--roster -->" };
+  // The request resolver no longer receives mutable config. New launches may
+  // differ while this already-launched request keeps its own selector.
+  for (const current of [config("combo/tev-auto"), config("mock/model"), config()]) {
+    const next = buildClaudeEnv(current, 10100, {}, {}, deps);
+    expect(next[MODEL]).toBe(current.claudeCode?.subagentModelForce === "combo/tev-auto"
+      ? "ocx-claude-combo--tev-auto" : current.claudeCode?.subagentModelForce ? "ocx-claude-mock--model" : undefined);
+    expect(extractOcxRouteDirective(body)).toBe("ocx-claude-mock--model");
+  }
+  expect(buildClaudeEnv(config("combo/tev-auto"), 10100, { [FORCE]: "0" }, {}, deps)[FORCE]).toBe("0");
+});
+
+test("legacy bare fallback stays intact and main turns have no route override", () => {
+  for (const model of ["claude-sonnet-5", "unknown", "ocx-claude-invalid"]) {
+    expect(extractOcxRouteDirective({ model, system: "<!-- ocx-route: ocx-claude-other--roster -->" }))
+      .toBe("ocx-claude-other--roster");
+  }
+  for (const model of ["ocx-claude-mock--model", "claude-ocx-mock--model", "ocx-claude2-openrouter--vendor~smodel[1M]"]) {
+    expect(extractOcxRouteDirective({ model, system: "<!-- ocx-route: other -->" })).toBe(model);
+    expect(extractOcxRouteDirective({ model, system: "ordinary main turn" })).toBeNull();
+  }
+});
+
+test("native Claude force has distinguishable identity and keeps authoritative context", () => {
+  const c = config("anthropic/claude-sonnet-5");
+  expect(resolveSubagentForceModel(c, { "claude-sonnet-5": 1000000 }, { entries: ["anthropic/claude-sonnet-5"] }))
+    .toBe("ocx-claude-native--claude-sonnet-5[1m]");
+  expect(resolveSubagentForceModel(c, {}, { selectors: ["claude-sonnet-5"] }))
+    .toBe("ocx-claude-native--claude-sonnet-5");
+});
+
+test("fresh wire exposure is independent of windows and failed discovery cannot use stale windows", () => {
+  const c = config("mock/model");
+  expect(buildClaudeEnv(c, 10100, {}, {}, { ...deps, forceAvailable: undefined, forceAvailableSelectors: ["claude-ocx-mock--model[1m]"] })[MODEL])
+    .toBe("ocx-claude-mock--model");
+  const warnings: string[] = [];
+  const env = buildClaudeEnv(c, 10100, {}, { "mock/model": 1000000 }, { ...deps, forceAvailable: undefined, warn: message => warnings.push(message) });
+  expect(env[MODEL]).toBeUndefined(); expect(env[FORCE]).toBeUndefined(); expect(warnings).toHaveLength(1);
 });

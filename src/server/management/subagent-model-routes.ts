@@ -42,7 +42,7 @@ export async function handleSubagentModelRoutes(ctx: ManagementContext, autoAppl
       force: config.claudeCode?.subagentModelForce ?? null,
       forceAvailable,
       forceStatus: config.claudeCode?.subagentModelForce === undefined ? null : await inspectSubagentForceStatus(
-        resolveSubagentForceModel(config, {}, forceAvailable) !== null,
+        resolveSubagentForceModel(config, {}, { entries: forceAvailable }) !== null,
       ),
       pickerAvailable: [...new Set(filterCatalogVisibleModels(models, config).map(catalogModelSlug).filter(slug => slug.includes("/")))],
       pickerOrder: config.modelPickerOrder ?? [],
@@ -99,7 +99,7 @@ export async function handleSubagentModelRoutes(ctx: ManagementContext, autoAppl
       }
       const models = await (deps.fetchAllModels ?? fetchAllModels)(config);
       const exposed = subagentSelectableModels({ ...config, subagentModels: [] }, filterCatalogVisibleModels(models, config), listCatalogNativeSlugs());
-      if (!resolveSubagentForceModel({ ...config, claudeCode: { ...config.claudeCode, subagentModelForce: body.force } }, {}, exposed)) {
+      if (!resolveSubagentForceModel({ ...config, claudeCode: { ...config.claudeCode, subagentModelForce: body.force } }, {}, { entries: exposed })) {
         return jsonResponse({ error: "force must resolve to an exposed model" }, 400);
       }
     }

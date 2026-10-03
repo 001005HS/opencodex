@@ -15,7 +15,7 @@ interface ForceState {
   } | null;
 }
 
-export function forceModelOptions(roster: readonly string[], exposed: readonly string[]): string[] {
+function forceModelOptions(roster: readonly string[], exposed: readonly string[]): string[] {
   const available = new Set(exposed);
   return [...new Set([...roster.filter(model => available.has(model)), ...exposed])];
 }
@@ -29,13 +29,14 @@ export default function SubagentForceControl({ apiBase, roster }: { apiBase: str
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
   const [retry, setRetry] = useState(0);
+  const [loaded, setLoaded] = useState<{ retry: number; t: typeof t } | null>(null);
+  const pending = busy || loaded?.retry !== retry || loaded.t !== t;
   const inFlight = useRef(false);
   const active = useRef(false);
 
   useEffect(() => {
     active.current = true;
     inFlight.current = true;
-    setBusy(true);
     const controller = new AbortController();
     void (async () => {
       try {
@@ -49,14 +50,14 @@ export default function SubagentForceControl({ apiBase, roster }: { apiBase: str
       } catch {
         if (!controller.signal.aborted) setError(t("sub.loadFail"));
       } finally {
-        if (!controller.signal.aborted) { inFlight.current = false; setBusy(false); }
+        if (!controller.signal.aborted) { inFlight.current = false; setLoaded({ retry, t }); }
       }
     })();
     return () => { active.current = false; controller.abort(); };
   }, [apiBase, retry, t]);
 
   async function save(force: string | null) {
-    if (!state || inFlight.current) return;
+    if (!state || pending || inFlight.current) return;
     inFlight.current = true;
     setBusy(true);
     setError("");
@@ -86,11 +87,11 @@ export default function SubagentForceControl({ apiBase, roster }: { apiBase: str
   return (
     <section className="panel">
       <h3>{t("sub.forceTitle")}</h3>
-      <Switch on={!!state?.force} disabled={!state || busy || (!state.force && !valid)}
+      <Switch on={!!state?.force} disabled={!state || pending || (!state.force && !valid)}
         label={t("sub.forceTitle")} onClick={() => { void save(state?.force ? null : selection); }} />
       <label className="field-label">
         {t("sub.forceModel")}
-        <select className="input" value={selected} disabled={!state || busy}
+        <select className="input" value={selected} disabled={!state || pending}
           onChange={event => {
             const value = event.target.value;
             if (state?.force) void save(value);
@@ -109,7 +110,7 @@ export default function SubagentForceControl({ apiBase, roster }: { apiBase: str
       {state?.force && status?.settingsOverride && <Notice tone="warn">{t("sub.forceOverride")}</Notice>}
       {state?.force && status?.settingsReadable === false && <Notice tone="warn">{t("sub.forceSettingsUnknown")}</Notice>}
       {saved && <Notice tone="ok">{t("sub.forceSaved")}</Notice>}
-      {error && <Notice tone="err">{error}<button type="button" className="btn btn-ghost btn-sm" disabled={busy}
+      {error && <Notice tone="err">{error}<button type="button" className="btn btn-ghost btn-sm" disabled={pending}
         onClick={() => setRetry(value => value + 1)}>{t("common.retry")}</button></Notice>}
     </section>
   );

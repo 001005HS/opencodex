@@ -144,10 +144,10 @@ function decodeClaudeFastSelector(raw: string, cc?: OcxConfig["claudeCode"]): st
   return decodedBase === bare ? exact : `${decodedBase}--fast`;
 }
 
-/** Restore the reversible Fable picker alias before Anthropic passthrough checks. */
-function decodeFablePickerAlias(raw: string, cc?: OcxConfig["claudeCode"]): string {
+/** Restore reversible native Claude picker aliases before Anthropic passthrough checks. */
+function decodeNativeClaudePickerAlias(raw: string, cc?: OcxConfig["claudeCode"]): string {
   const decoded = resolveInboundModel(raw, cc);
-  if (!decoded.startsWith("claude-fable-")) return raw;
+  if (!decoded.startsWith("claude-")) return raw;
   // A picker value saved before the ocx-claude spelling keeps the native passthrough too.
   return claudeCodeNativeAlias(decoded) === raw || legacyAliasForNative(decoded) === raw ? decoded : raw;
 }
@@ -889,14 +889,14 @@ async function handleClaudeMessagesWithBudget(
     // frontmatter. Must run BEFORE the native-passthrough branch — the CLI sends
     // these subagent turns under a fallback claude model id.
     if (isRec(anthropicBody)) {
-      const routeOverride = extractOcxRouteDirective(anthropicBody, config);
+      const routeOverride = extractOcxRouteDirective(anthropicBody);
       if (routeOverride && typeof anthropicBody.model === "string") {
         anthropicBody.model = stripOneMillionMarker(routeOverride);
         effortOverride = extractOcxEffortDirective(anthropicBody);
       }
     }
     if (isRec(anthropicBody) && typeof anthropicBody.model === "string") {
-      anthropicBody.model = decodeFablePickerAlias(anthropicBody.model, cc);
+      anthropicBody.model = decodeNativeClaudePickerAlias(anthropicBody.model, cc);
     }
     if (isRec(anthropicBody) && typeof anthropicBody.model === "string") {
       requestedModel = anthropicBody.model;
@@ -1656,12 +1656,12 @@ export async function handleClaudeCountTokens(
       raw.model = model;
     }
     // ocx-route override (devlog 072): keep count_tokens consistent with messages.
-    const countRoute = extractOcxRouteDirective(raw, config);
+    const countRoute = extractOcxRouteDirective(raw);
     if (countRoute) {
       model = stripOneMillionMarker(countRoute);
       raw.model = model;
     }
-    model = decodeFablePickerAlias(model, cc);
+    model = decodeNativeClaudePickerAlias(model, cc);
     raw.model = model;
     // Fast-only: count_tokens never parsed an effort row, so it must not start. It returns a
     // token estimate and sends no tier, so only the IDENTITY is corrected - without this the

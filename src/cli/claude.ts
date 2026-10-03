@@ -13,7 +13,7 @@ import { loadConfig } from "../config";
 import { injectClaudeAgentDefs } from "../claude/agents-inject";
 import { CLAUDE_ALIAS_PREFIX_CURRENT, CLAUDE_ALIAS_PREFIX_CURRENT_V2, CLAUDE_ALIAS_PREFIX_V1, CLAUDE_ALIAS_PREFIX_V2 } from "../claude/alias";
 import { claudeToolSearchEnv, effectiveModelEnv, resolveAutoContext } from "../claude/context-windows";
-import { claudeConfigDir, refreshGatewayModelCacheFromProxy } from "../claude/gateway-cache";
+import { claudeConfigDir, fetchGatewayModels, writeGatewayModelCache } from "../claude/gateway-cache";
 import { commandInvocation } from "../lib/win-exec";
 import { isProxyAdmissionSecret } from "../server/auth-cors";
 import { findLiveProxy } from "../server/proxy-liveness";
@@ -52,6 +52,7 @@ export interface ClaudeRoutingTarget {
  */
 export type ClaudeEnvDeps = {
   forceAvailable?: readonly string[];
+  forceAvailableSelectors?: readonly string[];
   authDetect?: Omit<Partial<AuthDetectDeps>, "env" | "ownTokens">;
   /** Test seam; production uses the authenticated Node-launcher context. */
   preBunAnthropicSlots?: readonly AnthropicParentEnvSlot[] | null;
@@ -216,7 +217,7 @@ export function buildClaudeEnv(
     env[name] = value;
   };
   if (config.claudeCode?.subagentModelForce !== undefined) {
-    const forced = resolveSubagentForceModel(config, contextWindows, deps.forceAvailable ?? Object.keys(contextWindows).filter(key => !key.startsWith("ocx-") && !key.startsWith("claude-ocx-")));
+    const forced = resolveSubagentForceModel(config, contextWindows, deps.forceAvailableSelectors !== undefined ? { selectors: deps.forceAvailableSelectors } : { entries: deps.forceAvailable ?? [] });
     if (forced) {
       setDefault("CLAUDE_CODE_SUBAGENT_MODEL", forced);
       setDefault("CLAUDE_CODE_SUBAGENT_MODEL_FORCE", "1");
@@ -808,17 +809,17 @@ export async function cmdClaude(args: string[]): Promise<number> {
     contextWindows = liveState.contextWindows;
     forceAvailable = liveState.forceAvailable ?? [];
   }
+  const gateway = await fetchGatewayModels(route, { admissionConfig: config });
+  const forceAvailableSelectors = typeof route === "number" ? undefined : gateway?.models.map(model => model.id) ?? [];
   const allowRootSkipPermissions = shouldAllowRootSkipPermissions(args);
-  const env = buildClaudeEnv(config, route, process.env, contextWindows, { allowRootSkipPermissions, forceAvailable });
+  const env = buildClaudeEnv(config, route, process.env, contextWindows, { allowRootSkipPermissions, forceAvailable, forceAvailableSelectors });
   if (allowRootSkipPermissions) {
     console.error(rootSkipPermissionsNotice(env));
   }
   // Pre-write the CLI's gateway-model cache (devlog 030): without a token the CLI
   // never refreshes it, so the picker would keep showing yesterday's aliases.
   try {
-    const cachePath = typeof route === "number"
-      ? await refreshGatewayModelCacheFromProxy(route, { admissionConfig: config })
-      : await refreshGatewayModelCacheFromProxy(route, { admissionConfig: config });
+    const cachePath = gateway ? writeGatewayModelCache(gateway.baseUrl, gateway.models) : null;
     if (cachePath === null) {
       console.error("⚠ Gateway model cache could not be refreshed; the model picker may be stale.");
     }
