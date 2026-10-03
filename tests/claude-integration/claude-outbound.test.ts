@@ -1837,35 +1837,39 @@ describe("Messages ingress context errors", () => {
   async function withMessages(upstreamResponse: () => Response, stream: boolean, check: (response: Response, hits: () => number) => Promise<void>, canonical = false) {
     let hits = 0;
     const upstream = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch() { hits++; return upstreamResponse(); } });
-    let canonicalSends = 0;
-    const config = { port: 0, hostname: "127.0.0.1", defaultProvider: "native", providers: {
-      native: { adapter: "openai-responses", baseUrl: `${upstream.url.origin}/v1`, authMode: "forward", allowPrivateNetwork: true },
-    } } as OcxConfig;
-    if (canonical) {
-      config.providers.native!.baseUrl = "https://chatgpt.com/backend-api/codex";
-      globalThis.fetch = ((input, init) => {
-        const url = input instanceof Request ? input.url : String(input);
-        if (url === "https://chatgpt.com/backend-api/codex/responses") {
-          canonicalSends++;
-          return originalFetch(new URL("/v1/responses", upstream.url), init);
-        }
-        // A fixture must never make an unmocked external call.
-        if (!url.startsWith("http://127.0.0.1:") && !url.startsWith("http://localhost:")) {
-          throw new Error("unexpected external request in context fixture");
-        }
-        return originalFetch(input, init);
-      }) as typeof fetch;
-    }
-    saveConfig(config);
-    const server = startServer(0);
+    let server: ReturnType<typeof startServer> | undefined;
     try {
+      let canonicalSends = 0;
+      const config = { port: 0, hostname: "127.0.0.1", defaultProvider: "native", providers: {
+        native: { adapter: "openai-responses", baseUrl: `${upstream.url.origin}/v1`, authMode: "forward", allowPrivateNetwork: true },
+      } } as OcxConfig;
+      if (canonical) {
+        config.providers.native!.baseUrl = "https://chatgpt.com/backend-api/codex";
+        globalThis.fetch = ((input, init) => {
+          const url = input instanceof Request ? input.url : String(input);
+          if (url === "https://chatgpt.com/backend-api/codex/responses") {
+            canonicalSends++;
+            return originalFetch(new URL("/v1/responses", upstream.url), init);
+          }
+          // A fixture must never make an unmocked external call.
+          if (!url.startsWith("http://127.0.0.1:") && !url.startsWith("http://localhost:")) {
+            throw new Error("unexpected external request in context fixture");
+          }
+          return originalFetch(input, init);
+        }) as typeof fetch;
+      }
+      saveConfig(config);
+      server = startServer(0);
       const response = await fetch(new URL("/v1/messages", server.url), {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ model: "native/gpt-test", stream, max_tokens: 32, messages: [{ role: "user", content: "synthetic input" }] }),
       });
       await check(response, () => hits);
       if (canonical) expect(canonicalSends).toBe(1);
-    } finally { await server.stop(true); await upstream.stop(true); }
+    } finally {
+      try { await server?.stop(true); }
+      finally { await upstream.stop(true); }
+    }
   }
 
   async function expectContext(response: Response, stream: boolean) {
