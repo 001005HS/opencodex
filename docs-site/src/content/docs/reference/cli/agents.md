@@ -34,6 +34,9 @@ prints a proposed model and effort per role without writing anything. `--apply` 
 through the same write as `set`, skipping and naming the roles whose model and effort already match.
 See [Auto-assign](/guides/integrations/#auto-assign).
 
+Human-readable suggestion output displays terminal control characters as visible escapes.
+Use `--json` when you need the original suggestion values without presentation escaping.
+
 `ocx agent injection suggest <work>` does the same for the delegation model: it sizes the described
 work, proposes the cheapest sufficient model and an effort from the delegation picker's list, and writes
 nothing unless `--apply` is given, which saves through the same write as `injection set`. See
