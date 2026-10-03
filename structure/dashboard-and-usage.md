@@ -19,7 +19,7 @@ Codex account panels expose no Spark quota toggle or setting and retain quota re
 ## Dashboard surfaces
 
 Dashboard localization uses the English `gui/src/i18n/en.ts` catalog as the complete key and
-placeholder contract. Every registered locale, including Vietnamese, supplies the same keys;
+placeholder contract. Every registered locale, including Vietnamese and Brazilian Portuguese (`pt`, HTML `pt-BR`), supplies the same keys;
 locale-specific Compatibility Lab, log-guard, routing, vision, status-code, and quota-formatting
 maps remain total rather than silently falling back to English.
 
@@ -282,7 +282,7 @@ whole rows byte for byte through the shared atomic writer, refuses the rename un
 the exact revision that was copied, and then discards the Logs ring, the retained aggregates and the
 request-history index so no surface serves rows the ledger no longer has.
 `src/usage/summary.ts` turns that file into the `/api/usage` shape — totals, daily zero-filled
-grid, model and provider breakdowns, and `measured / reported / unreported / unsupported / estimated` counts.
+grid, model and provider breakdowns, and `measured / reported / unreported / unsupported / estimated` counts. Each scope also aggregates end-to-end output throughput (#6309): measured output tokens and wall-clock `durationMs` are summed over attempts reporting both, exposing `throughputTokensPerSec` — a token-sum-over-duration-sum, never a mean of per-request rates. `throughputSamples` counts qualifying attempts (legacy rows without attempts contribute one); nonpositive or nonfinite tokens/timing are excluded. The Usage summary and Models/Providers tables display the rate and sample basis, or unavailable when none qualify.
 The management route scans the ledger from its beginning in fixed 1 MiB chunks on a
 cold rebuild, then retains compact numeric aggregate state and resumes at the last verified LF for
 ordinary appends. It does not retain the full input or a normalized object for every request, and
@@ -516,12 +516,11 @@ Native steering generation overrides, explicit public-API eligibility and the co
 
 `compactionRouting` is a persisted configuration setting. Its model and optional effort follow the
 [Responses trigger contract](transports/responses-failover.md#compaction-routing-overrides). Dashboard Overview
-provides model and effort selectors with an explicit Save action, a standing note that the selected
-model's provider receives the entire conversation, and a warning naming that provider once a model
-is chosen; for a combo selector the warning lists the combo's target providers from `GET /api/combos`
-and states that failover targets receive the conversation too. `GET /api/settings` returns
-the override or null; `PUT /api/settings` accepts a complete validated object or null to clear it.
-Save failure restores live settings and deletion provenance; the dashboard retains the draft for retry.
+provides labeled model, trigger, source-scope and effort selectors and warns which provider (or combo targets,
+via `GET /api/combos`) receives the full conversation. The source-scope picker edits `sourceModels` as exact
+model or `provider/*` selectors, keeps saved selectors missing from the catalog visible, and refuses an empty
+selection because the schema would drop the override. The model checklist is searchable and renders at most 300 matches without dropping hidden selections. `GET /api/settings` returns the override or null;
+`PUT /api/settings` accepts a validated object or null to clear it; a failed save restores live settings and deletion provenance while the dashboard keeps the draft for retry.
 
 `src/server/gui-static.ts` serves the dashboard from `gui/dist`, with `OPENCODEX_GUI_DIST` taking
 priority and standalone binaries resolving the copied directory beside `ocx`. Runtime package

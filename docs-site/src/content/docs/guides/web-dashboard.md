@@ -166,6 +166,8 @@ rows and returns keyboard focus to the All surface control; “No matching reque
 differs from an empty log ring. Use arrow keys or Home/End in
 the surface selector. These controls do not query historical records beyond the loaded ring.
 
+The language picker includes **Português** (Brazilian Portuguese, `pt-BR`). Portuguese browser languages select it automatically unless a supported language preference is already saved.
+
 ### Linking to a section
 
 There is a single layout, so there is no layout switch to configure. Dashboard sections are
@@ -179,6 +181,8 @@ For a custom usage interval, the server must confirm the exact requested start a
 If an older running proxy does not support those bounds, the dashboard and CLI reject its report;
 upgrade and restart that proxy before retrying. Resetting a manual model price affects only that
 model, preserving other rates saved independently.
+The **Usage** summary and Models/Providers tables show end-to-end output throughput from usage history for the selected range and filters: summed output tokens divided by summed wall-clock seconds, not an average of individual rates. The sample count is measured attempts (or requests for legacy rows without attempts); samples lacking positive finite output tokens or duration are excluded. An em dash means no sample qualified. This includes pre-decode waiting and is not estimated decode speed.
+
 The **Usage** Models and Providers tables show the estimated priced portion for each row. Requests
 without a matching price or usable usage are counted as excluded beside that amount when the proxy
 reports pricing coverage fields. A row with only excluded requests shows an em dash with that count
@@ -207,6 +211,11 @@ new or that every upstream measurement was refreshed.
 ## Model visibility
 
 The **Models** switches show final Codex visibility: a routed model is on only when its provider allowlist includes it (or no allowlist is set) and it is not disabled. Turning a model on reconciles both filters atomically; **All on** clears the provider allowlist so newly discovered models are also on.
+
+Switches respond immediately so you can keep changing models while saves run in the background in
+click order. Saved feedback appears after the queue finishes and the list is reconciled with the
+server. Failed saves restore the server's state when it can be read and show an error. Wait for that
+feedback before leaving Models or changing servers: unsent queued changes are discarded on departure.
 
 ### Managing models in a provider workspace
 
