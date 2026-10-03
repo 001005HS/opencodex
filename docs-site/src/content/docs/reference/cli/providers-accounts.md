@@ -121,7 +121,7 @@ reauthentication flow above. A second `401` does not start another refresh/retry
 A `403` asking to verify the account quarantines that credential as `needs-reauth(verify)`;
 when account failover is enabled, the request can retry on another eligible account. Complete
 Google's account verification, then run `ocx login google-antigravity`. Silent token refresh
-does not clear this verification requirement.
+does not clear this verification requirement. If OpenCodex cannot save the quarantine, this adapter exchange preserves the original `403` without another recovery send; the account has not been durably quarantined. An enclosing combo or policy route can still apply its existing fallback rules.
 
 A proxy that is already running picks up the new credential without a restart: the CLI asks it to
 reload that one provider from disk, and the request carries no credential of its own. If the

@@ -29,6 +29,41 @@ function fixture() {
 }
 
 describe("connect readiness PATH inspection", () => {
+  test("a real healthy tracked shim outside PATH does not imply connect readiness", () => {
+    const f = fixture();
+    const home = join(f.root, "home");
+    fs.mkdirSync(home);
+    const backup = `${f.fallback}.opencodex-real`;
+    fs.writeFileSync(backup, "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+    fs.writeFileSync(f.fallback, buildUnixCodexShim(backup, "/fixture/ocx", "/fixture/cli.ts", "standalone", "/fixture/token"), { mode: 0o755 });
+    fs.writeFileSync(join(home, "codex-shim.json"), JSON.stringify({
+      platform: process.platform, wrapperPath: f.fallback, originalPath: f.fallback, backupPath: backup,
+    }));
+    const env = { ...process.env, OPENCODEX_HOME: home, PATH: f.first };
+    if (process.platform !== "win32") {
+      const shell = spawnSync("/bin/sh", ["-c", "command -v codex"], { env, timeout: 3000 });
+      expect(shell.error).toBeUndefined();
+      expect(shell.status).not.toBe(0);
+    }
+    const shim = new URL("../../src/codex/shim.ts", import.meta.url).href;
+    const scanner = new URL("../../src/codex/shim-path-resolution.ts", import.meta.url).href;
+    const readiness = new URL("../../src/cli/codex-shim-readiness.ts", import.meta.url).href;
+    const script = `
+      const { diagnoseCodexShim } = await import(${JSON.stringify(shim)});
+      const { findFirstCodexOnPath } = await import(${JSON.stringify(scanner)});
+      const { inspectCodexShimForConnect } = await import(${JSON.stringify(readiness)});
+      console.log(JSON.stringify({ diagnosis: diagnoseCodexShim(), command: findFirstCodexOnPath(), readiness: inspectCodexShimForConnect() }));
+    `;
+    const child = spawnSync(process.execPath, ["--eval", script], { env, encoding: "utf8", timeout: 3000, killSignal: "SIGKILL" });
+    expect(child.error).toBeUndefined();
+    expect(child.status).toBe(0);
+    const output = JSON.parse(child.stdout);
+    expect(output.diagnosis).toMatchObject({ installed: true, healthy: true });
+    expect(output.command).toBeNull();
+    expect(output.readiness.status).toBe("missing");
+    expect(output.readiness.message).toContain("installed but not active");
+  });
+
   test.skipIf(process.platform === "win32").each(["fifo", "symlink", "replacement"])(
     "%s cannot block connect readiness or hide a later launcher", mode => {
       const f = fixture();

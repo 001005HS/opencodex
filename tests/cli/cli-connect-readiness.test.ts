@@ -21,7 +21,7 @@ import { removeTreeWithRetry } from "../helpers/remove-tree";
 import { repoRoot } from "../helpers/repo-root";
 import { INTERNAL_DEADLINE_MS, SPAWN_BUDGET_MS } from "../helpers/test-budget";
 import { codexShimReadinessLine, connectCompletionReport } from "../../src/cli/connect";
-import { codexConnectShimReadiness } from "../../src/cli/codex-shim-readiness";
+import { codexConnectShimReadiness, inspectCodexShimForConnect } from "../../src/cli/codex-shim-readiness";
 import { findFirstCodexOnPath } from "../../src/codex/shim-path-resolution";
 import { dispatchCommand } from "../../src/cli/dispatch";
 import type { CliDispatchDeps } from "../../src/cli/dispatch";
@@ -637,13 +637,29 @@ describe("Codex shim readiness on connect", () => {
     })).toEqual({ path: shim, isShim: true });
   });
 
-  test("a healthy shim is reported as ready", () => {
+  test("a healthy tracked shim without a PATH command is reported as inactive", () => {
     const readiness = codexConnectShimReadiness({
       diagnosis: { installed: true, healthy: true, summary: "unused" },
       commandPath: null,
     });
-    expect(readiness).toEqual({ status: "ready", message: "installed and healthy" });
-    expect(codexShimReadinessLine(["codex"], () => readiness)).toBe("Codex autostart shim: installed and healthy");
+    expect(readiness.status).toBe("missing");
+    expect(readiness.message).toContain("installed but not active");
+    expect(readiness.message).toContain("no 'codex' executable was found on PATH");
+    expect(readiness.message).toContain("directory of the tracked shim");
+    expect(readiness.message).toContain("OPENCODEX_API_AUTH_TOKEN");
+    expect(codexShimReadinessLine(["codex"], () => readiness)).not.toContain("installed and healthy");
+  });
+
+  test("a failed PATH scan reports unverified activation without claiming no command", () => {
+    const readiness = inspectCodexShimForConnect({
+      diagnose: () => ({ installed: true, healthy: true, summary: "fixture shim present" }),
+      findOnPath: () => { throw new Error("private scan failure"); },
+    });
+    expect(readiness.status).toBe("unverified");
+    expect(readiness.message).toContain("PATH activation could not be verified");
+    expect(readiness.message).toContain("fixture shim present");
+    expect(readiness.message).not.toContain("no 'codex' executable");
+    expect(readiness.message).not.toContain("private scan failure");
   });
 
   test("a healthy shim remains ready when it is first on PATH", () => {

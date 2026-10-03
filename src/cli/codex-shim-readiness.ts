@@ -23,7 +23,7 @@ export interface CodexShimReadinessInputs {
   configuredProxyResolved: boolean;
 }
 
-export type CodexConnectShimStatus = "ready" | "missing" | "unhealthy";
+export type CodexConnectShimStatus = "ready" | "missing" | "unhealthy" | "unverified";
 
 export interface CodexConnectShimReadiness {
   status: CodexConnectShimStatus;
@@ -63,6 +63,13 @@ export function codexConnectShimReadiness(inputs: {
     };
   }
   if (inputs.diagnosis.installed && inputs.diagnosis.healthy) {
+    if (!inputs.commandPath) {
+      return {
+        status: "missing",
+        message: `installed but not active; no 'codex' executable was found on PATH. `
+          + `Shim state: ${inputs.diagnosis.summary}. Add the directory of the tracked shim to PATH. ${CODEX_TOKEN_NOTE}`,
+      };
+    }
     return { status: "ready", message: "installed and healthy" };
   }
   if (inputs.commandPath) {
@@ -90,7 +97,11 @@ export function inspectCodexShimForConnect(
   try {
     command = (deps.findOnPath ?? findFirstCodexOnPath)();
   } catch {
-    // The diagnosis above still gives the operator a repair path.
+    return {
+      status: "unverified",
+      message: `PATH activation could not be verified. Shim state: ${diagnosis.summary}. `
+        + `Check PATH and retry 'ocx connect'. ${CODEX_TOKEN_NOTE}`,
+    };
   }
   return codexConnectShimReadiness({
     diagnosis,
