@@ -44,12 +44,12 @@ index 2f95c5dbdc..b180d1f1d5 100644
    byId: Map<string, PendingToolCall>;
 +  unresolvedCount: number;
  }
- 
+
  interface NativeStreamToolCall {
 @@ -302,6 +303,12 @@ function assistantTextThinkingAndCalls(message: OcxAssistantMessage): {
    };
  }
- 
+
 +/**
 + * Build native replay messages without mutating the parsed history. Keep tool results
 + * beside their originating batch, deferring intervening conversation until settlement.
@@ -62,14 +62,14 @@ index 2f95c5dbdc..b180d1f1d5 100644
 @@ -323,12 +330,14 @@ function buildNativeMessages(
    // early. The openai-chat adapter defers them the same way; refusing the replay killed the turn.
    let deferred: OllamaNativeMessage[] = [];
- 
+
 +  /** Emit held conversation messages in their recorded arrival order after settlement. */
    const releaseDeferred = (): void => {
      if (deferred.length === 0) return;
      messages.push(...deferred);
      deferred = [];
    };
- 
+
 +  /** Settle the open batch with genuine results or unknown markers, then release deferred messages. */
    const flushPending = (): void => {
      if (!pending) return;
@@ -81,7 +81,7 @@ index 2f95c5dbdc..b180d1f1d5 100644
 +      pending.unresolvedCount--;
        continue;
      }
- 
+
      // Native Ollama requires the whole assistant tool-call turn followed by its tool results. A
      // conversational message that arrives while the batch is still open is held aside instead of
      // closing it, so the call keeps its results adjacent; it is released right after the batch
@@ -109,7 +109,7 @@ index 2f95c5dbdc..b180d1f1d5 100644
 +      }
        flushPending();
      }
- 
+
 @@ -443,7 +466,11 @@ function buildNativeMessages(
          };
          messages.push(native);
@@ -129,7 +129,7 @@ index a469a3c8ef..740bb7a115 100644
 +++ b/structure/providers/chat-compat.md
 @@ -122,13 +122,13 @@ and synthesizing explicit "no tool result was recorded" answers only when no rea
  (Kimi/Moonshot 400 `ocx-mrqaiw05-269`; unit `devlog/_fin/260718_dangling_toolcall_hardening`).
- 
+
  The native Ollama wire carries the same contract. `src/adapters/ollama-native.ts`
 -`buildNativeMessages` defers `user`/`developer` messages that arrive while a batch is open and
 -releases them after the tool messages, and answers a call with no result anywhere in the replayed
@@ -145,7 +145,7 @@ index a469a3c8ef..740bb7a115 100644
 +Codex can record hook notices or commentary between calls and results. Missing results keep the
 +`[ocx] no tool result was recorded for "<name>"` marker; orphan IDs, duplicates, and mismatched names
 +still throw (#4842). `tests/providers/ollama/ollama-native.test.ts` covers replay and compaction.
- 
+
  Forward-mode OpenAI passthrough also repairs replayed `call_id` values longer than the Responses
  API's 64-character limit. Sidechat/fork replay can namespace routed-provider ids beyond that limit,
 diff --git a/tests/providers/ollama/ollama-native.test.ts b/tests/providers/ollama/ollama-native.test.ts
@@ -155,14 +155,14 @@ index 44a09e8a8c..c17e5c1967 100644
 @@ -9,12 +9,14 @@ import { getProviderRegistryEntry } from "../../../src/providers/registry";
  import { withStubbedProviderFetch } from "../../helpers/catalog-provider-fetch";
  import type { OcxParsedRequest, OcxProviderConfig } from "../../../src/types";
- 
+
 +/** Discover routed test models with provider fetches stubbed to avoid live requests. */
  const gatherRoutedModels: typeof gatherRoutedModelsDirect = (config, options) =>
    gatherRoutedModelsDirect(withStubbedProviderFetch(config), options);
- 
+
  /** The four ids this transport is maintained against. */
  const TARGETS = ["glm-5.3-flash", "deepseek-v4-flash:0731", "glm-5.2", "kimi-k3"] as const;
- 
+
 +/** Configure a native Ollama test provider with inert credentials and caller overrides. */
  function ollamaProvider(overrides: Partial<OcxProviderConfig> = {}): OcxProviderConfig {
    return {
@@ -170,7 +170,7 @@ index 44a09e8a8c..c17e5c1967 100644
 @@ -28,6 +30,7 @@ function ollamaProvider(overrides: Partial<OcxProviderConfig> = {}): OcxProvider
    } as OcxProviderConfig;
  }
- 
+
 +/** Build a minimal streamed replay request from synthetic messages and caller options. */
  function parsedWith(
    messages: unknown[],
@@ -178,7 +178,7 @@ index 44a09e8a8c..c17e5c1967 100644
 @@ -285,6 +288,120 @@ describe("ollama-native — request shape", () => {
      expect(messages[3].content).toBe("[hook] design findings requiring review");
    });
- 
+
 +  test("assistant commentary before parallel results keeps the original batch open", async () => {
 +    const adapter = createOllamaNativeAdapter(ollamaProvider());
 +    const { body } = await adapter.buildRequest(parsedWith([
