@@ -84,7 +84,7 @@ function terminalModelRefusal(status: number, event: Record<string, unknown>): C
     }
   }
   if (event.type === "error" && !Object.hasOwn(event, "error") && typeof event.message === "string") {
-    return codexAccountModelRefusal(status, event.message);
+    return codexAccountModelRefusal(status, event.message, { allowNestedResponse: false });
   }
   return outer;
 }

@@ -2,6 +2,8 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { consumeComboFailure } from "../../src/server/responses/core-combo-failure";
+import { isNonReplayableResponse } from "../../src/lib/upstream-retry";
 import { handleResponses } from "../../src/server/responses";
 import { captureCallerDirectAuth } from "../../src/providers/caller-authorization";
 import { clearComboSelectionState, clearComboTargetCooldowns } from "../../src/combos";
@@ -85,7 +87,8 @@ async function run(body: unknown, streamEvent?: Record<string, unknown>, committ
     sends.push(payload.model);
     expect(new Headers(init?.headers).get("authorization")).toBe(streamEvent ? "Bearer fixture-key" : `Bearer ${caller}`);
     if (payload.model === firstModel) {
-      if (!streamEvent) return Response.json(body, { status: 400 });
+      if (!streamEvent) return typeof body === "string" ? new Response(body, { status: 400 })
+        : Response.json(body, { status: 400 });
       const events = [
         ...(committed ? [{ type: "response.output_text.delta", delta: "already visible" }] : []),
         streamEvent,
@@ -202,4 +205,142 @@ test("outer error presence blocks nested detail despite a model code", async () 
   });
   expect(await response.text()).not.toContain("fallback succeeded");
   expect(sends).toEqual([firstModel]);
+});
+
+for (const carrier of ["detail", "error"] as const) {
+  test.each([0, 800])(`nested-only HTTP ${carrier} refusal hops (padding=%s)`, async padding => {
+    const nested = carrier === "detail" ? { detail: refusal } : { error: { message: refusal } };
+    const { response, sends } = await run({ response: nested, padding: "x".repeat(padding) });
+    expect(response.status).toBe(200);
+    await response.text();
+    expect(sends).toEqual([firstModel, secondModel]);
+  });
+}
+
+test("HTTP root carrier stays authoritative over a same-kind nested refusal", async () => {
+  for (const error of [null, { message: "bad input" }]) {
+    const { response, sends } = await run({ error, response: { error: { message: refusal } } });
+    expect(response.status).toBe(400);
+    await response.text();
+    expect(sends).toEqual([firstModel]);
+  }
+});
+
+test("HTTP nested carrier does not recursively search quotes or accept non-record responses", async () => {
+  for (const nested of [null, [], [{ detail: refusal }], { quoted: { detail: refusal } },
+    { response: { error: { message: refusal } } }]) {
+    const { response, sends } = await run({ response: nested });
+    expect(response.status).toBe(400);
+    await response.text();
+    expect(sends).toEqual([firstModel]);
+  }
+});
+
+for (const detailLevel of ["root", "response"] as const) {
+  for (const errorLevel of ["root", "response"] as const) {
+    test(`HTTP mixed ${detailLevel} detail / ${errorLevel} error stops before model-code hop`, async () => {
+      const root: Record<string, unknown> = { padding: "x".repeat(800) };
+      const nested: Record<string, unknown> = {};
+      (detailLevel === "root" ? root : nested).detail = null;
+      (errorLevel === "root" ? root : nested).error = { message: refusal, code: "unsupported_model" };
+      root.response = nested;
+      const { response, sends } = await run(root);
+      expect(response.status).toBe(400);
+      await response.text();
+      expect(sends).toEqual([firstModel]);
+    });
+  }
+}
+
+test.each(["detail", "error"] as const)("bare SSE message cannot borrow a nested HTTP %s carrier", async carrier => {
+  const nested = carrier === "detail" ? { detail: refusal } : { error: { message: refusal } };
+  const { response, sends } = await run(undefined, {
+    type: "error", status: 400, code: "invalid_request_error", message: JSON.stringify({ response: nested }),
+  });
+  expect(await response.text()).not.toContain("fallback succeeded");
+  expect(sends).toEqual([firstModel]);
+});
+
+for (const prefix of ["", "Provider error 400: "]) {
+  test.each(["upstream_no_response", "origin-rejected", "cyber_policy"])(
+    `HTTP ${prefix || "bare JSON"} nested hard stop %s never replays`, async code => {
+      const { response, sends } = await run(prefix + JSON.stringify({ padding: "x".repeat(800), response: { error: { code, message: refusal } } }));
+      expect(response.status).toBe(400);
+      await response.text();
+      expect(sends).toEqual([firstModel]);
+    },
+  );
+  test(`HTTP ${prefix || "bare JSON"} root hard stop cannot be hidden by nested model code`, async () => {
+    const { response, sends } = await run(prefix + JSON.stringify({ padding: "x".repeat(800), code: " ORIGIN-REJECTED ",
+      response: { error: { code: "unsupported_model", message: refusal } } }));
+    expect(response.status).toBe(400);
+    await response.text();
+    expect(sends).toEqual([firstModel]);
+  });
+}
+
+test.each(["Provider error 400: ", "Provider error 401: ", "Provider error 400: Provider error 400: "])(
+  "HTTP refusal permits only a single matching prefix (%s)", async prefix => {
+    const { response, sends } = await run(prefix + JSON.stringify({ response: { error: { message: refusal } } }));
+    const valid = prefix === "Provider error 400: ";
+    expect(response.status).toBe(valid ? 200 : 400);
+    await response.text();
+    expect(sends).toEqual(valid ? [firstModel, secondModel] : [firstModel]);
+  },
+);
+
+test("SSE structured model code does not borrow a hard stop from quoted HTTP JSON", async () => {
+  const { response, sends } = await run(undefined, {
+    type: "error", status: 400, error: { code: "unsupported_model",
+      message: JSON.stringify({ response: { error: { code: "upstream_no_response", message: refusal } } }) },
+  });
+  expect(await response.text()).toContain("fallback succeeded");
+  expect(sends).toEqual([firstModel, secondModel]);
+});
+
+for (const nested of [false, true]) {
+  for (const type of ["cyber_policy", "upstream_no_response", "upstream_closed_before_response", "upstream_reset_replay_refused"]) {
+    test.each(["fixture failure", refusal])(`HTTP code overrides diagnostic ${type} (nested=${nested}, message=%s)`, async message => {
+      const record = { error: { code: "unsupported_model", type, message } };
+      const { response, sends } = await run(nested ? { response: record } : record);
+      expect(response.status).toBe(200);
+      await response.text();
+      expect(sends).toEqual([firstModel, secondModel]);
+    });
+  }
+}
+
+test("diagnostic type cannot manufacture consumed/serialized codes, retry headers or replay markers", async () => {
+  for (const nested of [false, true]) {
+    for (const code of ["unsupported_model", "unknown_code", "", "  ", undefined, null, 17, {}]) {
+      for (const type of ["cyber_policy", "upstream_no_response", "upstream_reset_replay_refused", "origin_rejected"]) {
+        const record = { error: { code, type, message: "fixture failure" } };
+        const consumed = await consumeComboFailure(Response.json(nested ? { response: record } : record, { status: 400 }));
+        expect(consumed.upstreamCode).toBe(typeof code === "string" && code.trim() ? code.trim() : undefined);
+        expect(consumed.upstreamType).toBe(type);
+        expect(consumed.nonReplayable).toBeUndefined();
+        expect(isNonReplayableResponse(consumed.response)).toBe(false);
+        expect(consumed.response.status).toBe(400);
+        expect(consumed.response.headers.get("retry-after")).toBeNull();
+        expect(consumed.response.headers.get("x-should-retry")).toBeNull();
+        const wire = await consumed.response.json();
+        expect(wire.error.code).toBe("invalid_request_error");
+        expect(wire.error.type).toBe("invalid_request_error");
+      }
+    }
+  }
+});
+
+test("genuine hard codes retain formatter identity and non-replayable behavior with benign diagnostic types", async () => {
+  for (const nested of [false, true]) {
+    for (const code of ["cyber_policy", "upstream_no_response", "upstream_reset_replay_refused"]) {
+      const record = { error: { code, type: "invalid_request_error", message: "fixture failure" } };
+      const consumed = await consumeComboFailure(Response.json(nested ? { response: record } : record, { status: 400 }));
+      expect(consumed.upstreamCode).toBe(code);
+      expect((await consumed.response.json()).error.code).toBe(code);
+      expect(consumed.response.status).toBe(code === "upstream_reset_replay_refused" ? 429 : 400);
+      expect(isNonReplayableResponse(consumed.response)).toBe(code !== "cyber_policy");
+      expect(consumed.response.headers.get("x-should-retry")).toBe(code === "upstream_reset_replay_refused" ? "false" : null);
+    }
+  }
 });

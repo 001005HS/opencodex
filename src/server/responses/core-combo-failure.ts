@@ -1,4 +1,4 @@
-import { codexAccountModelRefusal, type CodexAccountModelRefusal } from "../../combos/failover";
+import { codexAccountModelRefusal, codexAccountModelRefusalHardStopCode, type CodexAccountModelRefusal } from "../../combos/failover";
 import { parseRetryAfterMs } from "../../combos";
 import type { ConsumedComboFailure, HandleResponsesOptions } from "./core-options";
 import type { OcxUsage } from "../../types";
@@ -66,7 +66,7 @@ export async function consumeComboFailure(
       const normalized = normalizeUpstreamErrorText(body.text, fallback);
       if (utf8Trusted || isCyberPolicyCode(normalized.code) || isCyberPolicyMessage(normalized.safeText)) {
         classificationText = normalized.safeText;
-        upstreamCode = normalized.code;
+        upstreamCode = codexAccountModelRefusalHardStopCode(response.status, body.text) ?? normalized.code;
         upstreamMessage = normalized.message;
         upstreamType = normalized.type;
       }
