@@ -30,6 +30,8 @@ export type ExemptionReason =
   | "gui-invalidation"
   /** Requires a dashboard browser session. Includes the user-consent star boundary. */
   | "session-only"
+  /** Opens a browser view; data operations remain independently CLI-addressable. */
+  | "browser-navigation"
   /** Deliberately returns 405; there is nothing to drive. */
   | "disabled"
   /** Gated on a process-scoped capability principal, not an operator action. */
@@ -43,10 +45,8 @@ export type ExemptionReason =
   /** Older clients use this alias; the current CLI drives its declared replacement. */
   | "compatibility-alias"
   /**
-   * A read-only POST whose purpose is to bind an interactive confirmation to the mutation that
-   * immediately follows it. There is no standalone thing for a CLI to do with one: the plan is
-   * only meaningful to the caller that is about to commit it, and a scripted caller drives the
-   * mutation directly.
+   * An interactive-only preview that lacks a supported terminal confirmation workflow.
+   * Named CLI preview/commit workflows are operational capabilities, not this exemption.
    */
   | "interactive-preview"
   /** Unreachable in the live dispatch order; delete rather than expose. */
@@ -265,7 +265,7 @@ export const MANAGEMENT_ROUTES: readonly ManagementRoute[] = [
   // server/management/usage-timeline-routes
   { method: "GET", path: "/api/usage/timeline", module: "server/management/usage-timeline-routes", mutates: false },
   // server/management/companion-routes
-  { method: "POST", path: "/api/companion/open-in-browser", module: "server/management/companion-routes", mutates: true, exempt: { reason: "session-only", why: "Dashboard-only navigation helper; the GUI session opens its current view in the system browser, and there is no standalone CLI operation to drive." } },
+  { method: "POST", path: "/api/companion/open-in-browser", module: "server/management/companion-routes", mutates: true, exempt: { reason: "browser-navigation", why: "Opens the companion's current view in the system browser under normal management admission; the CLI reads the underlying settings and usage directly." } },
   { method: "GET", path: "/api/companion/settings", module: "server/management/companion-routes", mutates: false },
   { method: "PUT", path: "/api/companion/settings", module: "server/management/companion-routes", mutates: true },
   { method: "POST", path: "/api/storage/cleanup", module: "server/management/logs-usage-routes", mutates: true },

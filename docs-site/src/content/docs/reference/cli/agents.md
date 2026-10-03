@@ -450,6 +450,81 @@ Any displayed totals reflect readable records only. If a filter has no readable 
 the warning and guidance instead of total lines; skipped records may contain matches.
 `--json` preserves the response-level `usageIncomplete` diagnostic and reason.
 
+### Filter a bounded log snapshot
+
+```bash
+ocx logs filter --surface claude --status errors --time-window 1h --scan-limit 2000 --limit 50 --json
+```
+
+`ocx observe logs filter` is the equivalent family form. This reads one recent
+window, filters locally, then keeps the newest matches in their original order.
+`--scan-limit` controls fetched rows (1–2000, default 2000); `--limit` controls
+returned rows (1–2000, default 200). JSON reports
+`{schemaVersion:1,logs,cursor,filters,window:{scanLimit,loaded,matched,returned,limit}}`.
+Counts describe this observed window, not all history. JSONL emits rows only;
+empty matches succeed. Cursor metadata is not a resumable search token.
+
+Selectors include `--surface all|codex|claude|grok`, `--status all|success|errors`,
+`--time-window all|15m|1h|24h`, `--model`, `--provider`, `--conversation`
+(alias `--conversationId`), `--intercepted-only`, `--min-tok-per-sec`,
+`--max-tok-per-sec`, and `--protocol-mode all|native|translated|legacy-bridge|blocked|none`.
+Model/provider equality is trimmed and case-insensitive, including
+resolved/served models and attempts. Claude includes Desktop; Codex means absent
+surface. Success is HTTP 200–299, errors 400–599. Time lower bounds are inclusive.
+Speed uses observed value-kind tok/s, with inclusive minimum and exclusive
+maximum; unavailable values fail active speed filters. Protocol none includes
+absent or invalid traces. Conversation matching uses the same hash-aware IDs as
+ordinary logs. Interception selects string-valued rewrite markers.
+
+Unknown/repeated/conflicting flags, invalid bounds, and follow/events fail before
+discovery. Malformed, oversized or failed reads are nonzero, not empty results.
+To reduce response size, reduce the scan limit; reducing output limit does not
+change the fetch. For streaming use the separate follow forms below.
+
+### Search usage model rows
+
+```bash
+ocx usage --range 7d --search 'model-a' --json
+```
+
+`--search` matches a trimmed case-insensitive substring in model, provider or
+resolved model after reading the report. It sorts model rows by descending total
+tokens with stable ties and keeps up to 100. JSON adds
+`modelView:{query,matchedModelCount,returnedModelCount,limit:100,truncated}`;
+human output labels the view and shows its selected model rows. Report totals,
+provider/day/account rows, exact filters and incomplete/window metadata remain
+unchanged. No model match does not mean no report usage.
+
+An explicit blank query (`--search=`) selects the top-100 view; omitting search
+preserves the existing output. Exact `--provider`/`--model` still scope the
+underlying report. Search does not broaden selected-key or connected-client
+self scope and is never sent as a new Hub API query parameter.
+
+### Saved companion usage totals
+
+```bash
+ocx companion show --json
+ocx companion usage --json
+```
+
+The second command reads saved companion settings, then today and 30d usage
+sequentially on the same management runtime. It applies the saved `models` and
+`hiddenProviders` preferences and preserves unknown/unmeasured costs and tokens.
+Null model selection means all; an empty selection means none. It does not
+change settings, operate native windows or relay through a connected client.
+
+JSON returns `schemaVersion:1`, `filters`, `settingsUpdatedAt`,
+`settingsCorrupt`, `settingsFallback`, `ranges` and `partial`. Each range has
+`status:"available"` with filtered `data`, or `status:"unavailable"`.
+An unavailable range sets partial and exit 1 while retaining the other range.
+Available incomplete data retains its own metadata; it is not measured zero.
+Valid server defaults retain a null settings timestamp and set fallback;
+corrupt-file defaults additionally set corrupt and warn in human output.
+Malformed settings stop before usage reads. These reads are not an atomic
+snapshot. Each GET has a 10-second fetch/body deadline after discovery and a
+32 MiB response cap; this is not a whole-command deadline. Signals exit 130/143
+without late results.
+
 ### Follow request windows or injection sequences
 
 ```bash

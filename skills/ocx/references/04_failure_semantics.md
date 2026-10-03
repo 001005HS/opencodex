@@ -275,6 +275,34 @@ cleanup skipped, and idempotent not-found reports it unverified; neither confirm
 an attempted remote disconnect. Review the remote-client disconnect recovery
 separately. Do not interpret exit 0 as proof that all remote state was removed.
 
+## Filtered observation recovery
+
+`logs filter` rejects follow/events, conflicting outputs, unknown/repeated flags
+and invalid bounds before discovery. Empty matches are a successful observation
+of the scanned window. Malformed or oversized replies and transport failures are
+nonzero, never an empty success. Reduce `--scan-limit` for an oversized snapshot;
+reducing `--limit` alone cannot reduce the fetched window. No automatic history
+scan or retry occurs.
+
+`usage --search` is local model-row selection after the scoped read. A search
+miss leaves report totals intact; `filter.matched:false` and incomplete-history
+markers remain independent. Invalid model data must not be read as no matches.
+Omit search to recover the existing report layout, not to change authorization.
+
+`companion usage` retains available ranges when another range fails, prints a
+fixed partial-failure diagnostic and exits 1. Do not sum unavailable data as zero.
+Valid server defaults from a corrupt settings file remain usable but visibly
+flagged; malformed settings stop before usage reads. Each settings/range GET has
+its own 10-second fetch/body deadline after discovery and 32 MiB body bound;
+these are not a 10-second whole-command promise. Signals exit 130/143 without
+late output. A retry is a new observation, not an atomic continuation.
+
+API-key `account list --quota` distinguishes unsupported, passive, unmeasured and
+unavailable readings. Missing quota-mode evidence on a returned key row is
+unverified/nonzero; invalid consumed fields fail instead of becoming zero.
+`--refresh` bypasses the existing quota cache only when quota was requested.
+Do not loop on failed probes: explicit quota reads may contact providers.
+
 ## Observation and selected-key recovery
 
 Follow usage errors exit 2. Request/injection follow failures stop with fixed stderr

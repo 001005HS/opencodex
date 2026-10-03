@@ -8,13 +8,13 @@
 Use these declarations to choose a task, then check its flags and authority before execution.
 Non-mutating probes may still contact providers, consume quota or refresh caches.
 
-Declared capabilities: 89.
+Declared capabilities: 92.
 
 ### `ocx companion`
 
 Usage: `ocx companion show [--json] | ocx companion set <key>=<value> [...] [--json] | ocx companion reset [--json]`
 
-Inspect companion settings or usage timeline, and configure companion preferences.
+Inspect companion settings, filtered usage and timeline, and configure preferences.
 
 State-changing: yes.
 
@@ -30,11 +30,12 @@ State-changing: yes.
 JSON mode: `payload`.
 
 - show/default reads settings; set key=value and reset write settings. Values parse as JSON when valid.
+- usage reads today and 30-day totals using saved display filters; partial range failure returns exit1 and keeps available results.
 - timeline is a separate read of the usage timeline with explicit model selection/provider exclusion and completeness metadata; it does not change settings.
 
 ### `ocx usage`
 
-Usage: `ocx usage [--range <today|1d|7d|30d|all>] [--surface <all|codex|claude|grok>] [--since <epoch-ms|ISO-datetime>] [--until <epoch-ms|ISO-datetime>] [--provider <name>] [--model <id>] [--api-key-id <id>] [--json]`
+Usage: `ocx usage [--range <today|1d|7d|30d|all>] [--surface <all|codex|claude|grok>] [--since <epoch-ms|ISO-datetime>] [--until <epoch-ms|ISO-datetime>] [--provider <name>] [--model <id>] [--api-key-id <id>] [--search <text>] [--json]`
 
 Token and estimated-cost report over a time range.
 
@@ -54,11 +55,13 @@ State-changing: no.
 | `--model` | string | Filter model. |
 | `--json` | boolean | Emit the result as JSON. |
 | `--api-key-id` | string | Exact nonblank management key scope; connected clients refuse this before reading their enrolled key. |
+| `--search` | string | Model-row substring view over model/provider/resolvedModel; top100 by tokens. Whole-report totals stay unchanged. |
 
 JSON mode: `payload`.
 
 - Connected clients read only their enrolled-key Hub report through /v1/usage; caller --api-key-id is refused before key read/transport and never grants management authority.
 - Nonclient --api-key-id uses /api/usage and requires matching filter acknowledgment. An unknown acknowledged key is empty/matched:false, not404. Custom-window acknowledgment remains required.
+- --search filters only returned model rows after scope acknowledgment. Blank search selects the top100 model rows; modelView reports match/return counts without recomputing totals.
 
 ### `ocx logs`
 
@@ -434,6 +437,101 @@ JSON mode: `payload`.
 - Restarts the Codex desktop app as well as the app-servers, through the same module the CLI uses. When the proxy itself runs inside the Codex app it refuses instead, because restarting the app would kill the request.
 - --yes is mandatory because this interrupts a running editor session and may discard unsaved composer drafts, model-picker selections, and pending approval prompts; it must never happen because an agent guessed a subcommand.
 
+### `ocx logs filter`
+
+Usage: `ocx logs filter [--surface <all|codex|claude|grok>] [--model <id>] [--provider <name>] [--status <all|success|errors>] [--time-window <all|15m|1h|24h>] [--min-tok-per-sec <n>] [--max-tok-per-sec <n>] [--intercepted-only] [--protocol-mode <all|native|translated|legacy-bridge|blocked|none>] [--conversation <id>] [--scan-limit <1-2000>] [--limit <1-2000>] [--json|--jsonl]`
+
+Select a bounded log snapshot with dashboard filters.
+
+State-changing: no.
+
+| Method | Route |
+|---|---|
+| GET | `/api/logs` |
+
+| Flag | Value | Meaning |
+|---|---|---|
+| `--surface` | string | all | codex | claude | grok. |
+| `--model` | string | Case-insensitive exact identity across requested, resolved, served and attempted models. |
+| `--provider` | string | Case-insensitive provider or failover attempt identity. |
+| `--status` | string | all | success (200-299) | errors (400-599). |
+| `--time-window` | string | all | 15m | 1h | 24h, relative to observation time. |
+| `--min-tok-per-sec` | number | Inclusive minimum observed token speed. |
+| `--max-tok-per-sec` | number | Exclusive maximum observed token speed. |
+| `--intercepted-only` | boolean | Rows carrying an observed rewrite marker. |
+| `--protocol-mode` | string | all | native | translated | legacy-bridge | blocked | none. |
+| `--conversation` | string | Conversation ID or stored hash. |
+| `--conversationId` | string | Alias of --conversation. |
+| `--scan-limit` | number | 1-2000 raw rows inspected; default 2000. |
+| `--limit` | number | 1-2000 matching rows returned; default 200. |
+| `--json` | boolean | Versioned view with filters, cursor and observed-window counts. |
+| `--jsonl` | boolean | Matching rows only; exclusive with --json. |
+
+JSON mode: `envelope`.
+
+- One snapshot: filters run locally over the raw server window before the output limit. No follow/events; existing logs behavior remains available.
+- JSON schemaVersion1 reports scanLimit, loaded, matched, returned and limit for this observed window only. Cursor is not a resumable filter token.
+- Empty matches succeed; malformed, refused, oversized or unavailable responses fail. SIGINT130/SIGTERM143 preserve cancellation.
+
+### `ocx observe logs filter`
+
+Usage: `ocx observe logs filter [--surface <all|codex|claude|grok>] [--model <id>] [--provider <name>] [--status <all|success|errors>] [--time-window <all|15m|1h|24h>] [--min-tok-per-sec <n>] [--max-tok-per-sec <n>] [--intercepted-only] [--protocol-mode <all|native|translated|legacy-bridge|blocked|none>] [--conversation <id>] [--scan-limit <1-2000>] [--limit <1-2000>] [--json|--jsonl]`
+
+Select a bounded log snapshot with dashboard filters.
+
+State-changing: no.
+
+| Method | Route |
+|---|---|
+| GET | `/api/logs` |
+
+| Flag | Value | Meaning |
+|---|---|---|
+| `--surface` | string | all | codex | claude | grok. |
+| `--model` | string | Case-insensitive exact identity across requested, resolved, served and attempted models. |
+| `--provider` | string | Case-insensitive provider or failover attempt identity. |
+| `--status` | string | all | success (200-299) | errors (400-599). |
+| `--time-window` | string | all | 15m | 1h | 24h, relative to observation time. |
+| `--min-tok-per-sec` | number | Inclusive minimum observed token speed. |
+| `--max-tok-per-sec` | number | Exclusive maximum observed token speed. |
+| `--intercepted-only` | boolean | Rows carrying an observed rewrite marker. |
+| `--protocol-mode` | string | all | native | translated | legacy-bridge | blocked | none. |
+| `--conversation` | string | Conversation ID or stored hash. |
+| `--conversationId` | string | Alias of --conversation. |
+| `--scan-limit` | number | 1-2000 raw rows inspected; default 2000. |
+| `--limit` | number | 1-2000 matching rows returned; default 200. |
+| `--json` | boolean | Versioned view with filters, cursor and observed-window counts. |
+| `--jsonl` | boolean | Matching rows only; exclusive with --json. |
+
+JSON mode: `envelope`.
+
+- One snapshot: filters run locally over the raw server window before the output limit. No follow/events; existing logs behavior remains available.
+- JSON schemaVersion1 reports scanLimit, loaded, matched, returned and limit for this observed window only. Cursor is not a resumable filter token.
+- Empty matches succeed; malformed, refused, oversized or unavailable responses fail. SIGINT130/SIGTERM143 preserve cancellation.
+
+### `ocx companion usage`
+
+Usage: `ocx companion usage [--json]`
+
+Read today and 30-day totals using saved companion filters.
+
+State-changing: no.
+
+| Method | Route |
+|---|---|
+| GET | `/api/companion/settings` |
+| GET | `/api/usage` |
+
+| Flag | Value | Meaning |
+|---|---|---|
+| `--json` | boolean | Versioned filtered ranges, settings provenance and partial status. |
+
+JSON mode: `envelope`.
+
+- Reads saved settings then two usage ranges on the same runtime; this is not an atomic snapshot. No connected-client management relay or local fallback.
+- Preserves null/default/corrupt settings provenance, missing measurements and incomplete reports. Filters follow saved model and hidden-provider preferences.
+- Any unavailable range yields partial:true and exit1 while preserving the other result. Both available yields exit0 even when incomplete. SIGINT130/SIGTERM143 emit no late report.
+
 ### `ocx observe logs`
 
 Usage: `ocx observe logs [--provider <name>] [--model <id>] [--status <code>] [--conversation <id>] [--account <label>] [--limit <n>] [--follow] [--json|--jsonl]; ocx observe logs --follow --events [--limit <1-2000>]`
@@ -528,7 +626,7 @@ JSON mode: `payload`.
 
 ### `ocx observe usage`
 
-Usage: `ocx observe usage [--range <today|1d|7d|30d|all>] [--surface <all|codex|claude|grok>] [--since <epoch-ms|ISO-datetime>] [--until <epoch-ms|ISO-datetime>] [--provider <name>] [--model <id>] [--api-key-id <id>] [--json]`
+Usage: `ocx observe usage [--range <today|1d|7d|30d|all>] [--surface <all|codex|claude|grok>] [--since <epoch-ms|ISO-datetime>] [--until <epoch-ms|ISO-datetime>] [--provider <name>] [--model <id>] [--api-key-id <id>] [--search <text>] [--json]`
 
 Read token and estimated-cost usage.
 
@@ -548,11 +646,13 @@ State-changing: no.
 | `--model` | string | Filter model. |
 | `--json` | boolean | Emit the result as JSON. |
 | `--api-key-id` | string | Exact nonblank management key scope; connected clients refuse this before reading their enrolled key. |
+| `--search` | string | Model-row substring view over model/provider/resolvedModel; top100 by tokens. Whole-report totals stay unchanged. |
 
 JSON mode: `payload`.
 
 - Connected clients read only their enrolled-key Hub report through /v1/usage; caller --api-key-id is refused before key read/transport and never grants management authority.
 - Nonclient --api-key-id uses /api/usage and requires matching filter acknowledgment. An unknown acknowledged key is empty/matched:false, not404. Custom-window acknowledgment remains required.
+- --search filters only returned model rows after scope acknowledgment. Blank search selects the top100 model rows; modelView reports match/return counts without recomputing totals.
 
 ### `ocx observe storage`
 

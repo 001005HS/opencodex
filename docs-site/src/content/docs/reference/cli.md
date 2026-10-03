@@ -149,6 +149,14 @@ are observations, not key-scope certificates. Theme, language, navigation,
 and other purely visual browser state have no CLI equivalent; Cloudflare Tunnel setup is outside
 this command set.
 
+For dashboard-style read tasks, use [bounded log selection, usage model search
+and saved companion totals](/reference/cli/agents/#filter-a-bounded-log-snapshot).
+`logs filter` distinguishes the scanned window from returned matches;
+`usage --search` changes model rows without recalculating report totals;
+`companion usage` preserves per-range availability and settings fallback.
+[API-key pool quota](/reference/cli/providers-accounts/#accounts-and-key-pools)
+is an explicit `account list --quota` read and may contact providers.
+
 ## Liveness probe ceiling override
 
 `ocx health`, `ocx status`, `ocx account *`, `ocx login codex`, and `ocx ready` find the running

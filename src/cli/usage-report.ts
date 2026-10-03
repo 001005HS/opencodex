@@ -12,6 +12,8 @@
  * (as in `formatAccountTable`), plain text, no ANSI colour.
  */
 
+import type { UsageModelView } from "./usage-model-search";
+
 interface CostRow {
   provider: string;
   model?: string;
@@ -111,7 +113,7 @@ function describeScope(data: UsageReportInput): string {
   return terminalText(parts.join(", "));
 }
 
-export function formatUsageReport(data: UsageReportInput): string[] {
+export function formatUsageReport(data: UsageReportInput, options?: { modelView?: UsageModelView }): string[] {
   const summary = data.summary ?? {};
   const lines: string[] = [describeScope(data), ""];
   if (data.source === "hub" && data.scope === "client") {
@@ -119,6 +121,11 @@ export function formatUsageReport(data: UsageReportInput): string[] {
   }
   if (data.usageIncomplete === true) {
     lines.push("WARNING: Usage is incomplete; some records could not be included. Totals and rankings reflect readable records only.", "");
+  }
+  const view = options?.modelView;
+  if (view) {
+    lines.push(`Model search ${JSON.stringify(view.query)}: ${view.returnedModelCount} of ${view.matchedModelCount} matching model rows (limit ${view.limit}). Report totals are unchanged.`, "");
+    if (view.matchedModelCount === 0) lines.push("No model rows match this search. Change --search or use --search= to show the model view.", "");
   }
 
   if (data.filter && !data.filter.matched) {
@@ -182,10 +189,10 @@ export function formatUsageReport(data: UsageReportInput): string[] {
     ));
   }
 
-  const models = (data.models ?? []).filter(row => row.requests > 0);
+  const models = view ? (data.models ?? []) : (data.models ?? []).filter(row => row.requests > 0);
   if (models.length > 0) {
     lines.push("");
-    const shown = models.slice(0, MAX_MODEL_ROWS);
+    const shown = models.slice(0, view?.limit ?? MAX_MODEL_ROWS);
     lines.push(...table(
       ["MODEL", "PROVIDER", "REQUESTS", "TOKENS", "EST. COST"],
       shown.map(row => [row.model ?? "-", row.provider, count(row.requests), count(row.totalTokens), usd(row.estimatedCostUsd)]),

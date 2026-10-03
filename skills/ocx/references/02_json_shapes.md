@@ -8,8 +8,8 @@ not a universal schema; check the installed leaf help and the actual receipt.
 `ocx capabilities --json` reports which style each verb uses, as `json: "payload"` or
 `json: "envelope"`.
 
-- **payload** — the management response, largely unwrapped. `ocx usage --json` returns the server
-  payload untouched.
+- **payload** — the management response, largely unwrapped. `ocx usage --json`
+  without `--search` preserves its existing report. Search adds a local model-row view.
 - **envelope** — a CLI-shaped object with its own schema, usually carrying `ok: true` plus the
   fields the verb operated on.
 - **none** — the verb has no `--json` mode.
@@ -423,6 +423,68 @@ usage has its existing Hub envelope and rejects caller key-ID selection.
 Rename returns `{id,name,createdAt}` plus allowedProviders/allowedModels when
 present. It returns no plaintext or key prefix; list remains masked. Omitted
 scope fields in the PATCH preserve policy, and rename is not rotation or CAS.
+
+## Filtered log snapshots
+
+`ocx logs filter --json` returns a CLI view, distinct from follow events:
+
+```text
+{ schemaVersion: 1, logs, cursor, filters,
+  window: { scanLimit, loaded, matched, returned, limit } }
+```
+
+`loaded` is the observed raw window size, `matched` counts matches in that
+window, and `returned` is capped by the output limit. None counts all historical
+requests. `cursor` may be null and is not a filter replay token. The normalized
+`filters` describe local selection. JSONL emits rows only and omits this scope
+metadata; empty matches succeed. The command preserves row order and duplicates.
+
+## Usage model search
+
+`ocx usage --search <text> --json` retains the report's totals, provider/day/account
+rows, filter acknowledgment and incomplete/window metadata. Only `models` is
+replaced, and this local view is added:
+
+```text
+modelView: { query, matchedModelCount, returnedModelCount, limit: 100, truncated }
+```
+
+The normalized query is a case-insensitive substring across model, provider or
+resolved model. Rows sort by descending total tokens with stable ties before
+the top 100 are selected. Blank search is an explicit top-100 model view;
+omitting search keeps legacy output. No match does not mean the report has no
+usage, and model-row filtering never recalculates its totals or broadens scope.
+
+## Saved companion usage
+
+`ocx companion usage --json` reports the captured saved model/provider selection:
+
+```text
+{ schemaVersion: 1, filters: { models, hiddenProviders }, settingsUpdatedAt,
+  settingsCorrupt, settingsFallback,
+  ranges: { today: { status, data? }, "30d": { status, data? } }, partial }
+```
+
+Each range has `status: "available"` and safe filtered usage data, or
+`status: "unavailable"` with no fabricated data. An unavailable range sets
+`partial: true` and exit 1 while retaining the other result. Incomplete available
+data does not by itself make a transport partial; preserve its metadata and
+unknown metrics. Settings and ranges are sequential observations, not one atomic
+snapshot. Server defaults retain `settingsUpdatedAt: null` and
+`settingsFallback: true`; valid corrupt-file fallback additionally reports
+`settingsCorrupt: true` and a human-output warning. Malformed settings fail instead of being
+replaced by invented local defaults.
+
+## API-key pool quota
+
+`ocx account list <provider> --quota --json` retains `accounts` and `notes`.
+API-key rows add `quotaMode` (`probe`, `passive`, or `unsupported`), optional/null
+`quota` and `quotaUnavailable` when supplied. Public quota fields can include
+percentage/reset windows, `customWindows`, `creditsUsd`, Kiro credits and
+`updatedAt`; they are not restricted to Codex's quota fields. Missing readings
+remain unknown, and observed zero remains zero. No plaintext key or private
+publication identity enters these fields. A returned key row lacking quota-mode
+evidence cannot establish support and fails verification; an empty pool is valid.
 
 ## Selected-key model report
 

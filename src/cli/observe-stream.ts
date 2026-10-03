@@ -1,4 +1,4 @@
-/** Bounded, serial observation of the two management log surfaces. */
+/** Bounded, serial observation of fixed management read surfaces. */
 import { readBoundedResponseBytes } from "../lib/bounded-body";
 import { runningProxyUpdateHeaders } from "../oauth/login-cli";
 import { findLiveProxy, type LiveProxy } from "../server/proxy-liveness";
@@ -7,7 +7,7 @@ import { runtimeBaseUrl, type RuntimeApiDeps } from "./runtime-api";
 const POLL_MS = 1_000;
 const REQUEST_MS = 10_000;
 const RESPONSE_BYTES = 32 * 1024 * 1024;
-type ObservationPath = "/api/logs" | "/api/debug/injection-logs";
+type ObservationPath = "/api/logs" | "/api/debug/injection-logs" | "/api/companion/settings" | "/api/usage";
 
 export interface ObserveStreamDeps extends RuntimeApiDeps {
   signal?: AbortSignal;
@@ -52,11 +52,18 @@ export interface ObserveStream {
   wait(): Promise<void>;
 }
 
+export interface ObservationContext {
+  kind: "follow" | "snapshot";
+  limitOption?: "--limit" | "--scan-limit";
+}
+
 /** Each invocation owns its signals, in-flight request and pinned runtime identity. */
 export async function withObserveStream(
   deps: ObserveStreamDeps,
-  run: (stream: ObserveStream) => Promise<void>,
+  run: (stream: ObserveStream) => Promise<void | number>,
+  context: ObservationContext = { kind: "follow", limitOption: "--limit" },
 ): Promise<number> {
+  const retry = context.kind === "follow" ? "restart follow" : "retry the command";
   const controller = new AbortController();
   let exit = 0;
   const stop = (code: number) => {
@@ -84,7 +91,7 @@ export async function withObserveStream(
     signal.throwIfAborted();
     const current = { origin, identity: identity(live) };
     if (pinned && (pinned.origin !== current.origin || pinned.identity !== current.identity)) {
-      throw new ObservationError("The runtime changed. Restart follow to observe the current runtime.");
+      throw new ObservationError(`The runtime changed. ${context.kind === "follow" ? "Restart follow" : "Retry the command"} to observe the current runtime.`);
     }
     pinned = current;
     const request = new AbortController();
@@ -104,8 +111,8 @@ export async function withObserveStream(
       const result = await readBoundedResponseBytes(response, { maxBytes: RESPONSE_BYTES, signal: request.signal });
       signal.throwIfAborted();
       request.signal.throwIfAborted();
-      if (result.oversized) throw new ObservationError("The observation window exceeds 32 MiB. Reduce --limit and restart follow.");
-      if (!response.ok) throw new ObservationError("The observation request was refused. Check runtime access and restart follow.");
+      if (result.oversized) throw new ObservationError(`The observation window exceeds 32 MiB. ${context.limitOption ? `Reduce ${context.limitOption} and ${retry}` : "Check the runtime response size and retry the command"}.`);
+      if (!response.ok) throw new ObservationError(`The observation request was refused. Check runtime access and ${retry}.`);
       return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(result.bytes));
     } finally {
       clearTimeout(timer);
@@ -115,11 +122,11 @@ export async function withObserveStream(
   };
   try {
     signal.throwIfAborted();
-    await run({ signal, get, wait: () => waitForPoll(reduced(deps.pollIntervalMs, POLL_MS), signal) });
-    return exit;
+    const result = await run({ signal, get, wait: () => waitForPoll(reduced(deps.pollIntervalMs, POLL_MS), signal) });
+    return exit || result || 0;
   } catch (error) {
     if (exit) return exit;
-    console.error(`Error: ${error instanceof ObservationError ? error.message : "Observation failed or timed out. Check the runtime and restart follow."}`);
+    console.error(`Error: ${error instanceof ObservationError ? error.message : `Observation failed or timed out. Check the runtime and ${retry}.`}`);
     return 1;
   } finally {
     controller.abort();

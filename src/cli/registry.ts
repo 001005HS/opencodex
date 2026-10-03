@@ -373,12 +373,13 @@ export const CLI_COMMANDS: CliCommandEntry[] = [
   },
   {
     name: "companion",
-    usage: "ocx companion <show|set|reset|timeline> ...",
-    summary: "Inspect companion settings and usage timeline, or change companion preferences.",
+    usage: "ocx companion <show|set|reset|usage|timeline> ...",
+    summary: "Inspect companion settings, filtered usage and timeline, or change preferences.",
     details: [
       "ocx companion and ocx companion show read settings; use --json for machine-readable output.",
       "ocx companion set accepts one or more key=value assignments; values are parsed as JSON when possible.",
       "ocx companion reset restores the default settings.",
+      "ocx companion usage reads today and 30-day totals with saved model/provider filters; unavailable ranges return partial output and exit 1.",
       "ocx companion timeline reads buckets; --model selects models and --hide-provider excludes providers.",
     ],
   },
@@ -424,10 +425,10 @@ export const CLI_COMMANDS: CliCommandEntry[] = [
       "`inspect star` reads the repository star status only. Starring uses your GitHub identity and is available from the dashboard alone.",
     ],
   },
-  { name: "logs", usage: "ocx logs [filters] [--follow] [--json|--jsonl|--events]", summary: "Read request logs or follow rows and versioned window events." },
+  { name: "logs", usage: "ocx logs [filters] [--follow] [--json|--jsonl|--events]", summary: "Read or follow request logs." },
   {
     name: "usage",
-    usage: "ocx usage [--range <today|1d|7d|30d|all>] [--surface <all|codex|claude|grok>] [--provider <name>] [--model <id>] [--api-key-id <id>] [--json]",
+    usage: "ocx usage [--range <today|1d|7d|30d|all>] [--surface <all|codex|claude|grok>] [--provider <name>] [--model <id>] [--api-key-id <id>] [--search <text>] [--json]",
     summary: "Report token usage and estimated cost (alias of ocx observe usage).",
   },
   {

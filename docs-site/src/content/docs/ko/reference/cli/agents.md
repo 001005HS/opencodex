@@ -88,6 +88,10 @@ ocx route combo set reliable --targets ark/model-a:2,openai/gpt-5.5
 
 ## 관측성과 디버그
 
+`ocx logs filter --json`은 최근 로그 한 구간을 읽고 조건에 맞는 행을 고릅니다. `--scan-limit`은 읽을 행 수, `--limit`은 출력할 행 수입니다. 결과가 비어 있어도 전체 기록에 일치 항목이 없다는 뜻은 아닙니다. `ocx usage --search <text>`는 모델 행만 검색하고 보고서의 총계와 조회 권한 범위는 유지합니다.
+
+`ocx companion usage --json`은 저장된 모델·공급자 표시 설정으로 오늘과 30일 사용량을 읽습니다. 한 구간이 실패하면 다른 구간은 남기고 `partial: true`와 종료 코드 1을 반환합니다. 설정 기본값을 사용했다면 `settingsFallback`, 손상된 설정의 기본값이라면 `settingsCorrupt`도 확인하세요. 자세한 옵션과 응답은 [영문 CLI 기준 문서](/reference/cli/agents/#filter-a-bounded-log-snapshot)를 참고하세요.
+
 ### `ocx observe <logs|usage|storage|memory|debug|claude-inbound|injection> ...`
 
 프록시 요청, 사용량, 저장소, 메모리, 디버그 데이터를 확인합니다. 직접 별칭은 다음과 같습니다:

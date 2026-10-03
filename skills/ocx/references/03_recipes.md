@@ -1,5 +1,7 @@
 # Recipes
 
+For a short task/target/read-back map, start with [Choose a workflow](../SKILL.md#choose-a-workflow).
+
 Choose a task first with offline root, family and leaf help, then read its generated
 chapter. For live management sequences, check the target before the first call:
 
@@ -1244,3 +1246,82 @@ earlier error does not erase the failure. The report proves only the observed
 session readiness/closure, not server lease release or a full voice roundtrip.
 There is no microphone capture, audio upload in live-check, tool execution or
 reconnect, and no promise that opening the upstream session costs nothing.
+
+## 28. Select a bounded log window and search usage model rows
+
+```bash
+ocx logs filter --help
+ocx logs filter --surface claude --status errors --time-window 1h --scan-limit 2000 --limit 50 --json
+ocx usage --range 7d --search 'model-a' --json
+```
+
+`logs filter` fetches one recent snapshot, selects within it, then returns the
+newest matching rows in their original order. `--scan-limit` is the raw window
+(default 2000), while `--limit` caps output (default 200); both accept 1–2000.
+Read `window.loaded`, `matched` and `returned` before describing the result.
+No matches means none in this observed window, not none in stored history.
+Choose `--jsonl` instead of `--json` only when row-only output is sufficient.
+This command rejects follow/events; use recipe 25 for streaming observations.
+
+Optional selectors are `--model`, `--provider`, `--conversation` (also
+`--conversationId`), `--intercepted-only`, `--min-tok-per-sec`,
+`--max-tok-per-sec`, and `--protocol-mode`. Model/provider equality ignores case
+and surrounding whitespace and includes resolved/served models and attempts.
+Claude includes Desktop; absent surface is Codex. Status success selects
+200–299 and errors 400–599. Time windows are all/15m/1h/24h.
+Speed bounds use observed value-kind tok/s only: minimum inclusive, maximum
+exclusive; unavailable speed cannot match an active bound. Protocol choices are
+all/native/translated/legacy-bridge/blocked/none; none includes invalid or absent
+traces. Conversation selection accepts the server's hash-aware identities.
+
+Usage search is different: it matches a trimmed, case-insensitive substring in
+model/provider/resolvedModel, sorts by total tokens and returns at most 100 model
+rows. It leaves report totals and provider/day/account rows unchanged. Check
+`modelView` for match/return counts and truncation. An explicit blank search
+selects a top-100 view; omit search for the existing layout. Exact `--provider`
+and `--model` still scope the underlying report. On a connected client the same
+search stays inside self-only Hub usage; it cannot select another key's records.
+
+## 29. Read the saved companion usage view
+
+```bash
+ocx companion show --json
+ocx companion usage --json
+```
+
+Run on the machine serving the intended management API. Usage captures saved
+`models` and `hiddenProviders`, then reads today and 30d sequentially from the
+same runtime. It applies those filters to the public totals/model rows and
+preserves unmeasured, unpriced, incomplete and window facts. Null model selection
+means all; an explicit empty selection means none. It does not change saved
+settings, perform native window actions or use a connected-client relay.
+
+Inspect both `ranges` entries and the process exit. A failed range is unavailable,
+not zero; the other remains visible, `partial` is true and the command exits 1.
+Both available ranges can still contain incomplete data. Server defaults preserve
+null `settingsUpdatedAt` and set `settingsFallback`; a valid corrupt-file fallback
+also sets `settingsCorrupt` and warns in human output. Malformed settings stop the read before
+usage requests. Do not infer a valid user-saved filter from a fallback or describe
+these separate reads as one atomic snapshot.
+
+## 30. Read one API-key pool's quota
+
+```bash
+ocx account list example --json
+ocx account list example --quota --json
+ocx account list example --quota --refresh --json
+```
+
+Replace `example` with a configured API-key provider. The first command lists
+stored identities without requesting quota. Use the second only when its
+upstream probe work is authorized; the third explicitly refreshes the existing
+quota cache. This reads each key's quota, not the provider-wide report returned
+by `account refresh`, and does not create or reveal a key.
+
+Read `quotaMode`, `quotaUnavailable` and the actual `quota` fields together.
+Probe, passive and unsupported are distinct. Missing/unavailable is not zero;
+real zero credit or usage remains zero. Custom windows and provider credits can
+be present instead of familiar Codex percentages. Returned key rows without
+quota-mode evidence are unverified/nonzero; an empty pool is valid. A read does not alter stored key
+selection or prove that a credential can serve a model. Do not replace a failed
+measurement with a paid test request or repeatedly force-refresh it.

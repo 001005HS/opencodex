@@ -12,9 +12,11 @@ import {
   type RuntimeApiDeps,
 } from "./runtime-api";
 import { followLogs } from "./log-follow";
+import { handleLogFilterCommand } from "./log-view-filter";
 import { followInjection } from "./injection-follow";
 import type { ObserveStreamDeps } from "./observe-stream";
 import { formatUsageReport } from "./usage-report";
+import { selectUsageModelView, takeUsageSearchOption } from "./usage-model-search";
 import { USAGE_RANGES, USAGE_SURFACES, type UsageSummary, type UsageFilterEcho } from "../usage/summary";
 import { parseUsageTimeWindow, type UsageTimeWindow } from "../usage/time-range";
 import { redactSecretString } from "../lib/redact";
@@ -27,11 +29,12 @@ const USAGE = `Usage:
   ocx observe logs [--provider <name>] [--model <id>] [--status <code>]
       [--conversation <id>] [--account <label>] [--limit <n>] [--follow] [--json|--jsonl] [--events]
   ocx logs explain <request-id> [--json]
+  ocx logs filter [selectors] [--scan-limit <1..2000>] [--limit <1..2000>] [--json|--jsonl]
   ocx logs rebuild-index
   ocx logs index-status
   ocx observe usage [--range <today|1d|7d|30d|all>] [--surface <all|codex|claude|grok>]
       [--since <epoch-ms|ISO-datetime>] [--until <epoch-ms|ISO-datetime>]
-      [--provider <name>] [--model <id>] [--api-key-id <id>] [--json]
+      [--provider <name>] [--model <id>] [--api-key-id <id>] [--search <text>] [--json]
   ocx observe storage [codex-logs [status|protect|unprotect|repair|compact] [--mode <compat|quiet>]] [--json]
   ocx observe memory [--json]
   ocx observe debug [--json]
@@ -163,6 +166,7 @@ async function indexStatus(argv: string[], deps: RuntimeApiDeps): Promise<void> 
 
 async function usage(argv: string[], deps: RuntimeApiDeps): Promise<void> {
   const args = [...argv];
+  const search = takeUsageSearchOption(args);
   const wantsJson = takeFlag(args, "--json");
   const range = takeOption(args, "--range") ?? "30d";
   const surface = takeOption(args, "--surface") ?? "all";
@@ -230,8 +234,10 @@ async function usage(argv: string[], deps: RuntimeApiDeps): Promise<void> {
   // the call, so passing formatUsageReport(...) inline would run the human
   // renderer during --json and let its assumptions affect a path that is meant
   // to bypass it entirely.
-  if (wantsJson) printData(result, true);
-  else printData(result, false, formatUsageReport(result as Parameters<typeof formatUsageReport>[0]));
+  const view = search === undefined ? undefined : selectUsageModelView(result, search);
+  const displayed = view ?? result;
+  if (wantsJson) printData(displayed, true);
+  else printData(displayed, false, formatUsageReport(displayed as Parameters<typeof formatUsageReport>[0], view ? { modelView: view.modelView } : undefined));
 }
 
 async function simple(path: string, argv: string[], deps: RuntimeApiDeps): Promise<void> {
@@ -301,7 +307,8 @@ export async function handleObserveCommand(argv: string[], deps: ObserveStreamDe
     const [sub = "logs", ...rest] = argv;
     if (sub === "logs") {
       const action = rest[0];
-      if (action === "explain") await explain(rest.slice(1), deps);
+      if (action === "filter") streamExit = await handleLogFilterCommand(rest.slice(1), deps, formatLog);
+      else if (action === "explain") await explain(rest.slice(1), deps);
       else if (action === "rebuild-index") await rebuildIndex(rest.slice(1), deps);
       else if (action === "index-status") await indexStatus(rest.slice(1), deps);
       else streamExit = await logs(rest, deps);
