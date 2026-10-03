@@ -1079,7 +1079,7 @@ export const pt: Record<TKey, string> = {
   "logs.detail.ttft": "TTFT",
   "logs.detail.decodeTokPerSec": "Taxa de decodificação (est.)",
   "logs.detail.reason.ttft_missing": "Nenhum tempo até o primeiro token foi registrado para esta requisição, portanto não há janela de decodificação para medir.",
-  "logs.detail.reason.decode_window_too_short": "A janela após o primeiro token foi inferior a um segundo, curta demais para estimar a taxa de decodificação.",
+  "logs.detail.reason.decode_window_too_short": "A janela de saída medida foi inferior a um segundo, curta demais para estimar a taxa de decodificação.",
   "logs.detail.costTotal": "Equivalente ao preço de tabela",
   "logs.detail.totalTokens": "Total de tokens",
   "logs.detail.matchedKey": "Chave de preço correspondente",
