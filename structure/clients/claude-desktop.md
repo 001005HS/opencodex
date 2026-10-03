@@ -154,7 +154,7 @@ row; the only lever is the picker's Anthropic id on each request. A binding maps
 bindings overlaid (binding wins per key, `native/` targets normalized to the bare slug, global values
 left verbatim). The live config object is never copied or persisted with the merged map. Every other
 resolution rule is unchanged, so a bound id is translated rather than natively passed through, dated
-ids reach undated keys, and an `ocx-route` directive still wins. `ocx claude` sessions and the public
+ids reach undated keys, and an `ocx-route` directive still wins over a bare model id; an explicit gateway selector wins over that legacy fallback. `ocx claude` sessions and the public
 Messages listener never see bindings.
 
 `PUT /api/claude-desktop/first-party-bindings` (`{ set?, remove? }`) validates ids and routes against
