@@ -1,5 +1,6 @@
 import { resolveHelpPath } from "./help-catalog";
 import { MODELS_CONTEXT_DETAILS, MODELS_CONTEXT_USAGE } from "./help-models-context";
+import { renderRootHelp } from "./help-navigation";
 import { packageVersion as readPackageVersion } from "../lib/package-version";
 
 /**
@@ -18,7 +19,7 @@ export function printVersion(): void {
 }
 
 export function printUsage(): void {
-  printFullUsage();
+  console.log(renderRootHelp());
 }
 
 export function printFullUsage(): void {
@@ -123,14 +124,15 @@ export function hasHelpFlag(values: string[]): boolean {
 export function printSubcommandUsage(
   name: string | undefined,
   path?: readonly string[],
-  options: { fallbackToParent?: boolean } = {},
+  options: { fallbackToParent?: boolean; write?: (text: string) => void } = {},
 ): void {
+  const write = options.write ?? console.log;
   const result = resolveHelpPath(path ?? (name ? [name] : []));
   if (result.kind === "unavailable") {
     // Appended flags may follow runtime operands. An explicit `help <path>`
     // requests that exact detail instead, so only the CLI head enables fallback.
     if (options.fallbackToParent && result.parent) {
-      printSubcommandUsage(result.parent[0], result.parent);
+      printSubcommandUsage(result.parent[0], result.parent, { write });
       return;
     }
     if (result.parent) {
@@ -143,26 +145,32 @@ export function printSubcommandUsage(
     process.exit(1);
   }
   if (result.kind === "entry") {
-    console.log(`Usage: ${result.entry.usage}\n\n${result.entry.summary}`);
-    if (result.entry.details?.length) console.log(`\n${result.entry.details.join("\n")}`);
+    write(`Usage: ${result.entry.usage}\n\n${result.entry.summary}`);
+    if (result.entry.details?.length) write(`\n${result.entry.details.join("\n")}`);
+    if (result.children.length) {
+      write("\nDeclared commands (incomplete):");
+      for (const child of result.children) write(`  ocx help ${child.command.join(" ")}  ${child.summary}`);
+    }
+    if (result.canonicalName === "models") write("\nContext cap help: ocx help models context");
+    if (result.entry.name !== result.canonicalName) write(`\nCanonical help: ocx help ${result.canonicalName}`);
     return;
   }
   if (result.kind === "models-context") {
-    console.log(`Usage:\n${MODELS_CONTEXT_USAGE}\n\n${MODELS_CONTEXT_DETAILS.join("\n")}`);
+    write(`Usage:\n${MODELS_CONTEXT_USAGE}\n\n${MODELS_CONTEXT_DETAILS.join("\n")}`);
   } else if (result.kind === "capability") {
     const { capability } = result;
-    console.log(`Command: ocx ${result.path.join(" ")}\n\n${capability.summary}`);
+    write(`Command: ocx ${result.path.join(" ")}\n\n${capability.summary}`);
     if (capability.flags.length) {
-      console.log("\nDeclared flags:");
+      write("\nDeclared flags:");
       for (const flag of capability.flags) {
-        console.log(`  ${flag.name}${flag.value && flag.value !== "boolean" ? ` <${flag.value}>` : ""}${flag.required ? " (required)" : ""}  ${flag.summary}`);
+        write(`  ${flag.name}${flag.value && flag.value !== "boolean" ? ` <${flag.value}>` : ""}${flag.required ? " (required)" : ""}  ${flag.summary}`);
       }
     }
-    if (capability.details?.length) console.log(`\n${capability.details.join("\n")}`);
-    console.log("\nCapability metadata is incomplete; this is not the full operand grammar.");
+    if (capability.details?.length) write(`\n${capability.details.join("\n")}`);
+    write("\nCapability metadata is incomplete; this is not the full operand grammar.");
   } else {
-    console.log(`Command group: ocx ${result.path.join(" ")}\n\nDeclared commands (incomplete):`);
-    for (const child of result.children) console.log(`  ocx ${child.command.join(" ")}  ${child.summary}`);
+    write(`Command group: ocx ${result.path.join(" ")}\n\nDeclared commands (incomplete):`);
+    for (const child of result.children) write(`  ocx ${child.command.join(" ")}  ${child.summary}`);
   }
-  console.log(`\nParent help: ocx help ${result.path.slice(0, -1).join(" ")}`);
+  write(`\nParent help: ocx help ${result.path.slice(0, -1).join(" ")}`);
 }

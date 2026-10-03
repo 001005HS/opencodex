@@ -50,15 +50,14 @@ function help(args: string[]) {
 }
 
 describe("explicit CLI help paths", () => {
-  test("full-reference forms preserve the entire root output", () => {
-    const root = help(["--help"]);
-    expect(root.status).toBe(0);
-    expect(root.stdout.trimEnd().split("\n")).toHaveLength(92);
+  test("full-reference forms agree and preserve detailed variants", () => {
+    const full = help(["help", "--all"]);
+    expect(full.status).toBe(0);
     for (const args of [["help", "--all"], ["--help", "--all"]]) {
       const result = help(args);
       expect(result.status).toBe(0);
       expect(result.stderr).toBe("");
-      expect(result.stdout).toBe(root.stdout);
+      expect(result.stdout).toBe(full.stdout);
       expect(result.stdout).toContain("--legacy-openai --yes");
       expect(result.stdout).toContain("--ocx-compaction <thread-id> --yes");
       expect(result.stdout).not.toContain("__tray-start");
@@ -130,7 +129,7 @@ describe("explicit CLI help paths", () => {
     }
   });
 
-  test("unknown roots retain the existing error and full banner", () => {
+  test("unknown roots retain the existing error and root banner", () => {
     const result = help(["help", "nosuch"]);
     expect(result.status).toBe(1);
     expect(result.stderr).toContain("Unknown command: nosuch");
