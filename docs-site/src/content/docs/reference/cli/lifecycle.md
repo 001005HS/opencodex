@@ -841,6 +841,10 @@ Unix-only check. A failure aborts while the tray and proxy are still running. A 
 then stopped before files are replaced; an installed service is rebuilt and started automatically,
 while a foreground installation prints `ocx start` as the next step. Dashboard update records
 redact profile/cache paths and UID/GID values before they are persisted.
+When a stopped listener's literal IP address drops the liveness dial instead of refusing it
+(for example on a tailnet), the updater briefly tries binding that same address and port.
+A successful bind confirms absence at that instant; a failed bind or an inconclusive hostname
+probe still prevents the update.
 
 On Windows, Scoop's default `nodejs` and `nodejs-lts` `npm` installations can be used
 from the user home directory when their `current` junction stays inside the Node app
