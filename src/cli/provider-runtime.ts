@@ -12,6 +12,8 @@ import {
   takeOption,
   type RuntimeApiDeps,
 } from "./runtime-api";
+import { takeProviderEditSettings } from "./provider-settings";
+import { printProviderReceipt, runProviderAction } from "./provider-result";
 import { providerQuotaLine } from "./account-extended";
 import { pinSponsorRows } from "../providers/sponsor-order";
 import type { ProviderQuotaReportDto } from "./account-api";
@@ -42,7 +44,7 @@ const USAGE = `Usage:
       [--api-key-transport <x-api-key|bearer|->]
       [--headers <json>] [--enabled <on|off>] [--live-models <on|off>]
       [--retain-models <id,id|->] [--model <id> --text-only]
-      [--xai-chat <on|off>]
+      [--xai-chat <on|off>] [--upstream-http-version <http1.1|->] [--fast <on|off>] [--context-window <tokens|->]
       [--allow-private-network <on|off>] [--model-context-tier <model=default|long_context>] [--json]
   ocx provider test <name> [--json]
   ocx provider quota [--refresh] [--json]
@@ -56,12 +58,12 @@ function cleared(value: string | undefined): string | undefined {
   return value === "-" ? "" : value;
 }
 
-async function edit(argv: string[], deps: RuntimeApiDeps): Promise<void> {
+async function edit(argv: string[], deps: RuntimeApiDeps): Promise<number> {
   const args = [...argv];
   const name = args.shift()?.trim();
   if (!name) throw new CliUsageError("provider name is required", USAGE);
   const wantsJson = takeFlag(args, "--json");
-  const patch: Record<string, unknown> = {};
+  const patch: Record<string, unknown> = takeProviderEditSettings(args);
   const adapter = takeOption(args, "--adapter");
   const baseUrl = takeOption(args, "--base-url");
   const defaultModel = cleared(takeOption(args, "--default-model"));
@@ -139,10 +141,10 @@ async function edit(argv: string[], deps: RuntimeApiDeps): Promise<void> {
   if (allowPrivateNetwork !== undefined) patch.allowPrivateNetwork = allowPrivateNetwork;
   if (Object.keys(patch).length === 0) throw new CliUsageError("at least one edit option is required", USAGE);
   const result = await runtimeRequest(`/api/providers?name=${encodeURIComponent(name)}`, {
-    method: "PATCH",
+    method: "PATCH", redirect: "error",
     body: JSON.stringify(patch),
   }, deps);
-  printData(result, wantsJson, [`Updated provider ${name}.`]);
+  return printProviderReceipt(result, wantsJson, "Provider edit");
 }
 
 async function testProvider(argv: string[], deps: RuntimeApiDeps): Promise<void> {
@@ -310,9 +312,8 @@ async function keychain(argv: string[], deps: RuntimeApiDeps): Promise<void> {
 }
 
 export async function handleProviderRuntimeCommand(sub: string, argv: string[], deps: RuntimeApiDeps = {}): Promise<number | null> {
+  if (sub === "edit" || sub === "update") return runProviderAction(() => edit(argv, deps));
   const handlers: Record<string, (args: string[], deps: RuntimeApiDeps) => Promise<void>> = {
-    edit,
-    update: edit,
     test: testProvider,
     quota,
     resets,
