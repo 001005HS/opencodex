@@ -3,6 +3,7 @@ import {
   isDeclaredReasoningEffort,
   resolveEffortAtOrBelow,
 } from "../../reasoning-effort";
+import { resolveAdmissionModelScope, routeAllowedByScope } from "../admission-model-scope";
 import { recordAttemptRequestedEffort } from "../request-log";
 import {
   CODEX_TEXT_GUARDED_BUDGET_POLICY,
@@ -31,7 +32,8 @@ import {
   advanceComboAfterFailure,
   comboFailureCooldownScope,
   JEV_PROVIDER_ID,
-  resolveJevDecision,
+  jevDecisionBackendFor,
+  resolveJevComboDecision,
   type ComboPick,
   type JevCandidate,
   type JevDecision,
@@ -48,7 +50,12 @@ import { routeConcreteModel, comboRouteDecisionTrace } from "../../router";
 import { memoryModelRouteReason } from "./memory-models";
 import { poolAccountProviderLabel } from "../../providers/label";
 import { getAccountSet } from "../../oauth/store";
-import { formatAnthropicProviderForLog, getAnthropicAccountHealthSnapshot } from "../../oauth/anthropic-routing";
+import {
+  formatAnthropicProviderForLog,
+  getAnthropicAccountHealthSnapshot,
+  getAnthropicPoolRetryAfterSeconds,
+  getEligibleAnthropicAccounts,
+} from "../../oauth/anthropic-routing";
 import { codexAccountLogLabel } from "../../codex/account-label";
 import { codexQuotaScopeForModel, getCodexQuotaHealthSnapshot } from "../../codex/routing";
 import { isCanonicalOpenAiForwardProvider } from "../../providers/openai-tiers";
@@ -59,6 +66,8 @@ import {
   recoverEncryptedAgentTaskWithResult,
 } from "./agent-task-recovery";
 import { isThreadSpawnRequest, supportedLadderFor } from "../effort-policy";
+import { applyDroidResponsesReasoningDefault } from "../droid-reasoning-default";
+import { isPlainObject } from "../../lib/plain-data";
 import {
   clientCancelledResponse,
   comboUnavailable,
@@ -93,6 +102,7 @@ import { streamingContextOverflowResponse, jsonContextOverflowResponse } from ".
 import { mandatoryResponsesReasoningReplayUnavailable } from "./core-replay";
 import { settleOperatorReplacement } from "../../lib/upstream-retry";
 import { createComboProtocolLanes, dispatchNativeComboChild } from "./core-combo-native";
+import { createJevModelInvoker } from "./jev-model-invoke";
 import { clientWireOf } from "../inference/client-wire";
 
 /**
@@ -118,6 +128,33 @@ function cooledPoolAccountLabel(config: OcxConfig, providerName: string, modelId
     ? label : undefined;
 }
 
+
+/**
+ * True only for the Anthropic OAuth pool's OWN "all accounts cooled" 429. Its Retry-After is the
+ * earliest per-account cooldown restated (`getAnthropicPoolRetryAfterSeconds`), which the pool
+ * keeps enforcing locally, so it must not also park the combo target: an account added, resumed or
+ * cleared a minute later would otherwise sit ignored until the target expired, up to the 24h
+ * server-delay ceiling.
+ *
+ * Provenance, not just current state: the target must be the OAuth pool, no account may have been
+ * identified for the failure, and the pool must be holding the wait right now. An upstream 429 on
+ * a pool account always cools and names that account, and an API-key provider never qualifies, so
+ * a genuine upstream Retry-After still parks the target in full.
+ */
+export function isAnthropicPoolLocalRefusal(
+  config: OcxConfig,
+  providerName: string,
+  status: number,
+  failedAccount: string | undefined,
+  now = Date.now(),
+): boolean {
+  return providerName === "anthropic"
+    && config.providers[providerName]?.authMode === "oauth"
+    && status === 429
+    && failedAccount === undefined
+    && getEligibleAnthropicAccounts(now).length === 0
+    && getAnthropicPoolRetryAfterSeconds(now) !== null;
+}
 
 /**
  * A combo's execution policy is DECLARED by the combo, not inherited from the single-target
@@ -293,6 +330,7 @@ export async function executeComboResponses(
     config,
     logCtx,
     admission: options.admission,
+    droidDefaultEffort: options.droidDefaultEffort,
     comboId,
     targets: combo.targets,
   });
@@ -533,16 +571,33 @@ export async function executeComboResponses(
     const decisionStartedAt = Date.now();
     let decision: JevDecision;
     try {
-      decision = await resolveJevDecision({
+      decision = await resolveJevComboDecision({
         body,
         candidates: choices.map(choice => choice.candidate),
         fallback,
         config,
+        isDestinationAllowed: (providerName, modelId) => routeAllowedByScope(
+          resolveAdmissionModelScope(config, options.admission), { providerName, modelId },
+        ),
+        ...(combo.decisionProvider ? { decisionProvider: combo.decisionProvider } : {}),
+        ...(combo.decisionModel
+          ? {
+            decisionModel: combo.decisionModel,
+            invokeModel: createJevModelInvoker({
+              req,
+              config,
+              options,
+              handleResponses: requestDispatchers.handleResponses,
+            }),
+          }
+          : {}),
+        ...(combo.decisionTimeoutMs !== undefined ? { timeoutMs: combo.decisionTimeoutMs } : {}),
         signal: options.abortSignal,
       });
     } catch (error) {
       if (options.abortSignal?.aborted) return clientCancelledResponse();
       decision = {
+        backend: jevDecisionBackendFor(combo),
         ...fallback,
         gate: "network",
         latencyMs: Math.max(0, Date.now() - decisionStartedAt),
@@ -561,6 +616,7 @@ export async function executeComboResponses(
       },
       gate: decision.gate,
       latencyMs: decision.latencyMs,
+      backend: decision.backend,
       ...(decision.confidence !== undefined ? { confidence: decision.confidence } : {}),
       ...(decision.chosenProbability !== undefined
         ? { chosenProbability: decision.chosenProbability }
@@ -568,6 +624,7 @@ export async function executeComboResponses(
       ...(decision.usage ? { usage: decision.usage } : {}),
     });
     console.debug("[combo] JEV decision", {
+      backend: decision.backend,
       targetKey: decision.targetKey,
       effort: decision.effort,
       gate: decision.gate,
@@ -659,8 +716,13 @@ export async function executeComboResponses(
       modelId: targetRoute.modelId,
     });
     const initialJevDecision = firstComboTarget ? jevDecision : undefined;
+    const childInput = options.droidDefaultEffort && isPlainObject(body) ? { ...body } : body;
+    applyDroidResponsesReasoningDefault(childInput, options.droidDefaultEffort, {
+      provider: targetRoute.provider,
+      modelId: targetRoute.modelId,
+    });
     const childBody = concreteComboRequestBody(
-      body,
+      childInput,
       pick.target,
       initialJevDecision ? initialJevDecision.effort : comboDefaultEffort(config, comboId),
       initialJevDecision?.effort === null ? [] : targetReasoningEfforts,
@@ -988,8 +1050,20 @@ export async function executeComboResponses(
     });
     const failedTargetKey = targetKey(pick.target);
     let failedTargetCooldownRecorded = false;
+    // The dispatch rewrote this to name the pool account that actually served the turn.
+    const failedAccount = cooledPoolAccountLabel(
+      config,
+      pick.target.provider,
+      pick.target.model,
+      poolAccountProviderLabel(childLog.provider, pick.target.provider),
+    );
+    // The target still cools on the pool's own refusal (the anti-hammer guard), but for the local
+    // fallback rather than the pool's restated per-account Retry-After.
+    const poolLocalRefusal = isAnthropicPoolLocalRefusal(
+      config, pick.target.provider, failure.response.status, failedAccount, failureNow,
+    );
     const nextPick = advanceComboAfterFailure(config, pick, {
-      retryAfter: failure.retryAfter,
+      retryAfter: poolLocalRefusal ? undefined : failure.retryAfter,
       resetAt: failure.resetAt,
       cooldownMs: combo.cooldownMs,
       now: failureNow,
@@ -998,13 +1072,7 @@ export async function executeComboResponses(
       status: failure.response.status,
       code: failure.upstreamCode,
       message: failure.classificationText,
-      // The dispatch rewrote this to name the pool account that actually served the turn.
-      failedAccount: cooledPoolAccountLabel(
-        config,
-        pick.target.provider,
-        pick.target.model,
-        poolAccountProviderLabel(childLog.provider, pick.target.provider),
-      ),
+      failedAccount,
       onCooldownRecorded: target => {
         failedTargetCooldownRecorded ||= targetKey(target) === failedTargetKey;
       },
