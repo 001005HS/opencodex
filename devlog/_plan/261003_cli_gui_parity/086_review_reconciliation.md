@@ -25,3 +25,13 @@ The independent semantic audit confirmed all 22 historical execution logs and th
 Three disjoint immutable-source reading packets produce row corrections; main integrates them into the sole ledger. Source reads are pinned to the named Git revision while branch work proceeds. A separate proof packet identifies and executes only the missing relevant behavior. The ignored validator additionally rejects blank source anchors and placeholder invocations; it remains a structural check, never a substitute for the same reviewer's semantic re-review. Counts are recomputed after integration, not forced to the previous value.
 
 Final source binding, reviewed ledger/negative fixtures, frozen CLI QA and current-head CI remain open closing conditions. Historical source hashes and earlier failures are retained rather than overwritten as passes.
+
+## Executed repairs and evidence joins
+
+The lower-branch carry preserved the provider layer's inline sync implementation and the model layer's extracted sync helper. The only provider merge conflict was the two independently needed imports; both are retained in upper layers. Capability conflicts retained the newer search/key-scope grammar and added truthful alias descriptions. Generated chapters were regenerated from each layer's own declarations.
+
+Foundation focused verification passed 86 tests / 2018 assertions and typecheck. Provider focused verification passed 172 tests / 1106 assertions and typecheck. The integrated top checkpoint `49b0f34e0cb9fbfc22c48b170cc20b13dbcf0073` passed 197 tests / 2843 assertions and typecheck. The source-bound functional re-review closed snapshot recovery, generated table rendering and parent/alias help with no new findings.
+
+Additional execution covered Lab reads (17 tests), Antigravity import (7), community workflow (1), connected sync owner (4), and Kiro native login/cancel (4). A scratch real-CLI-handler/local-Lab harness passed 8 cases after correcting the provider failure contract. Its original public-handler failure remains recorded; its direct leaf assertions now check the numeric return contract, while the permanent public-handler regression still requires process exit 1. These counts are separate overlapping scopes, not a summed unique-test total.
+
+The repaired ledger carries 1658 anchors across 211 source files at the integrated top checkpoint. Unchanged lines were mapped through exact diff matches; the two changed anchors were explicitly checked at the moved provider initializer and numeric-return test function. The validator passed all nine negative fixtures after adding blank-anchor and placeholder-invocation rejection. A filtered Bun run's `filtered out` summary is accepted without treating those cases as executed tests.
