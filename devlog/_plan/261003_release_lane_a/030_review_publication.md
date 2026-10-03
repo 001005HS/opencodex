@@ -1,0 +1,12 @@
+# Publish reviewed Lane A evidence for coordinator integration
+
+Depends on verified transport and Messages changes. No runtime edits are pre-planned here; findings cause a documented amendment and focused repair, not unrelated cleanup.
+
+1. Run typecheck/privacy/structure and docs-site build, recording full output in ignored scratch. Applicable source-oracle/layout tests run explicitly. Concurrent release worktrees justify the documented full-local-suite exception; do not claim full suite green.
+2. Required separate final parallel phase: dispatch two inherited-model, independent-context read-only leaves. One adversarially reviews transport threshold/UTF-8/destination/replay/cancellation; the other reviews Messages terminal status/code/collection/local-limit negatives and security boundaries. Both inspect exact current diff, run their focused tests, report file coverage and blocking findings. Neither owns goal/FSM, spawns, or mutates branches. Main addresses real findings and re-verifies changes; maintainers' unresolved objections remain blockers.
+3. Explicit security review records assets (credentials, request content, replay identity), input/output trust boundaries, attacker-controlled URL/error fields, final destination restriction, no redirect widening, no payload logging and bounded additional allocations. Unpublished security notes remain .tmp/release-stabilization only.
+4. Revalidate dev/source PR heads and source disposition, include source-history and Co-authored-by credit, then commit and push only codex/release-261003-a. Open an ordinary PR against dev, filling Summary/Verification/Checklist. No native stack selection, source PR closure, merge or release.
+5. Inspect current PR head and applicable required jobs. Missing/skipped/approval-blocked/cancelled results are not passing. Dispatch authorized required PR CI using actual workflow schema; repair observed failures and re-run only invalidated checks. Coordinator owns final lane=all and serial integration.
+6. NEW/UPDATE .tmp/release-stabilization/report.md with exact local/PR head, URL, source heads/credit/dispositions, test outputs, review evidence and residual native limitations. Do not expose private data. DONE only after all required applicable exact-head checks actually succeed and blocking reviews resolve.
+
+Publication changes only Git history and PR metadata. Checklist claims are evidence-based; security review is technical, not a substitute for any maintainer decision.
