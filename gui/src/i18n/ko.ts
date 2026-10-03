@@ -895,6 +895,17 @@ export const ko: Record<TKey, string> = {
   "models.selectedCount": "{n}개 선택",
 
   // subagents
+  "sub.forceTitle": "Force all subagents onto one model",
+  "sub.forceModel": "Claude Code subagent model",
+  "sub.forceChoose": "Choose an exposed model",
+  "sub.forceHelp": "Applies to plugin and built-in agents (including Explore/Plan), overriding per-call models. Forks and skills with model: inherit keep the main conversation model. The main model and Haiku/small-fast sidecars are unaffected.",
+  "sub.forceScope": "Default off. Applies from the next routed ocx claude launch, not plain claude. Shell exports win; settings.json env can override them. Status checks the server’s CLI and user settings only, not another shell or project settings.",
+  "sub.forceInvalid": "The configured target is unavailable. Launch override will be skipped; select an exposed model or turn this off.",
+  "sub.forceOld": "Claude Code is older than 2.1.257: FORCE is ignored; only the non-forced subagent default applies.",
+  "sub.forceUnknown": "Claude Code version is unknown. Force support requires version 2.1.257 or newer.",
+  "sub.forceOverride": "Overridden by settings.json: its env contains a subagent model or FORCE setting. OpenCodex does not modify it.",
+  "sub.forceSettingsUnknown": "Could not inspect settings.json. Settings override status is unknown.",
+  "sub.forceSaved": "Saved. Takes effect on the next routed ocx claude launch.",
   "sub.subtitle": "Codex의 {cmd} 는 우선순위 상위 5개 모델만 오버라이드로 노출합니다. 여기서 최대 5개를 선택하면 — 네이티브 gpt 또는 라우팅된 모델 — opencodex가 카탈로그 우선순위를 설정해 정확히 이들이 앞에 옵니다. 다른 모델도 정확한 이름으로 호출할 수 있으며, 이 설정은 표시 항목만 제어합니다.",
   "sub.featured": "추천",
   "sub.advanced": "고급",

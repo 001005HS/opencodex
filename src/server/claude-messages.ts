@@ -889,7 +889,7 @@ async function handleClaudeMessagesWithBudget(
     // frontmatter. Must run BEFORE the native-passthrough branch — the CLI sends
     // these subagent turns under a fallback claude model id.
     if (isRec(anthropicBody)) {
-      const routeOverride = extractOcxRouteDirective(anthropicBody);
+      const routeOverride = extractOcxRouteDirective(anthropicBody, config);
       if (routeOverride && typeof anthropicBody.model === "string") {
         anthropicBody.model = stripOneMillionMarker(routeOverride);
         effortOverride = extractOcxEffortDirective(anthropicBody);
@@ -1656,7 +1656,7 @@ export async function handleClaudeCountTokens(
       raw.model = model;
     }
     // ocx-route override (devlog 072): keep count_tokens consistent with messages.
-    const countRoute = extractOcxRouteDirective(raw);
+    const countRoute = extractOcxRouteDirective(raw, config);
     if (countRoute) {
       model = stripOneMillionMarker(countRoute);
       raw.model = model;

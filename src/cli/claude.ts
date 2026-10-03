@@ -7,6 +7,7 @@
  * `claude` CLI with stdio inherited. User-exported env wins except when a stale
  * loopback opencodex base URL points at a different proxy port.
  */
+import { resolveSubagentForceModel } from "../claude/subagent-model";
 import { spawn } from "node:child_process";
 import { loadConfig } from "../config";
 import { injectClaudeAgentDefs } from "../claude/agents-inject";
@@ -50,6 +51,7 @@ export interface ClaudeRoutingTarget {
  * launch base so detection and the spawned process can never disagree (audit R3-3).
  */
 export type ClaudeEnvDeps = {
+  forceAvailable?: readonly string[];
   authDetect?: Omit<Partial<AuthDetectDeps>, "env" | "ownTokens">;
   /** Test seam; production uses the authenticated Node-launcher context. */
   preBunAnthropicSlots?: readonly AnthropicParentEnvSlot[] | null;
@@ -213,6 +215,15 @@ export function buildClaudeEnv(
     if (env[name] !== undefined && env[name] !== "") return; // user wins
     env[name] = value;
   };
+  if (config.claudeCode?.subagentModelForce !== undefined) {
+    const forced = resolveSubagentForceModel(config, contextWindows, deps.forceAvailable ?? Object.keys(contextWindows).filter(key => !key.startsWith("ocx-") && !key.startsWith("claude-ocx-")));
+    if (forced) {
+      setDefault("CLAUDE_CODE_SUBAGENT_MODEL", forced);
+      setDefault("CLAUDE_CODE_SUBAGENT_MODEL_FORCE", "1");
+    } else {
+      (deps.warn ?? console.warn)("⚠ Claude subagent force target is invalid or unavailable; launch override skipped.");
+    }
+  }
   if (deps.allowRootSkipPermissions === true) {
     setDefault("IS_SANDBOX", "1");
   }
@@ -420,6 +431,7 @@ export function buildClaudeEnv(
  * decides to launch natively, so a wrong destination here silently downgrades every launch.
  */
 export interface ClaudeCodeLiveState {
+  forceAvailable?: string[];
   contextWindows: Record<string, number>;
   enabled?: boolean;
 }
@@ -434,9 +446,10 @@ export async function fetchClaudeCodeState(config: OcxConfig, port: number, time
       signal: AbortSignal.timeout(timeoutMs),
     });
     if (!res.ok) return { contextWindows: {} };
-    const body = await res.json() as { contextWindows?: Record<string, number>; enabled?: boolean };
+    const body = await res.json() as { contextWindows?: Record<string, number>; enabled?: boolean; forceAvailable?: string[] };
     return {
       contextWindows: body.contextWindows && typeof body.contextWindows === "object" ? body.contextWindows : {},
+      ...(Array.isArray(body.forceAvailable) ? { forceAvailable: body.forceAvailable.filter(value => typeof value === "string") } : {}),
       ...(typeof body.enabled === "boolean" ? { enabled: body.enabled } : {}),
     };
   } catch {
@@ -774,6 +787,7 @@ export async function cmdClaude(args: string[]): Promise<number> {
   if (preflight.kind === "native") return launchNativeClaude(config, args, preflight.notice);
   let route: number | ClaudeRoutingTarget;
   let contextWindows: Record<string, number>;
+  let forceAvailable: readonly string[] | undefined;
   /** The hub's featured roster on a connected client; undefined means "use local config". */
   let hubRoster: readonly string[] | undefined;
   if (clientState.kind === "connected") {
@@ -792,9 +806,10 @@ export async function cmdClaude(args: string[]): Promise<number> {
     if (plan.kind === "native") return launchNativeClaude(config, args, plan.notice);
     route = port;
     contextWindows = liveState.contextWindows;
+    forceAvailable = liveState.forceAvailable ?? [];
   }
   const allowRootSkipPermissions = shouldAllowRootSkipPermissions(args);
-  const env = buildClaudeEnv(config, route, process.env, contextWindows, { allowRootSkipPermissions });
+  const env = buildClaudeEnv(config, route, process.env, contextWindows, { allowRootSkipPermissions, forceAvailable });
   if (allowRootSkipPermissions) {
     console.error(rootSkipPermissionsNotice(env));
   }

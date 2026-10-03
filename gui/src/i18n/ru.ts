@@ -897,6 +897,17 @@ export const ru: Record<TKey, string> = {
   "models.selectedCount": "Выбрано: {n}",
 
   // subagents
+  "sub.forceTitle": "Force all subagents onto one model",
+  "sub.forceModel": "Claude Code subagent model",
+  "sub.forceChoose": "Choose an exposed model",
+  "sub.forceHelp": "Applies to plugin and built-in agents (including Explore/Plan), overriding per-call models. Forks and skills with model: inherit keep the main conversation model. The main model and Haiku/small-fast sidecars are unaffected.",
+  "sub.forceScope": "Default off. Applies from the next routed ocx claude launch, not plain claude. Shell exports win; settings.json env can override them. Status checks the server’s CLI and user settings only, not another shell or project settings.",
+  "sub.forceInvalid": "The configured target is unavailable. Launch override will be skipped; select an exposed model or turn this off.",
+  "sub.forceOld": "Claude Code is older than 2.1.257: FORCE is ignored; only the non-forced subagent default applies.",
+  "sub.forceUnknown": "Claude Code version is unknown. Force support requires version 2.1.257 or newer.",
+  "sub.forceOverride": "Overridden by settings.json: its env contains a subagent model or FORCE setting. OpenCodex does not modify it.",
+  "sub.forceSettingsUnknown": "Could not inspect settings.json. Settings override status is unknown.",
+  "sub.forceSaved": "Saved. Takes effect on the next routed ocx claude launch.",
   "sub.subtitle": "{cmd} в Codex объявляет как переопределения только первые 5 моделей (по приоритету). Выберите здесь до 5 моделей — нативные gpt или маршрутизируемые — и opencodex задаст им приоритет в каталоге так, чтобы именно они шли первыми. Любую другую модель по-прежнему можно вызвать по её точному имени; эта настройка управляет только тем, что отображается.",
   "sub.featured": "Избранные",
   "sub.advanced": "Дополнительно",

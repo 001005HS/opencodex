@@ -1,4 +1,5 @@
-import type { OcxClaudeCodeConfig } from "../types";
+import { entryParts } from "./subagent-model";
+import type { OcxConfig, OcxClaudeCodeConfig } from "../types";
 import { isAnthropicOutputSchema, satisfiesOpenAiStrictSchema } from "../adapters/anthropic-output-schema";
 import { resolveAlias } from "./alias";
 import { stripOneMillionMarker } from "./context-windows";
@@ -149,11 +150,18 @@ function systemText(body: unknown): string | null {
   return text || null;
 }
 
-export function extractOcxRouteDirective(body: unknown): string | null {
+export function extractOcxRouteDirective(body: unknown, config?: OcxConfig): string | null {
   const text = systemText(body);
   if (!text) return null;
   const match = OCX_ROUTE_RE.exec(text);
-  return match ? match[1]! : null;
+  if (!match) return null;
+  // A modern CLI's forced wire selector outranks the legacy generated-agent fallback.
+  if (config?.claudeCode?.subagentModelForce && isRec(body) && typeof body.model === "string") {
+    try {
+      if (stripOneMillionMarker(body.model) === stripOneMillionMarker(entryParts(config.claudeCode.subagentModelForce, config).alias)) return body.model;
+    } catch { /* A stale target retains legacy routing. */ }
+  }
+  return match[1]!;
 }
 
 /**

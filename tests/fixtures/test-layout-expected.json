@@ -1,4 +1,7 @@
 {
+  "claude-subagent-model-force.test.ts": "claude-integration",
+  "subagent-model-force-api.test.ts": "server",
+  "agent-subagent-force.test.ts": "cli",
   "compaction-event-ownership.test.ts": "responses",
   "zed-retained-budget.test.ts": "providers",
   "jev-decision-scope.test.ts": "server",
