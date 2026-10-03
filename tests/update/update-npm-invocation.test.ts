@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -112,14 +112,17 @@ describe("Windows npm update invocation", () => {
       expect(resolveNpmCommand("win32", env, { cwd: home })).toBe(npm);
       expect(resolveNpmCommand("win32", env, { cwd: persistBin })).toBeNull();
 
-      rmSync(join(version, "bin"));
+      // Remove the directory junction itself, retaining the populated target.
+      rmdirSync(join(version, "bin"));
+      expect(readFileSync(join(persistBin, "npm.cmd"), "utf8")).toBe("@echo off\r\n");
       const outsideBin = join(home, "other-bin");
       mkdirSync(outsideBin);
       writeFileSync(join(outsideBin, "npm.cmd"), "@echo off\r\n");
       symlinkSync(outsideBin, join(version, "bin"), "junction");
       expect(resolveNpmCommand("win32", env, { cwd: home })).toBeNull();
 
-      rmSync(current);
+      rmdirSync(current);
+      expect(readFileSync(join(version, "bin", "npm.cmd"), "utf8")).toBe("@echo off\r\n");
       const outside = join(home, "other-app");
       mkdirSync(join(outside, "bin"), { recursive: true });
       writeFileSync(join(outside, "bin", "npm.cmd"), "@echo off\r\n");

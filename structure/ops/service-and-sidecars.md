@@ -427,7 +427,7 @@ so an override can never shorten the budgets that prevent a duplicate proxy, and
 constants in child processes.
 
 The npm and Bun updaters confirm the stop with the plain-ESM tri-state probe
-`src/update/proxy-liveness-probe.mjs` (shared with `ocx resolve`), decided by
+`src/update/proxy-liveness-probe.mjs`, decided by
 `src/update/stop-decision.mjs`. A refused dial is `dead`. A dial that is only dropped or times
 out, which is what a listener bound to a tailnet address produces once it is gone, falls back to
 one transient exclusive bind of the same host and port, only when the host is a literal IP address
