@@ -34,6 +34,7 @@ import {
 } from "../lib/state-store-sweeper";
 import { validateCopilotApiBaseUrl } from "./github-copilot";
 import { validateDevinApiBaseUrl } from "./devin/api-base";
+import { REFRESH_SKEW_MS } from "./refresh-policy";
 import { parseAnthropicAccountThreshold } from "./anthropic-account-threshold";
 import type { OAuthAccountSelection, OAuthCredentialSource, OAuthCredentials, ProviderAccount, ProviderAccountSet } from "./types";
 
@@ -1289,8 +1290,8 @@ export async function setAccountPaused(
       const start = set.accounts.findIndex(candidate => candidate.id === accountId);
       const ring = [...set.accounts.slice(start + 1), ...set.accounts.slice(0, start)];
       const fallback = ring.find(candidate => candidate.paused !== true && candidate.needsReauth !== true
-        && !(provider === "anthropic" && (!candidate.credential.source
-          || (candidate.credential.source === "local-cli" && candidate.credential.expires <= Date.now() + 60_000))));
+        && !(provider === "anthropic" && candidate.credential.source === "local-cli"
+          && candidate.credential.expires <= Date.now() + REFRESH_SKEW_MS));
       if (fallback) {
         set.activeAccountId = fallback.id;
         set.selectionRevision = randomUUID();

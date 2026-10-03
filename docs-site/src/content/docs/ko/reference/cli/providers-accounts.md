@@ -258,7 +258,7 @@ Codex pool selection applies to the next request after clearing existing affinit
 
 ### `ocx account pause|resume anthropic <id|alias> [--json]`
 
-Anthropic의 자동 대체 계정 선택은 출처가 불명확한 자격 증명과 60초 이내에 만료되는 Claude Code 가져오기를 건너뜁니다. 60초 넘게 남은 유효한 Claude Code 계정은 선택할 수 있습니다. 이후 CLI 자격 증명을 자동으로 다시 가져올 때는 비어 있지 않은 access 또는 refresh 토큰 중 하나가 저장된 값과 같아야 하며, 기존 계정 ID와 이메일을 보존합니다. 두 토큰이 모두 바뀌면 자격 증명의 연속성을 확인할 수 없으므로 저장된 토큰의 갱신 또는 기존 재인증 경로를 사용합니다. 완전히 교체된 Claude Code 토큰을 가져오려면 명시적으로 로그인하세요.
+Anthropic의 자동 대체 계정 선택은 기존 계정 순서를 유지하며, 일시 정지되었거나 재인증이 필요한 계정과 60초 이내에 만료되는 Claude Code 가져오기를 건너뜁니다. 출처가 기록되지 않은 레거시 계정도 선택할 수 있지만, 자체 저장 자격 증명과 일반적인 저장 토큰 갱신만 사용하며 CLI 디스크 자격 증명을 가져오지 않습니다. 60초 넘게 남은 유효한 Claude Code 계정은 선택할 수 있습니다. 이후 CLI 자격 증명을 자동으로 다시 가져올 때는 비어 있지 않은 access 또는 refresh 토큰 중 하나가 저장된 값과 같아야 하며, 기존 계정 ID와 이메일을 보존합니다. 두 토큰이 모두 바뀌면 자격 증명의 연속성을 확인할 수 없으므로 저장된 토큰의 갱신 또는 기존 재인증 경로를 사용합니다. 완전히 교체된 Claude Code 토큰을 가져오려면 명시적으로 로그인하세요.
 
 허용된 대체 계정이 없으면 사용 가능한 활성 계정이 선택될 때까지 할당량 조회와 실시간 모델 검색이 대기합니다.
 `ocx account use anthropic <account-id-or-alias>`로 일시 정지되지 않은 기존 레거시 계정을 명시적으로 선택할 수 있습니다.

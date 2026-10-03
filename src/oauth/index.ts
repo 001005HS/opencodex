@@ -80,8 +80,8 @@ export {
 } from "./health";
 export { OAUTH_REFRESH_LOCK_WAIT_MS, peekAuthStore, peekOAuthRefreshIntent } from "./store";
 import { codexAccountNamespaceProviderCollisionError } from "../codex/account-namespace-match";
+import { REFRESH_SKEW_MS } from "./refresh-policy";
 
-const REFRESH_SKEW_MS = 60_000;
 export interface OAuthAccessSnapshot {
   provider: string;
   accountId: string;

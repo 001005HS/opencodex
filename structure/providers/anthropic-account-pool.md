@@ -7,18 +7,19 @@ OAuth, not a second list in provider config. `setAccountPaused` serializes pause
 with credential and selection writes, advances the selection revision, and only publishes
 invalidation after persistence. Removing an account removes its pause; reauthentication
 preserves it. The store moves active selection to an unpaused, non-reauth row if available.
-For Anthropic, that automatic fallback skips rows with missing or invalid credential provenance
-and background local-CLI rows expiring within 60 seconds, including still-valid credentials.
+For Anthropic, automatic fallback preserves ring order, including source-less legacy rows,
+and skips background local-CLI rows expiring within 60 seconds, including still-valid credentials.
+`src/oauth/refresh-policy.ts` shares that skew between pause fallback, routing and token refresh.
 `src/oauth/index.ts` permits Claude Code re-adoption only when a nonempty access or refresh token
 matches the stored credential, preserving its account ID/email. `src/oauth/local-token-detect.ts`
 supplies this credential-continuity check; a shared path, active selection or matching metadata
 does not prove continuity. Fully replaced opaque token pairs are not adopted, even if they may
 belong to the same account. Stored-token refresh and explicit login remain available through the
 existing refresh-intent/reauth rules, so promotion cannot authorize another account's CLI pair.
-The provenance restriction governs automatic pause fallback, not explicit selection of an existing
-unpaused account. A selected legacy row can use its own valid bearer for quota/model discovery and
-refresh its stored token normally. With no permitted fallback, active-account probes stay closed
-until a usable account is selected or resumed; they do not silently select an unknown-origin row.
+A legacy row selected by pause fallback or explicitly can use its own valid bearer for quota/model
+discovery and refresh its stored token normally. Missing or invalid provenance normalizes to no
+source, which never permits CLI-disk adoption. With no permitted fallback, active-account probes
+stay closed until a usable account is selected or resumed.
 Pause does not clear cooldowns, quota, or credentials and does not cancel an already-sent turn.
 
 `src/oauth/anthropic-routing.ts` excludes paused rows from quota, round-robin, fill-first,

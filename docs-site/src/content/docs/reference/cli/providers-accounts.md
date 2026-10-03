@@ -486,8 +486,10 @@ Anthropic pause applies even when proactive pooling is disabled, including sessi
 and does not interrupt a turn already sent. Removing the account removes its pause state.
 Per-account Anthropic auto-switch thresholds are not part of this control.
 
-Anthropic's automatic pause fallback skips credentials with unknown provenance and Claude Code
-imports expiring within 60 seconds. A still-valid Claude Code import with more time remaining
+Anthropic's automatic pause fallback keeps account order, skips paused accounts and accounts
+requiring reauthentication, and excludes Claude Code imports expiring within 60 seconds.
+Legacy accounts without a recorded source remain eligible using only their own stored credentials
+and normal stored-token refresh; they never adopt CLI-disk credentials. A still-valid Claude Code import with more time remaining
 can be selected. Later automatic re-adoption requires an unchanged, nonempty access or refresh
 token; the stored account ID and email are preserved. If Claude Code replaces both tokens,
 OpenCodex cannot establish credential continuity and uses its stored-token refresh or existing

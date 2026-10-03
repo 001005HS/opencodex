@@ -16,6 +16,7 @@
  * Token refresh failures retain the existing store needsReauth policy.
  */
 import { createHash } from "node:crypto";
+import { REFRESH_SKEW_MS } from "./refresh-policy";
 import { captureOAuthAccountSelection, commitOAuthAccountSelection, credentialGeneration, getAccountSet, getAccountCredential, getAccountCredentialWithStatus } from "./store";
 import type { OAuthAccessSnapshot } from "./index";
 import { getCachedProviderAccountQuota } from "../providers/quota";
@@ -337,15 +338,13 @@ function usageScore(config: OcxConfig, accountId: string): number {
   }
 }
 
-const TOKEN_SKEW_MS = 60_000;
-
 /** Background `local-cli` slots with expired access are not pool-eligible (identity adoption risk). */
 function isPoolCredentialUsable(accountId: string, now: number): boolean {
   const cred = getAccountCredential(PROVIDER, accountId);
   if (!cred) return false;
   if (cred.source !== "local-cli") return true;
   if (canRefreshAnthropicPoolAccount(accountId)) return true;
-  return cred.expires > now + TOKEN_SKEW_MS;
+  return cred.expires > now + REFRESH_SKEW_MS;
 }
 
 export function getEligibleAnthropicAccounts(now = Date.now()): string[] {
@@ -1056,7 +1055,7 @@ export async function getAnthropicPoolAccessToken(accountId: string): Promise<st
     const { OAuthLoginRequiredError } = await import("./index");
     throw new OAuthLoginRequiredError(PROVIDER);
   }
-  if (stored.expires > Date.now() + TOKEN_SKEW_MS) return stored.access;
+  if (stored.expires > Date.now() + REFRESH_SKEW_MS) return stored.access;
   if (!canRefreshAnthropicPoolAccount(accountId)) {
     throw new Error("background local-cli token expired; refuse CLI-adopting refresh for pool");
   }
