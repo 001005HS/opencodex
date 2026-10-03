@@ -31,7 +31,7 @@ Preparation is recorded as three public carry pull requests:
 | --- | --- | --- |
 | [#6515](https://github.com/lidge-jun/opencodex/pull/6515) | Revoked-session quota diagnostics, retained plan, and causal reauth attribution. | 750 tests passed at the corrected implementation checkpoint. |
 | [#6523](https://github.com/lidge-jun/opencodex/pull/6523) | Stored-main credential provenance, scoped grant refusal, preview read fences and alternate-refresh cancellation. | 934 tests passed across 20 files; 51 hard-lock read-guard cases also passed. |
-| [#6527](https://github.com/lidge-jun/opencodex/pull/6527) | Plan/model combo fallback with bounded evidence through HTTP and SSE error projection. | 370 tests passed across 11 files, including the corrected cross-envelope cases. |
+| [#6527](https://github.com/lidge-jun/opencodex/pull/6527) | Plan/model combo fallback with bounded evidence through HTTP and SSE error projection. | 374 tests passed across 11 files at `af350a1924ee55ddc60fe9fa04289d1aa494f437`; [exact-head CI](https://github.com/lidge-jun/opencodex/actions/runs/37146395644) passed. |
 
 The carry commits and descriptions retain @vadymhimself's authorship credit and
 source commit references. Each pull request records independent review and its
