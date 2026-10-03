@@ -32,7 +32,7 @@ usage literals → pure typed metadata → additive capabilities JSON → help a
 - A synthetic data module importing a handler/config/Lab fails the graph guard; legal data/type edges pass.
 - Regeneration then --check succeeds; a changed/missing generated chapter fails; counts derive from arrays, never handwritten totals.
 - All generated chapters <2000 lines and structure docs ≤600; existing source caps are unchanged.
-- Focused commands: baseline four contract files plus new cli-capability-data and existing cli-help-paths/navigation/recovery files. No GUI render/build needed for this code-free visual surface.
+- Focused commands: baseline four contract files plus new cli-capability-data and existing cli-help-paths/navigation/recovery files. No GUI render/build is needed; real CLI help and machine-output QA remains required.
 
 ## Shared completion contract
 
@@ -43,3 +43,17 @@ Update the phase's capability domain, generated references, relevant public CLI 
 Planned new test paths below become executable verification only after B creates them. The current baseline gates in 003 have actually run. C invokes the exact focused files, typecheck, structure and skill-surface checks, privacy where data is handled, a source-bound cxc receipt and real isolated CLI QA (stdout/stderr/exit/teardown). A successful function mock is transport proof only; relevant existing server tests or isolated real handlers verify accepted state. No live user proxy, credentials or upstream requests.
 
 Before P>A, revalidate this document against the parent layer and record the prior D conclusion. Consult an architect for actual decision changes; independent A review is separate. C must preserve saved-versus-applied/refused outcomes. D records exact checks and ledger evidence before the next cycle. Publishing is main-owned; this request stops at open PRs.
+
+## wp1 execution refinements (same-architect stale check)
+
+The exact pure-data graph initially contains only capability-types.ts, capabilities-base.ts and the capabilities.ts facade. Types has no imports/runtime initializer; base imports types only; facade imports/re-exports base values and types while retaining the three existing pure helpers. Use an explicit allowlist, not a wildcard that also admits capabilities-command.ts. The test-owned scanner handles imports, side-effect imports, re-exports and type edges, rejects unresolved/bare/outside/cyclic/computed loads, and ignores comment/string lookalikes. Reuse the existing narrow tokenization seam in tests/helpers/warmup-tokens.ts or a proven Bun scanner; do not assume a TypeScript 5 parser exists under this repository's native TS7 tooling. The same predicate must run against real files and bad/good fixtures. It checks dependencies, not arbitrary-code sandboxing.
+
+All shipped capability literals remain byte-faithful in wp1. Exercise a present usage value by adding a temporary property to a real existing leaf only inside an isolated Bun subprocess, then invoke actual runCapabilities JSON/help/generator consumers. A separate unmodified process checks absence compatibility. No production setter, synthetic command or shared-test global mutation.
+
+Closed chapter map for current roots: lifecycle={chatgpt,status,resolve,capabilities,sync}; providers-models={provider,models}; accounts={account}; agents-routing={agent,combo}; integrations={claude,integration}; observe-system={companion,usage,logs,storage,inspect,system}; access-remote={link,remote-workspace,hub,connect,api}; lab is an honestly empty reserved chapter until wp2. Unknown roots fail and wp2 extends the map deliberately. Preserve global invocation order in the index and original per-chapter order. Keep each old canonical index fragment as a short forwarding heading/link, so existing file-plus-fragment references continue to work. Test exact file+anchor reachability and collisions, not only substring presence.
+
+The generator checks the expected map and rejects extra owner-marked 01_surface_*.md files; it does not delete unrelated or stale files automatically. Scan every actually shipped reference Markdown for command/consent safety. SKILL may reach chapters through its index; test transitive navigation rather than require every chapter to be linked at the top level.
+
+Structure extraction is deliberately narrow: move substantive runtime CLI-readiness content and the two detailed head/help/catalog table contracts into cli-management.md. Keep old runtime headings and concise pointers to preserve anchors. Leave executable lifecycle ownership in runtime. Review the other mapped CLI docs; unchanged accurate contracts do not need copied prose. Register the new Tier 5 owner, stage paths before structure:check and regenerate INDEX through its owner script.
+
+Implementation leaves: (1) metadata/types/facade/serializer/help + CLI tests; (2) generator/skill/generated chapters + skill workflow tests. Main owns structure docs, both test-layout maps, integration/commits and all branch operations. Neither leaf edits the other's paths or runs a global typecheck while the other is writing.

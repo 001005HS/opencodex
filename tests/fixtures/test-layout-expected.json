@@ -1,4 +1,6 @@
 {
+  "cli-capability-data.test.ts": "cli",
+  "skill-ocx-generated.test.ts": "ci-workflows",
     "provider-antigravity-wire-snapshot.test.ts": "providers",
   "antigravity-discovered-families.test.ts": "adapters/google",
   "provider-antigravity-effort-families.test.ts": "providers",

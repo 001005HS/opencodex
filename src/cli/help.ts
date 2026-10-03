@@ -154,7 +154,8 @@ export function printSubcommandUsage(
     write(`Usage:\n${MODELS_CONTEXT_USAGE}\n\n${MODELS_CONTEXT_DETAILS.join("\n")}`);
   } else if (result.kind === "capability") {
     const { capability } = result;
-    write(`Command: ocx ${result.path.join(" ")}\n\n${capability.summary}`);
+    const heading = capability.usage !== undefined ? `Usage: ${capability.usage}` : `Command: ocx ${result.path.join(" ")}`;
+    write(`${heading}\n\n${capability.summary}`);
     if (capability.flags.length) {
       write("\nDeclared flags:");
       for (const flag of capability.flags) {
@@ -162,7 +163,9 @@ export function printSubcommandUsage(
       }
     }
     if (capability.details?.length) write(`\n${capability.details.join("\n")}`);
-    write("\nCapability metadata is incomplete; this is not the full operand grammar.");
+    if (capability.usage === undefined) {
+      write("\nCapability metadata is incomplete; this is not the full operand grammar.");
+    }
   } else {
     write(`Command group: ocx ${result.path.join(" ")}\n\nDeclared commands (incomplete):`);
     for (const child of result.children) write(`  ocx ${child.command.join(" ")}  ${child.summary}`);

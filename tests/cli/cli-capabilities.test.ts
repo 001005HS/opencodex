@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
+import { capabilityDataBoundary } from "../helpers/cli-capability-data";
 import {
   CAPABILITIES,
   HEAD_CAPABILITIES,
@@ -22,16 +21,9 @@ function captureStdout(): { lines: string[]; restore: () => void } {
   return { lines, restore: () => { console.log = original; } };
 }
 
-describe("capability table is a leaf data module", () => {
-  test("capabilities.ts imports nothing from src/cli", () => {
-    // Each command module declares `const USAGE` at top level, evaluated at import time.
-    // A cycle back into this table resolves to `undefined` under ESM instead of throwing,
-    // which would silently empty the usage text that rejectArgs hands CliUsageError --
-    // a degraded failure in the exact surface these issues are about.
-    const src = readFileSync(join(repoRoot, "src/cli/capabilities.ts"), "utf8");
-    const relative = src.match(/from\s+["']\.[^"']*["']/g) ?? [];
-    expect(relative).toEqual([]);
-    expect(/\bimport\s*\(/.test(src)).toBe(false);
+describe("capability table is a checked data graph", () => {
+  test("capability discovery has only the allowed transitive data/type edges", () => {
+    expect(capabilityDataBoundary(join(repoRoot, "src/cli"))).toEqual([]);
   });
 
   test("every capability renders a non-empty invocation and summary", () => {
