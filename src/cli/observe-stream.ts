@@ -86,6 +86,11 @@ export async function withObserveStream(
     const origin = await interrupted(runtimeBaseUrl({ ...deps, findLiveProxy: async () => {
       const found = await (deps.findLiveProxy ?? findLiveProxy)();
       live = found ? { ...found } : undefined;
+      // Snapshot recovery comes from our observed target, never arbitrary transport text.
+      if (context.kind === "snapshot") {
+        if (!found) throw new ObservationError("Proxy is not running. Start it with: ocx start");
+        if (found.role === "client") throw new ObservationError("This listener runs in the client role and has no management API. Run this command on its serving hub, or open the hub dashboard.");
+      }
       return found;
     } }), signal);
     signal.throwIfAborted();

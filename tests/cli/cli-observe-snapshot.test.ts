@@ -3,6 +3,8 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { withObserveStream } from "../../src/cli/observe-stream";
+import { handleLogFilterCommand } from "../../src/cli/log-view-filter";
+import { handleCompanionUsageCommand } from "../../src/cli/companion-usage";
 import { removeTreeWithRetry } from "../helpers/remove-tree";
 
 let home: string;
@@ -31,6 +33,23 @@ test("snapshot wrapper preserves callback partial result and signal precedence",
   }, { kind: "snapshot" })).toBe(130);
   expect(err).not.toHaveBeenCalled();
 });
+
+for (const command of ["logs", "companion"] as const) {
+  for (const target of ["stopped", "client"] as const) {
+    test(`${command} snapshot explains ${target} recovery without transport`, async () => {
+      let calls = 0;
+      const deps = {
+        findLiveProxy: async () => target === "stopped" ? null : { pid: 1, port: 12345, role: "client" as const, source: "runtime" as const },
+        fetchImpl: (async () => { calls++; throw new Error("unexpected fetch"); }) as typeof fetch,
+      };
+      const exit = command === "logs" ? await handleLogFilterCommand([], deps, () => "") : await handleCompanionUsageCommand([], deps);
+      expect(exit).toBe(1);
+      expect(calls).toBe(0);
+      expect(String(err.mock.calls)).toContain(target === "stopped" ? "ocx start" : "serving hub");
+      expect(String(err.mock.calls)).not.toContain("timed out");
+    });
+  }
+}
 
 test("snapshot runtime drift refuses replacement data and uses snapshot recovery", async () => {
   let discoveries = 0, calls = 0;
