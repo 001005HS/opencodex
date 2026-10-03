@@ -18,7 +18,7 @@ index 5a434cfa4c..25198749be 100644
 @@ -79,6 +79,11 @@ refusal as rate-limit or quota evidence against the credential it was holding. T
  requests such as vision and web search are replayed normally, because repeating them cannot
  duplicate a turn.
- 
+
 +Large native ChatGPT Responses and compact HTTP requests use UTF-8 byte-buffer uploads to avoid
 +Bun resetting a large string upload before response headers arrive. This preserves the request
 +contents and does not enable automatic retries. A genuine connection reset still follows the
@@ -56,14 +56,14 @@ index 2e1c59f23b..9714dc7fef 100644
 @@ -27,6 +27,11 @@ hard byte cap. Per-body limits, parsing, compression, and reader error envelopes
  `tests/usage/request-decompress.test.ts` covers exact accounting across codecs and Unicode/numeric
  normalization, UTF-8 counting without encoded copies, and release after malformed or optional empty input.
- 
+
 +The final native ChatGPT Responses HTTP send in `src/server/responses/fetch-helpers.ts` encodes JSON
 +strings of at least 1 MiB as a UTF-8 buffer for Bun upload compatibility. This is a transport copy,
 +not a counting allocation or retained continuation. Existing body admission limits still apply;
 +the serialization observation keeps its existing lifetime, and nested dispatch reuses the buffer.
 +
  ## Raised HTTP body admission
- 
+
  `src/server/inbound-body-admission.ts` reserves the full resolved `maxInboundBodyBytes` allowance
 diff --git a/structure/transports/responses.md b/structure/transports/responses.md
 index 9dcb4a939a..0eeb406505 100644
@@ -75,7 +75,7 @@ index 9dcb4a939a..0eeb406505 100644
  matching follows the URL sent on the wire rather than the URL supplied before credential
 -revalidation.
 +revalidation. At this final HTTP boundary, native ChatGPT Responses and compact JSON strings of at least 1 MiB (UTF-8) become byte buffers to avoid Bun's large-string upload resets. Content, headers, abort signals and retry policy are preserved; WebSocket selection still receives the original string. Other destinations, small strings and existing byte/stream bodies retain their representation.
- 
+
  The wrapped executor alone is not that boundary. An override that revalidates credentials re-reads
  `route.provider.fetch` at send time, because reselection can install a different provider transport
 diff --git a/tests/responses/responses-fetch-helpers-boundary.test.ts b/tests/responses/responses-fetch-helpers-boundary.test.ts
@@ -89,10 +89,10 @@ index 1f59e4ef4b..3a1033a66f 100644
 -import { fetchWithHeaderTimeout, storedPoolReplayDispatchNotifier } from "../../src/server/responses/fetch-helpers";
 +import { fetchWithHeaderTimeout, providerFetch, sendWithConnectionPolicy, storedPoolReplayDispatchNotifier } from "../../src/server/responses/fetch-helpers";
  import { repoRoot as resolveRepoRoot } from "../helpers/repo-root";
- 
+
  const repoRoot = resolveRepoRoot();
  const helperPath = resolve(repoRoot, "src/server/responses/fetch-helpers.ts");
- 
+
 +describe("native Codex HTTP upload representation", () => {
 +  const endpoint = "https://chatgpt.com/backend-api/codex/responses";
 +
