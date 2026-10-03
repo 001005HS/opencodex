@@ -36,3 +36,89 @@ Static 5.5 fallback, 4.6 retirement, inferred context/image metadata, and cross-
 - Independent implementation/security review, actual applicable exact-head PR CI and maintained source credit precede review readiness.
 
 Credit for adapted source: Co-authored-by: Prince <princepal9120@gmail.com>. Source #6497 stays open; report the withheld routing/migration delta explicitly.
+
+## Execution revalidation
+
+Previous D concluded: docs-only roadmap complete at 12d0ba48d0; next execute 010 usage/pricing only and preserve current routing. This cycle follows that direction. Live discovery/inference at the baseline supports retaining routing, and official vendor pricing supports the two reference tuples. Baseline usage-cost 102/0; direct installed-Bun tsc/structure/privacy all exit0. usage-cost is uncapped, but usage-summary is exactly at its 2069-line cap. Add the already-planned tests/usage/usage-antigravity-55.test.ts sibling and both layout registrations; do not edit usage-summary. Coordinator clarified that its own integrated candidate gets final parallel review; this slice may publish after scoped independent review and local verification.
+
+Focused architect 01a1021d-d929-7f41-bad4-e49df00f9633 D1-D6 accepted. Add estimateRequestCost estimated=true assertion, pool provider pricing, required top-level/per-day grouping with literal request/token/cost totals, and unchanged historical/unknown identities. Also update the pricing paragraph in structure/dashboard-and-usage.md. No wire changes. New sibling uses existing summarizeUsage and PersistedUsageEntry interfaces; for each family, low/medium/high rows plus one base row with a resolved high tier produce four requests per family, 4400 tokens and Sonnet 0.012 / Opus 0.024 reference cost at 1000 input+100 output each. Both aggregate and per-day rows must match those literals. Historical 4.6 and unknown future suffix rows remain separate.
+
+## Complete new sibling test content
+
+NEW tests/usage/usage-antigravity-55.test.ts (the existing cost file changes only membership; focused new assertions live together here):
+
+```typescript
+import { describe, expect, test } from "bun:test";
+import { canonicalAntigravityUsageModel } from "../../src/providers/antigravity-models";
+import { estimateRequestCost, resolveMatchedPrice } from "../../src/usage/cost";
+import { findExpectedPriceOverlay } from "../../src/usage/expected-prices";
+import type { PersistedUsageEntry } from "../../src/usage/log";
+import { summarizeUsage } from "../../src/usage/summary";
+
+const families = [
+  { base: "claude-sonnet-5-5", cost4: { input: 2, output: 10, cacheRead: 0.2, cacheWrite: 2.5 }, total: 0.012 },
+  { base: "claude-opus-5-5", cost4: { input: 4, output: 20, cacheRead: 0.2, cacheWrite: 5 }, total: 0.024 },
+];
+const now = Date.UTC(2026, 9, 3, 12);
+
+function row(model: string, index: number, resolvedModel?: string): PersistedUsageEntry {
+  return {
+    requestId: `antigravity-fixture-${index}`, timestamp: now - index,
+    provider: "google-antigravity", model, ...(resolvedModel ? { resolvedModel } : {}),
+    status: 200, durationMs: 1, usageStatus: "reported",
+    usage: { inputTokens: 1000, outputTokens: 100 }, totalTokens: 1100,
+  };
+}
+
+describe("Antigravity Claude 5.5 usage", () => {
+  for (const { base, cost4, total } of families) {
+    test(`${base} has deterministic identity and derived reference prices without discovery`, () => {
+      for (const id of [base, `${base}-low`, `${base}-medium`, `${base}-high`]) {
+        expect(canonicalAntigravityUsageModel(id)).toBe(base);
+        expect(findExpectedPriceOverlay("google-antigravity", id)).toMatchObject({
+          provider: "google-antigravity", modelId: id, cost4, status: "verified-derived",
+        });
+        for (const provider of ["google-antigravity", "google-antigravity-pabcdef"]) {
+          const price = resolveMatchedPrice(provider, id);
+          expect(price).toMatchObject({ cost4, status: "verified-derived", source: "expected" });
+          expect(price?.sourceRef).toContain("derived:");
+          expect(price?.sourceRef).toContain("platform.claude.com/docs/en/about-claude/pricing");
+          const estimate = estimateRequestCost({ provider, model: id, usageStatus: "reported", usage: { inputTokens: 1000, outputTokens: 100 } });
+          expect(estimate?.estimated).toBe(true);
+          expect(estimate?.cost.total).toBeCloseTo(total / 4, 10);
+        }
+      }
+    });
+
+    test(`${base} aggregates tiers and resolved IDs in model and day summaries`, () => {
+      const entries = [row(`${base}-low`, 1), row(`${base}-medium`, 2), row(`${base}-high`, 3), row(base, 4, `${base}-high`)];
+      const summary = summarizeUsage(entries, "all", now);
+      expect(summary.models).toHaveLength(1);
+      expect(summary.models[0]).toMatchObject({ provider: "google-antigravity", model: base, requests: 4, totalTokens: 4400 });
+      expect(summary.models[0]?.resolvedModel).toBeUndefined();
+      expect(summary.models[0]?.estimatedCostUsd).toBeCloseTo(total, 10);
+      const days = summary.days.filter(day => day.requests > 0);
+      expect(days).toHaveLength(1);
+      expect(days[0]?.models).toHaveLength(1);
+      expect(days[0]?.models[0]).toMatchObject({ model: base, requests: 4, totalTokens: 4400 });
+      expect(days[0]?.models[0]?.estimatedCostUsd).toBeCloseTo(total, 10);
+      expect(summary.summary.estimatedCostUsd).toBeCloseTo(total, 10);
+    });
+  }
+
+  test("historical Claude and unknown suffixes retain their exact usage identities", () => {
+    const ids = ["claude-sonnet-4-6", "claude-opus-4-6-thinking", "claude-sonnet-6-0-high", "claude-sonnet-5-5-ultra"];
+    for (const id of ids) expect(canonicalAntigravityUsageModel(id)).toBe(id);
+    const summary = summarizeUsage(ids.map((id, i) => row(id, i + 1)), "all", now);
+    expect(summary.models.map(model => model.model).sort()).toEqual([...ids].sort());
+    expect(resolveMatchedPrice("google-antigravity", "claude-sonnet-4-6")?.cost4)
+      .toEqual({ input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 });
+    expect(resolveMatchedPrice("google-antigravity", "claude-opus-4-6-thinking")?.cost4)
+      .toEqual({ input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 });
+  });
+});
+```
+
+Same-architect final reflection: ALIGNED D1-D6 after correcting fixture count to four; no material gaps.
+
+B fixture correction: summarizeUsage all-range deliberately includes a leading empty day (dayCountForAllRange uses ceil(delta/day)+1). Assert exactly one nonempty day and its full model totals; no production change for an incorrect fixture assumption. New tests first failed four behavior cases before the runtime change, then all five passed after the mapping/overlays and this calendar-independent assertion.
