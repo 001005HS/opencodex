@@ -22,6 +22,7 @@ import { modelSelectionGuidance, modelSelectionNextSteps } from "./model-selecti
 import { isCanonicalOpenAiForwardProvider } from "../providers/openai-tiers-destination";
 import { providerRelativeSendPathConfigError } from "../config/provider-relative-send-path";
 import type { RuntimeApiDeps } from "./runtime-api";
+import { providerManagementConfigError } from "../server/auth-cors";
 
 export interface ProviderCommandDeps extends RuntimeApiDeps {
   syncModels?: typeof syncModelsToCodex;
@@ -283,9 +284,6 @@ async function handleAdd(args: string[], deps: ProviderCommandDeps): Promise<voi
     if (error) { console.error(`Error: ${error}.`); process.exit(1); }
     provConfig.modelCapabilities = mergeModelCapabilities(provConfig.modelCapabilities, declaration);
   }
-  const { initializeProviderModelSelection } = await import("../providers/initial-model-selection");
-  initializeProviderModelSelection(name, provConfig, existingProvider, config);
-  config.providers[name] = provConfig;
   // A --force overwrite rotates the key/endpoint but must not drop a
   // user-configured price overlay (same rule as the /api/providers path and
   // the login paths); there is no explicit clear/replace flag yet.
@@ -293,6 +291,18 @@ async function handleAdd(args: string[], deps: ProviderCommandDeps): Promise<voi
     provConfig.modelCosts = existingProvider.modelCosts;
   }
   if (allowPrivateNetwork) provConfig.allowPrivateNetwork = true;
+  // New auth/path overrides use the management owner's completed-row contract.
+  // Validate before registration state changes; legacy local adds without these
+  // options keep their existing config semantics.
+  if ((authMode !== undefined || responsesPath !== undefined)
+    && providerManagementConfigError(name, provConfig)) {
+    console.error("Error: Invalid provider configuration. Authentication, destination and provider options must satisfy the provider's management rules.");
+    process.exitCode = 2;
+    return;
+  }
+  const { initializeProviderModelSelection } = await import("../providers/initial-model-selection");
+  initializeProviderModelSelection(name, provConfig, existingProvider, config);
+  config.providers[name] = provConfig;
   if (setDefault) config.defaultProvider = name;
 
   validateAndSave(config);
