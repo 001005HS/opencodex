@@ -255,6 +255,8 @@ trust a local certificate authority in the login keychain. That authority is con
 and its subdomains. Its signing key exists only inside the running OpenCodex process, so every
 OpenCodex restart publishes a fresh authority and macOS asks you to trust it again — approve the
 prompt, or later run `ocx claude desktop picker trust`, after each restart.
+Startup also attempts to remove a legacy on-disk picker signing key before checking whether
+interception is enabled. Cleanup is best-effort and does not enable interception or block startup.
 
 On restart OpenCodex first removes the previous authority from the keychain. If that removal fails
 (for example because you decline the keychain prompt), the picker stays off for this run so two

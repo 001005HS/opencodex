@@ -2,6 +2,8 @@
   "compaction-event-ownership.test.ts": "responses",
   "zed-retained-budget.test.ts": "providers",
   "jev-decision-scope.test.ts": "server",
+  "codex-shim-fnm.test.ts": "codex-integration",
+  "claude-intercept-cleanup.test.ts": "claude-integration",
   "claude-intercept-on-demand.test.ts": "claude-integration",
   "main-account-hard-lock-thresholds.test.ts": "codex-integration",
   "main-account-external-usage.test.ts": "codex-integration",
