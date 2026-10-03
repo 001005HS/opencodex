@@ -5,7 +5,14 @@ import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import * as facade from "../../src/cli/capabilities";
 import * as base from "../../src/cli/capabilities-base";
-import { capabilityDataBoundary } from "../helpers/cli-capability-data";
+import { PROVIDER_MODEL_CAPABILITIES } from "../../src/cli/capabilities-provider-models";
+import { ACCOUNT_CAPABILITIES } from "../../src/cli/capabilities-accounts";
+import { AGENT_ROUTING_CAPABILITIES } from "../../src/cli/capabilities-agents-routing";
+import { INTEGRATION_CAPABILITIES } from "../../src/cli/capabilities-integrations";
+import { OBSERVE_SYSTEM_CAPABILITIES } from "../../src/cli/capabilities-observe-system";
+import { ACCESS_REMOTE_CAPABILITIES } from "../../src/cli/capabilities-access-remote";
+import { LAB_CAPABILITIES } from "../../src/cli/capabilities-lab";
+import { CAPABILITY_DATA_FILES, capabilityDataBoundary } from "../helpers/cli-capability-data";
 import { repoPath, repoRoot } from "../helpers/repo-root";
 import { removeTreeWithRetry } from "../helpers/remove-tree";
 import { SPAWN_BUDGET_MS } from "../helpers/test-budget";
@@ -22,7 +29,9 @@ const validFiles: Record<string, string> = {
 };
 
 function checkFixture(changes: Record<string, string | undefined> = {}): string[] {
-  const files = { ...validFiles, ...changes };
+  const leaves = Object.fromEntries(CAPABILITY_DATA_FILES.filter(name => !(name in validFiles))
+    .map(name => [name, `import type { Capability } from "./capability-types"; export const ROWS: readonly Capability[] = [];`]));
+  const files = { ...leaves, ...validFiles, ...changes };
   const directory = resolve("capability-graph-fixture");
   return capabilityDataBoundary(directory, path => {
     const source = files[basename(path)];
@@ -233,6 +242,7 @@ function discovery(mode: "absent" | "present" | "undefined" | "empty"): Discover
   const script = `
     globalThis.fetch = () => { throw new Error('discovery attempted HTTP'); };
     const { CAPABILITIES, capabilityInvocation } = await import(${JSON.stringify(repoPath("src/cli/capabilities.ts"))});
+    for (const row of CAPABILITIES) delete row.usage;
     const target = CAPABILITIES.find(cap => cap.command.join(' ') === 'models set-price');
     if (!target) throw new Error('missing fixture leaf');
     const mode = ${JSON.stringify(mode)};
@@ -290,20 +300,31 @@ describe("capability facade and optional usage consumers", () => {
     expect(Object.keys(facade).sort()).toEqual([
       "CAPABILITIES", "HEAD_CAPABILITIES", "capabilitiesForRoute", "capabilityInvocation", "capabilityRouteKeys",
     ].sort());
-    expect(facade.CAPABILITIES).toBe(base.CAPABILITIES);
+    expect(facade.CAPABILITIES.slice(0, base.CAPABILITIES.length)).toEqual(base.CAPABILITIES);
+    base.CAPABILITIES.forEach((row, index) => expect(facade.CAPABILITIES[index]).toBe(row));
+    expect(new Set(facade.CAPABILITIES.map(row => row.command.join(" "))).size).toBe(facade.CAPABILITIES.length);
+    expect(facade.CAPABILITIES.slice(base.CAPABILITIES.length)).toEqual([
+      ...PROVIDER_MODEL_CAPABILITIES,
+      ...ACCOUNT_CAPABILITIES,
+      ...AGENT_ROUTING_CAPABILITIES,
+      ...INTEGRATION_CAPABILITIES,
+      ...OBSERVE_SYSTEM_CAPABILITIES,
+      ...ACCESS_REMOTE_CAPABILITIES,
+      ...LAB_CAPABILITIES,
+    ]);
     expect(facade.HEAD_CAPABILITIES).toBe(base.HEAD_CAPABILITIES);
     const matches = facade.capabilitiesForRoute("/api/providers/{provider}/model-costs");
     expect(matches.map(facade.capabilityInvocation)).toEqual(["ocx models price", "ocx models set-price"]);
     for (const row of matches) expect(base.CAPABILITIES.includes(row)).toBe(true);
     expect(facade.capabilityRouteKeys().has("PUT /api/providers/{provider}/model-costs")).toBe(true);
-    expect(facade.CAPABILITIES.every(row => !Object.hasOwn(row, "usage"))).toBe(true);
+    expect(facade.CAPABILITIES.some(row => Object.hasOwn(row, "usage"))).toBe(true);
   });
 
   test("absent usage preserves exact legacy JSON shape, help and alias output", () => {
     const result = discovery("absent");
     expect(result.all.schemaVersion).toBe(1);
     expect(result.all.headCapabilities).toEqual(base.HEAD_CAPABILITIES);
-    expect(result.all.capabilities).toEqual(base.CAPABILITIES.map(cap => ({
+    expect(result.all.capabilities).toEqual(facade.CAPABILITIES.map(cap => ({
       command: cap.command, invocation: `ocx ${cap.command.join(" ")}`, summary: cap.summary,
       routes: cap.routes, flags: cap.flags, mutates: cap.mutates, json: cap.json,
       ...(cap.details ? { details: cap.details } : {}),

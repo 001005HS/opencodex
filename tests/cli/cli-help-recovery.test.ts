@@ -58,9 +58,9 @@ describe("CLI help recovery", () => {
     const account = helpRecoveryCandidates(["account"]);
     expect(account.every(candidate => candidate.path.length === 2)).toBe(true);
     expect(account.some(candidate => candidate.path.join(" ") === "account main")).toBe(true);
-    expect(helpRecoveryCandidates(["account", "main"]).map(candidate => candidate.path)).toEqual([["account", "main", "reauth"]]);
+    expect(helpRecoveryCandidates(["account", "main"]).map(candidate => candidate.path.at(-1))).toEqual(["reauth", "doctor", "list", "register", "add", "switch", "recover"]);
     expect(helpRecoveryCandidates(["model"]).some(candidate => candidate.path.join(" ") === "models context")).toBe(true);
-    expect(helpRecoveryCandidates(["models", "context"])).toEqual([]);
+    expect(helpRecoveryCandidates(["models", "context"]).map(candidate => candidate.path.at(-1))).toEqual(["status", "value", "provider", "all"]);
   });
 
   test("matching folds case, handles transposition, deduplicates aliases and respects distance limits", () => {

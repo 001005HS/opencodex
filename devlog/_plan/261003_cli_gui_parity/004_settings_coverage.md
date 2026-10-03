@@ -133,3 +133,12 @@ Bounded unknowns:
 - **Sibling boundaries:** quota activation/settings and JEV stats recommendations need deduplication with operations/client-settings owner. Their GUI mounts and missing dedicated field parsers were inspected; ownership, not existence, is unresolved.
 
 Final matrix totals: 67 rows = 16 COMPLETE + 22 DISCOVERY_ONLY + 24 IMPLEMENTATION_GAP + 2 EXCLUDED + 3 UNKNOWN. Source-only evidence; no tests or live operations executed.
+
+## Dashboard-mounted panels added in roadmap reconciliation
+
+| ID | Task and source | Current CLI coverage | Work phase |
+|---|---|---|---|
+| set-S06 | Memory extraction/consolidation model settings; `gui/src/pages/dashboard-overview-panels.tsx`, `gui/src/components/MemoryModelsPanel.tsx` | No dedicated live block writer; the existing memory family does not prove these GUI fields | wp5 |
+| set-S07 | Compaction route model, effort, triggers and source scope; `gui/src/pages/dashboard-overview-panels.tsx`, `gui/src/components/CompactionRoutingPanel.tsx` | No dedicated live block writer | wp5 |
+
+These two source-backed implementation gaps supplement the historical 67-row settings inventory above. The task ledger is authoritative for current cross-domain aliases and completion evidence.

@@ -16,14 +16,14 @@ const PREAMBLE = `<!-- ${OWNER}. Do not edit by hand. -->\n<!-- Regenerate: bun 
 
 // Navigation groups, not command dispatch. New roots require an explicit assignment.
 const DOMAINS = [
-  { name: "lifecycle", roots: ["chatgpt", "status", "resolve", "capabilities", "sync"] },
-  { name: "providers-models", roots: ["provider", "models"] },
-  { name: "accounts", roots: ["account"] },
-  { name: "agents-routing", roots: ["agent", "combo"] },
-  { name: "integrations", roots: ["claude", "integration"] },
-  { name: "observe-system", roots: ["companion", "usage", "logs", "storage", "inspect", "system"] },
-  { name: "access-remote", roots: ["link", "remote-workspace", "hub", "connect", "api"] },
-  { name: "lab", roots: [] },
+  { name: "lifecycle", roots: ["chatgpt", "status", "resolve", "capabilities", "sync", "start", "stop", "restart", "service", "gui"] },
+  { name: "providers-models", roots: ["provider", "models", "alias"] },
+  { name: "accounts", roots: ["account", "auth", "login", "logout"] },
+  { name: "agents-routing", roots: ["agent", "combo", "route", "v2", "effort", "memory"] },
+  { name: "integrations", roots: ["claude", "integration", "grok", "codex-shim"] },
+  { name: "observe-system", roots: ["companion", "usage", "logs", "storage", "inspect", "system", "observe", "debug", "export", "import", "cost", "update", "config", "tray"] },
+  { name: "access-remote", roots: ["link", "remote-workspace", "hub", "connect", "api", "access"] },
+  { name: "lab", roots: ["lab"] },
 ];
 
 function chapterFilename(domain: string): string {
@@ -57,6 +57,13 @@ function assignChapters(): Map<Capability, string> {
   return assignments;
 }
 
+// These existing discoverable names return plaintext credentials. Preserve their anchors
+// as prose handoffs, never turn them into executable-looking recipes.
+const SECRET_HANDOFFS = new Set(["ocx link issue", "ocx hub invite", "ocx config export"]);
+function capabilityHeading(invocation: string): string {
+  return SECRET_HANDOFFS.has(invocation) ? `### ${invocation}` : `### \`${invocation}\``;
+}
+
 function renderIndex(assignments: Map<Capability, string>): string {
   const lines = [PREAMBLE, "# The `ocx` management surface", "",
     "Declared capabilities, grouped by operating task. This index is not every CLI verb.",
@@ -85,7 +92,7 @@ function renderIndex(assignments: Map<Capability, string>): string {
     "Original invocation order. These headings preserve links to the previous single-file reference.", "");
   for (const cap of CAPABILITIES) {
     const invocation = capabilityInvocation(cap);
-    lines.push(`### \`${invocation}\``, "",
+    lines.push(capabilityHeading(invocation), "",
       `[${cap.mutates ? "State-changing task" : "Read-oriented task"}](${assignments.get(cap)}#${invocationAnchor(invocation)})`, "");
   }
   lines.push("## Counts", "", `- declared capabilities: ${CAPABILITIES.length}`,
@@ -95,8 +102,11 @@ function renderIndex(assignments: Map<Capability, string>): string {
 }
 
 function renderCapability(cap: Capability): string[] {
-  const lines = [`### \`${capabilityInvocation(cap)}\``, ""];
-  if (cap.usage !== undefined) lines.push(`Usage: \`${cap.usage}\``, "");
+  const invocation = capabilityInvocation(cap);
+  const handoff = SECRET_HANDOFFS.has(invocation);
+  const lines = [capabilityHeading(invocation), ""];
+  if (handoff) lines.push("Human-only handoff: ask the operator to perform this in their own terminal or dashboard; do not capture the secret-bearing result.", "");
+  if (!handoff && cap.usage !== undefined) lines.push(`Usage: \`${cap.usage}\``, "");
   lines.push(cap.summary, "", `State-changing: ${cap.mutates ? "yes" : "no"}.`, "");
   if (cap.routes.length > 0) {
     lines.push("| Method | Route |", "|---|---|");

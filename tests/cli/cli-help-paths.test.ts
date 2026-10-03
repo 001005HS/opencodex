@@ -79,22 +79,22 @@ describe("explicit CLI help paths", () => {
     expect(new Set(outputs).size).toBe(1);
   });
 
-  test("declared leaves show metadata without inventing operands", () => {
+  test("declared leaves show verified usage and exact operands", () => {
     const result = help(["help", "account", "list"]);
     expect(result.status).toBe(0);
     expect(result.stderr).toBe("");
-    expect(result.stdout).toContain("Command: ocx account list");
+    expect(result.stdout).toContain("Usage: ocx account list [provider]");
     expect(result.stdout).toContain("--json");
-    expect(result.stdout).toContain("paused-but-selected");
+    expect(result.stdout).toContain("--quota");
     expect(result.stdout).toContain("Parent help: ocx help account");
-    expect(result.stdout).not.toContain("Usage:");
+    expect(result.stdout).not.toContain("not the full operand grammar");
   });
 
   test("command-side help with operands falls back to known help without writes", () => {
     for (const [args, expected] of [
       [["service", "uninstall", "--help"], "Usage: ocx service"],
       [["codex-shim", "uninstall", "--help"], "Usage: ocx codex-shim"],
-      [["models", "context", "provider", "example", "on", "-h"], "ocx models context <status|value"],
+      [["models", "context", "provider", "example", "on", "-h"], "ocx models context provider <provider> <on|off>"],
     ] as const) {
       const result = help([...args]);
       expect(result.status).toBe(0);
@@ -113,12 +113,11 @@ describe("explicit CLI help paths", () => {
 
   test("undeclared detail does not claim runtime grammar is invalid", () => {
     for (const [path, parent] of [
-      [["service", "install"], "service"],
-      [["service", "uninstall"], "service"],
-      [["codex-shim", "uninstall"], "codex-shim"],
-      [["models", "list-custom"], "models"],
+      [["service", "not-declared"], "service"],
+      [["codex-shim", "not-declared"], "codex-shim"],
+      [["models", "not-declared"], "models"],
       [["account", "main", "not-declared"], "account main"],
-      [["models", "context", "status"], "models context"],
+      [["models", "context", "not-declared"], "models context"],
     ] as const) {
       const result = help(["help", ...path]);
       expect(result.status).toBe(1);

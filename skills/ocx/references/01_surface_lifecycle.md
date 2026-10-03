@@ -8,7 +8,7 @@
 Use these declarations to choose a task, then check its flags and authority before execution.
 Non-mutating probes may still contact providers, consume quota or refresh caches.
 
-Declared capabilities: 5.
+Declared capabilities: 12.
 
 ### `ocx chatgpt`
 
@@ -92,3 +92,113 @@ State-changing: yes.
 JSON mode: `none`.
 
 - The Aside refresh uses the live server; other catalog synchronization also performs local work.
+
+### `ocx service install`
+
+Usage: `ocx service install [--native|--scheduler]`
+
+Install the local background service.
+
+State-changing: yes.
+
+Drives no management route.
+
+| Flag | Value | Meaning |
+|---|---|---|
+| `--native` | boolean | Windows WinSW backend; exclusive with --scheduler. |
+| `--scheduler` | boolean | Scheduled backend; exclusive with --native. |
+
+JSON mode: `none`.
+
+- Local OS service manager: macOS launchd, Linux systemd, Windows Task Scheduler or WinSW. No management API or JSON mode.
+- Backend options apply only to install; other verbs use the installed backend.
+
+### `ocx service repair`
+
+Usage: `ocx service repair`
+
+Repair local service registration and verify serving health.
+
+State-changing: yes.
+
+Drives no management route.
+
+JSON mode: `none`.
+
+- Local OS service manager: macOS launchd, Linux systemd, Windows Task Scheduler or WinSW. No management API or JSON mode.
+- Backend options apply only to install; other verbs use the installed backend.
+
+### `ocx service restart`
+
+Usage: `ocx service restart`
+
+Restart the local background service.
+
+State-changing: yes.
+
+Drives no management route.
+
+JSON mode: `none`.
+
+- Local OS service manager: macOS launchd, Linux systemd, Windows Task Scheduler or WinSW. No management API or JSON mode.
+- Backend options apply only to install; other verbs use the installed backend.
+
+### `ocx service start`
+
+Usage: `ocx service start`
+
+Start the registered local service.
+
+State-changing: yes.
+
+Drives no management route.
+
+JSON mode: `none`.
+
+- Local OS service manager: macOS launchd, Linux systemd, Windows Task Scheduler or WinSW. No management API or JSON mode.
+- Backend options apply only to install; other verbs use the installed backend.
+
+### `ocx service stop`
+
+Usage: `ocx service stop`
+
+Stop the registered local service.
+
+State-changing: yes.
+
+Drives no management route.
+
+JSON mode: `none`.
+
+- Local OS service manager: macOS launchd, Linux systemd, Windows Task Scheduler or WinSW. No management API or JSON mode.
+- Backend options apply only to install; other verbs use the installed backend.
+
+### `ocx service status`
+
+Usage: `ocx service status`
+
+Inspect local service-manager status.
+
+State-changing: no.
+
+Drives no management route.
+
+JSON mode: `none`.
+
+- Local OS service manager: macOS launchd, Linux systemd, Windows Task Scheduler or WinSW. No management API or JSON mode.
+- Backend options apply only to install; other verbs use the installed backend.
+
+### `ocx service uninstall`
+
+Usage: `ocx service uninstall`
+
+Uninstall the local service.
+
+State-changing: yes.
+
+Drives no management route.
+
+JSON mode: `none`.
+
+- Local OS service manager: macOS launchd, Linux systemd, Windows Task Scheduler or WinSW. No management API or JSON mode.
+- remove is an alias for uninstall.

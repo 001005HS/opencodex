@@ -5,6 +5,14 @@ import { tokenize, type Token } from "./warmup-tokens";
 
 export const CAPABILITY_DATA_FILES = [
   "capabilities.ts", "capabilities-base.ts", "capability-types.ts",
+  "capabilities-provider-models.ts",
+  "capabilities-accounts.ts",
+  "capabilities-agents-routing.ts",
+  "capabilities-integrations.ts",
+  "capabilities-observe-system.ts",
+  "capabilities-access-remote.ts",
+  "capabilities-lab.ts",
+
 ] as const;
 
 type Edge = { target: string; kind: "import" | "export"; typeOnly: boolean };
@@ -12,9 +20,25 @@ const ROLES: Readonly<Record<string, readonly string[]>> = {
   "capabilities.ts": [
     "import:value:capabilities-base.ts", "export:value:capabilities-base.ts",
     "import:type:capability-types.ts", "export:type:capability-types.ts",
+    "import:value:capabilities-provider-models.ts",
+    "import:value:capabilities-accounts.ts",
+    "import:value:capabilities-agents-routing.ts",
+    "import:value:capabilities-integrations.ts",
+    "import:value:capabilities-observe-system.ts",
+    "import:value:capabilities-access-remote.ts",
+    "import:value:capabilities-lab.ts",
+
   ],
   "capabilities-base.ts": ["import:type:capability-types.ts"],
   "capability-types.ts": [],
+  "capabilities-provider-models.ts": ["import:type:capability-types.ts"],
+  "capabilities-accounts.ts": ["import:type:capability-types.ts"],
+  "capabilities-agents-routing.ts": ["import:type:capability-types.ts"],
+  "capabilities-integrations.ts": ["import:type:capability-types.ts"],
+  "capabilities-observe-system.ts": ["import:type:capability-types.ts"],
+  "capabilities-access-remote.ts": ["import:type:capability-types.ts"],
+  "capabilities-lab.ts": ["import:type:capability-types.ts"],
+
 };
 
 function closingBrace(tokens: readonly Token[], start: number): number {
@@ -109,7 +133,7 @@ function checkHostIdentifiers(tokens: readonly Token[]): void {
 }
 
 /**
- * Read only the static named import/re-export shapes used by the three data owners.
+ * Read only the static named import/re-export shapes used by the enumerated data owners.
  * Other load syntax fails closed, including type queries and require references.
  * The shared TS7 lexer ignores comments, strings and regex bodies, while preserving
  * code inside template substitutions. This checks dependencies, not arbitrary code.

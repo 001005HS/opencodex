@@ -8,9 +8,11 @@
 Use these declarations to choose a task, then check its flags and authority before execution.
 Non-mutating probes may still contact providers, consume quota or refresh caches.
 
-Declared capabilities: 11.
+Declared capabilities: 33.
 
 ### `ocx claude config`
+
+Usage: `ocx claude config status [--json]; ocx claude config set [--enabled <on|off>] [--auth-mode <auto|proxy|subscription>] [--system-env <on|off>] [--fast-mode <on|off>] [--auto-context <on|off>] [--compact-window <tokens|default>] [--inject-agents <on|off>] [--small-fast-model <id|->] [--model-map <from=to,...|->] [--blocked-skills <name,name|->] [--web-model <id|->] [--web-backend <openai|anthropic|xai|gemini|exa|->] [--vision-model <id|->] [--vision-backend <openai|anthropic|->] [--json]; or ocx claude config set --first-party <on|off> [--json]`
 
 Read or update Claude Code settings, including independent CLI first-party routing.
 
@@ -23,14 +25,31 @@ State-changing: yes.
 
 | Flag | Value | Meaning |
 |---|---|---|
-| `--first-party` | string | For `set`, on or off; route standalone Claude CLI subscription requests through the intercept. |
-| `--json` | boolean | Emit the management response as JSON. |
+| `--enabled` | string | on or off. |
+| `--auth-mode` | string | auto, proxy or subscription. |
+| `--system-env` | string | on or off. |
+| `--fast-mode` | string | on or off. |
+| `--auto-context` | string | on or off. |
+| `--compact-window` | string | Positive token count or default to clear. |
+| `--inject-agents` | string | on or off. |
+| `--small-fast-model` | string | Model ID; - clears. |
+| `--model-map` | string | Comma-separated from=to mappings; - clears. |
+| `--blocked-skills` | string | Comma-separated names; - clears. |
+| `--web-model` | string | Model ID; - clears. |
+| `--web-backend` | string | openai, anthropic, xai, gemini, exa or -. |
+| `--vision-model` | string | Model ID; - clears. |
+| `--vision-backend` | string | openai, anthropic or -. |
+| `--first-party` | string | on or off; must be the only setting. |
+| `--json` | boolean | Emit the result as JSON. |
 
 JSON mode: `payload`.
 
-- `status` reads the route; `set` writes only submitted fields. Enabling first-party requires a running Claude intercept.
+- At least one setting is required. --first-party must be set alone and writes Claude settings immediately.
+- Clear both helper model and backend with - to restore inheritance. Preserve shared_proxy_retained warnings.
 
 ### `ocx claude intercept start`
+
+Usage: `ocx claude intercept start [--json]`
 
 Start the local Claude interception pair on demand.
 
@@ -47,6 +66,8 @@ State-changing: yes.
 JSON mode: `payload`.
 
 ### `ocx claude desktop status`
+
+Usage: `ocx claude desktop status [--json]`
 
 Applied-vs-desired Claude Desktop state, including staleness, drift, and health.
 
@@ -66,6 +87,8 @@ JSON mode: `payload`.
 
 ### `ocx claude desktop bind`
 
+Usage: `ocx claude desktop bind <picker-model-id> <provider/model|native/slug>`
+
 First-party: serve a Claude Desktop Code tab picker model with an opencodex route.
 
 State-changing: yes.
@@ -82,6 +105,8 @@ JSON mode: `none`.
 
 ### `ocx claude desktop unbind`
 
+Usage: `ocx claude desktop unbind <picker-model-id>`
+
 Remove a first-party Claude Desktop Code tab picker binding.
 
 State-changing: yes.
@@ -96,6 +121,8 @@ JSON mode: `none`.
 
 ### `ocx claude desktop picker status`
 
+Usage: `ocx claude desktop picker status [--json]`
+
 First-party picker mode: whether Claude Desktop's Code tab lists opencodex models, and what is missing if not.
 
 State-changing: no.
@@ -104,11 +131,17 @@ State-changing: no.
 |---|---|
 | GET | `/api/claude-desktop/picker` |
 
-JSON mode: `none`.
+| Flag | Value | Meaning |
+|---|---|---|
+| `--json` | boolean | Emit the result as JSON. |
 
-- Reports desired, effective, keychain trust, the Desktop egress profile, the model count and a reason with the next command to run.
+JSON mode: `payload`.
+
+- Reads the live picker when available; otherwise reports local offline picker state. JSON emits the picker DTO, not the enclosing API response. No trust mutation.
 
 ### `ocx claude desktop picker on`
+
+Usage: `ocx claude desktop picker on`
 
 Turn first-party picker mode on and remember the choice.
 
@@ -125,6 +158,8 @@ JSON mode: `none`.
 
 ### `ocx claude desktop picker off`
 
+Usage: `ocx claude desktop picker off`
+
 Turn first-party picker mode off, remove its Desktop egress profile and certificate trust, and remember the choice.
 
 State-changing: yes.
@@ -139,12 +174,15 @@ JSON mode: `none`.
 
 ### `ocx claude desktop picker trust`
 
+Usage: `ocx claude desktop picker trust`
+
 Run the macOS keychain step for picker mode in this terminal, then ask the server to finish enabling it.
 
 State-changing: yes.
 
 | Method | Route |
 |---|---|
+| GET | `/api/claude-desktop/picker` |
 | PUT | `/api/claude-desktop/picker` |
 
 JSON mode: `none`.
@@ -153,7 +191,9 @@ JSON mode: `none`.
 
 ### `ocx integration native`
 
-Show or toggle the native Claude, Claude Desktop, Codex, and Grok integrations, and read the Cursor status (which builds are installed, gateway values, last request seen) and, on request, the Private Inference installer Cursor's update channel advertises.
+Usage: `ocx integration native [list] [--json]; ocx integration native <claude|claude-desktop|codex|grok> <on|off> [--json]`
+
+Read native integration state or toggle Claude, Claude Desktop, Codex and Grok.
 
 State-changing: yes.
 
@@ -164,8 +204,6 @@ State-changing: yes.
 | PUT | `/api/native-integrations/claude-desktop` |
 | PUT | `/api/native-integrations/codex` |
 | PUT | `/api/native-integrations/grok` |
-| GET | `/api/native-integrations/cursor` |
-| GET | `/api/native-integrations/cursor/local-installer` |
 
 | Flag | Value | Meaning |
 |---|---|---|
@@ -173,35 +211,507 @@ State-changing: yes.
 
 JSON mode: `payload`.
 
-- The list renders per-client state, installed, and desired columns; a blocked disable is named rather than left silent.
-- Each client has its own route because a toggle rewrites that client's own config file.
+- Each toggle writes the selected client configuration through its runtime owner. Refused disables remain failures. Cursor status and installer have no branch in this handler and must remain deferred.
 
 ### `ocx integration client`
 
-Inspect and toggle Aside profile catalogs, read their history, and restore a selected profile operation.
+Usage: `ocx integration client status [--client <id>] [--profile <id>] [--json]; ocx integration client history [--client <id>] [--profile <id>] [--json]; ocx integration client enable --client <id> [--profile <id>] [--overwrite-conflict] [--json]; ocx integration client disable --client <id> [--profile <id>] [--json]; ocx integration client restore --op <opId> [--client aside --profile <id>] [--confirm-drift] [--json]`
+
+Inspect and toggle file integrations and Aside profiles, read journals, and restore selected operations.
 
 State-changing: yes.
 
 | Method | Route |
 |---|---|
+| GET | `/api/client-integrations` |
+| GET | `/api/client-integrations/{clientId}` |
 | GET | `/api/client-integrations/aside/profiles` |
-| PUT | `/api/client-integrations/aside/profiles` |
 | GET | `/api/client-integrations/aside/profiles/{profileId}` |
-| PUT | `/api/client-integrations/aside/profiles/{profileId}` |
+| GET | `/api/client-integrations/journal` |
 | GET | `/api/client-integrations/aside/profiles/journal` |
 | GET | `/api/client-integrations/aside/profiles/{profileId}/journal` |
+| PUT | `/api/client-integrations/{clientId}` |
+| PUT | `/api/client-integrations/aside/profiles` |
+| PUT | `/api/client-integrations/aside/profiles/{profileId}` |
+| POST | `/api/client-integrations/restore` |
 | POST | `/api/client-integrations/aside/profiles/{profileId}/restore` |
 
 | Flag | Value | Meaning |
 |---|---|---|
-| `--client` | string | Select the file integration; use aside for profile controls. |
-| `--profile` | number | Select one registered Aside account; omitted toggles affect all profiles. |
-| `--op` | string | Operation ID for restore. |
-| `--confirm-drift` | boolean | Explicitly allow restore to replace subsequent edits. |
-| `--overwrite-conflict` | boolean | Explicitly allow enable to replace a conflicting provider block. |
-| `--json` | boolean | Emit the profile state, history, or mutation result as JSON. |
+| `--client` | string | File integration ID; aside selects profiles. |
+| `--profile` | number | Aside nonnegative integer account ID; requires --client aside. |
+| `--json` | boolean | Emit the result as JSON. |
+| `--overwrite-conflict` | boolean | Explicitly permit replacing a conflicting block. |
+| `--op` | string | Operation ID; --op-id is an alias. |
+| `--confirm-drift` | boolean | Explicitly allow replacing edits made after the snapshot. |
 
 JSON mode: `payload`.
 
-- Use status/show/list, history/journal, enable/disable, or restore after integration client.
-- These declarations cover the dedicated Aside profile paths; existing generic client routes retain their separate parity inventory.
+- status/show/list reads all clients, one client or Aside profiles. history/journal reads rollback records; expired snapshots stay visible.
+- enable/disable requires --client; an omitted Aside --profile toggles all profiles. --overwrite-conflict applies only to enable.
+- restore requires --op (alias --op-id); --client requires --profile and only Aside supports that profile selector. --confirm-drift is an explicit user waiver, never auto-retried. No preview or journal-retirement verb is claimed.
+
+### `ocx grok status`
+
+Usage: `ocx grok status [--json]`
+
+Read Grok model fence state and catalog.
+
+State-changing: no.
+
+| Method | Route |
+|---|---|
+| GET | `/api/grok` |
+
+| Flag | Value | Meaning |
+|---|---|---|
+| `--json` | boolean | Emit the result as JSON. |
+
+JSON mode: `payload`.
+
+- integration grok is an alias of grok; show aliases status. Saving selection and applying the saved fence are separate actions.
+- Apply receipts can report changed or skippedReason; success is not a guarantee of a changed client file.
+
+### `ocx grok set`
+
+Usage: `ocx grok set <model,model...> [--json]`
+
+Replace the excluded Grok model list.
+
+State-changing: yes.
+
+| Method | Route |
+|---|---|
+| PUT | `/api/grok/selection` |
+
+| Flag | Value | Meaning |
+|---|---|---|
+| `--json` | boolean | Emit the result as JSON. |
+
+JSON mode: `payload`.
+
+- integration grok is an alias of grok; show aliases status. Saving selection and applying the saved fence are separate actions.
+- Apply receipts can report changed or skippedReason; success is not a guarantee of a changed client file.
+
+### `ocx grok exclude`
+
+Usage: `ocx grok exclude <model,model...> [--json]`
+
+Add models to the Grok exclusion list.
+
+State-changing: yes.
+
+| Method | Route |
+|---|---|
+| GET | `/api/grok` |
+| PUT | `/api/grok/selection` |
+
+| Flag | Value | Meaning |
+|---|---|---|
+| `--json` | boolean | Emit the result as JSON. |
+
+JSON mode: `payload`.
+
+- integration grok is an alias of grok; show aliases status. Saving selection and applying the saved fence are separate actions.
+- Apply receipts can report changed or skippedReason; success is not a guarantee of a changed client file.
+
+### `ocx grok include`
+
+Usage: `ocx grok include <model,model...> [--json]`
+
+Remove models from the Grok exclusion list.
+
+State-changing: yes.
+
+| Method | Route |
+|---|---|
+| GET | `/api/grok` |
+| PUT | `/api/grok/selection` |
+
+| Flag | Value | Meaning |
+|---|---|---|
+| `--json` | boolean | Emit the result as JSON. |
+
+JSON mode: `payload`.
+
+- integration grok is an alias of grok; show aliases status. Saving selection and applying the saved fence are separate actions.
+- Apply receipts can report changed or skippedReason; success is not a guarantee of a changed client file.
+
+### `ocx grok clear`
+
+Usage: `ocx grok clear [--json]`
+
+Clear Grok exclusions.
+
+State-changing: yes.
+
+| Method | Route |
+|---|---|
+| PUT | `/api/grok/selection` |
+
+| Flag | Value | Meaning |
+|---|---|---|
+| `--json` | boolean | Emit the result as JSON. |
+
+JSON mode: `payload`.
+
+- integration grok is an alias of grok; show aliases status. Saving selection and applying the saved fence are separate actions.
+- Apply receipts can report changed or skippedReason; success is not a guarantee of a changed client file.
+
+### `ocx grok apply`
+
+Usage: `ocx grok apply [--json]`
+
+Apply the saved Grok model fence.
+
+State-changing: yes.
+
+| Method | Route |
+|---|---|
+| POST | `/api/grok/apply` |
+
+| Flag | Value | Meaning |
+|---|---|---|
+| `--json` | boolean | Emit the result as JSON. |
+
+JSON mode: `payload`.
+
+- integration grok is an alias of grok; show aliases status. Saving selection and applying the saved fence are separate actions.
+- Apply receipts can report changed or skippedReason; success is not a guarantee of a changed client file.
+
+### `ocx integration client status`
+
+Usage: `ocx integration client status [--client <id>] [--profile <id>] [--json]`
+
+Read all file integrations, one client or an Aside profile.
+
+State-changing: no.
+
+| Method | Route |
+|---|---|
+| GET | `/api/client-integrations` |
+| GET | `/api/client-integrations/{clientId}` |
+| GET | `/api/client-integrations/aside/profiles` |
+| GET | `/api/client-integrations/aside/profiles/{profileId}` |
+
+| Flag | Value | Meaning |
+|---|---|---|
+| `--client` | string | File integration ID; aside selects profiles. |
+| `--profile` | number | Aside nonnegative integer account ID; requires --client aside. |
+| `--json` | boolean | Emit the result as JSON. |
+
+JSON mode: `payload`.
+
+- show and list alias status; omitted Aside profile means the aggregate profile collection.
+
+### `ocx integration client history`
+
+Usage: `ocx integration client history [--client <id>] [--profile <id>] [--json]`
+
+Read integration rollback history and snapshot availability.
+
+State-changing: no.
+
+| Method | Route |
+|---|---|
+| GET | `/api/client-integrations/journal` |
+| GET | `/api/client-integrations/aside/profiles/journal` |
+| GET | `/api/client-integrations/aside/profiles/{profileId}/journal` |
+
+| Flag | Value | Meaning |
+|---|---|---|
+| `--client` | string | File integration ID; aside selects profiles. |
+| `--profile` | number | Aside nonnegative integer account ID; requires --client aside. |
+| `--json` | boolean | Emit the result as JSON. |
+
+JSON mode: `payload`.
+
+- journal is an alias. Ordinary client filtering uses ?client=; expired snapshots remain visibly expired.
+
+### `ocx integration client enable`
+
+Usage: `ocx integration client enable --client <id> [--profile <id>] [--overwrite-conflict] [--json]`
+
+Apply the selected managed file integration.
+
+State-changing: yes.
+
+| Method | Route |
+|---|---|
+| PUT | `/api/client-integrations/{clientId}` |
+| PUT | `/api/client-integrations/aside/profiles` |
+| PUT | `/api/client-integrations/aside/profiles/{profileId}` |
+
+| Flag | Value | Meaning |
+|---|---|---|
+| `--client` | string | Explicit file integration ID. |
+| `--profile` | number | Aside nonnegative integer account ID; requires --client aside. |
+| `--overwrite-conflict` | boolean | Explicitly permit replacing a conflicting block. |
+| `--json` | boolean | Emit the result as JSON. |
+
+JSON mode: `payload`.
+
+- An omitted Aside profile toggles all Aside profiles. Ownership, snapshots, journal and conflict refusals remain server-owned.
+- Partial Aside failures remain failures after emitting the per-profile result. Never infer permission to overwrite from a refusal.
+
+### `ocx integration client disable`
+
+Usage: `ocx integration client disable --client <id> [--profile <id>] [--json]`
+
+Disable the selected managed file integration.
+
+State-changing: yes.
+
+| Method | Route |
+|---|---|
+| PUT | `/api/client-integrations/{clientId}` |
+| PUT | `/api/client-integrations/aside/profiles` |
+| PUT | `/api/client-integrations/aside/profiles/{profileId}` |
+
+| Flag | Value | Meaning |
+|---|---|---|
+| `--client` | string | Explicit file integration ID. |
+| `--profile` | number | Aside nonnegative integer account ID; requires --client aside. |
+| `--json` | boolean | Emit the result as JSON. |
+
+JSON mode: `payload`.
+
+- An omitted Aside profile toggles all Aside profiles. Ownership, snapshots, journal and conflict refusals remain server-owned.
+- Partial Aside failures remain failures after emitting the per-profile result. Never infer permission to overwrite from a refusal.
+
+### `ocx integration client restore`
+
+Usage: `ocx integration client restore --op <opId> [--client aside --profile <id>] [--confirm-drift] [--json]`
+
+Restore a selected rollback operation, retaining drift refusal.
+
+State-changing: yes.
+
+| Method | Route |
+|---|---|
+| POST | `/api/client-integrations/restore` |
+| POST | `/api/client-integrations/aside/profiles/{profileId}/restore` |
+
+| Flag | Value | Meaning |
+|---|---|---|
+| `--op` | string | Operation ID; --op-id is an alias. |
+| `--client` | string | File integration ID; aside selects profiles. |
+| `--profile` | number | Aside nonnegative integer account ID; requires --client aside. |
+| `--confirm-drift` | boolean | Explicitly allow replacing edits made after the snapshot. |
+| `--json` | boolean | Emit the result as JSON. |
+
+JSON mode: `payload`.
+
+- With --client, restore requires --profile; only Aside profiles accept that selector. No automatic drift confirmation or retry.
+
+### `ocx claude config status`
+
+Usage: `ocx claude config status [--json]`
+
+Read effective Claude Code configuration.
+
+State-changing: no.
+
+| Method | Route |
+|---|---|
+| GET | `/api/claude-code` |
+
+| Flag | Value | Meaning |
+|---|---|---|
+| `--json` | boolean | Emit the result as JSON. |
+
+JSON mode: `payload`.
+
+- show is an alias; integration claude forwards to the same handler.
+
+### `ocx claude config set`
+
+Usage: `ocx claude config set [--enabled <on|off>] [--auth-mode <auto|proxy|subscription>] [--system-env <on|off>] [--fast-mode <on|off>] [--auto-context <on|off>] [--compact-window <tokens|default>] [--inject-agents <on|off>] [--small-fast-model <id|->] [--model-map <from=to,...|->] [--blocked-skills <name,name|->] [--web-model <id|->] [--web-backend <openai|anthropic|xai|gemini|exa|->] [--vision-model <id|->] [--vision-backend <openai|anthropic|->] [--json]; or ocx claude config set --first-party <on|off> [--json]`
+
+Change Claude Code settings through the runtime owner.
+
+State-changing: yes.
+
+| Method | Route |
+|---|---|
+| PUT | `/api/claude-code` |
+
+| Flag | Value | Meaning |
+|---|---|---|
+| `--enabled` | string | on or off. |
+| `--auth-mode` | string | auto, proxy or subscription. |
+| `--system-env` | string | on or off. |
+| `--fast-mode` | string | on or off. |
+| `--auto-context` | string | on or off. |
+| `--compact-window` | string | Positive token count or default to clear. |
+| `--inject-agents` | string | on or off. |
+| `--small-fast-model` | string | Model ID; - clears. |
+| `--model-map` | string | Comma-separated from=to mappings; - clears. |
+| `--blocked-skills` | string | Comma-separated names; - clears. |
+| `--web-model` | string | Model ID; - clears. |
+| `--web-backend` | string | openai, anthropic, xai, gemini, exa or -. |
+| `--vision-model` | string | Model ID; - clears. |
+| `--vision-backend` | string | openai, anthropic or -. |
+| `--first-party` | string | on or off; must be the only setting. |
+| `--json` | boolean | Emit the result as JSON. |
+
+JSON mode: `payload`.
+
+- At least one setting is required. --first-party must be set alone and writes Claude settings immediately.
+- Clear both helper model and backend with - to restore inheritance. Preserve shared_proxy_retained warnings.
+
+### `ocx claude desktop show`
+
+Usage: `ocx claude desktop show [--json]`
+
+Inspect the desired profile derived on this machine.
+
+State-changing: no.
+
+Drives no management route.
+
+| Flag | Value | Meaning |
+|---|---|---|
+| `--json` | boolean | Emit the result as JSON. |
+
+JSON mode: `envelope`.
+
+- Local config/catalog derivation, not GET of the remote desired profile. On a connected client scope is local; apply uses the hub profile. Catalog derivation may discover upstream models.
+
+### `ocx claude desktop move`
+
+Usage: `ocx claude desktop move <provider/model> <opus|fable|sonnet|haiku> [--default]`
+
+Move an available route to a local Desktop family.
+
+State-changing: yes.
+
+Drives no management route.
+
+| Flag | Value | Meaning |
+|---|---|---|
+| `--default` | boolean | Make this route the family default. |
+
+JSON mode: `none`.
+
+- Local profile persistence only; no management HTTP or --json. On connected clients this does not change the hub profile.
+
+### `ocx claude desktop default`
+
+Usage: `ocx claude desktop default <opus|fable|sonnet|haiku> <provider/model|none>`
+
+Set or clear a local Desktop family default.
+
+State-changing: yes.
+
+Drives no management route.
+
+JSON mode: `none`.
+
+- Local profile persistence only; none clears the default. Connected Desktop apply uses the hub profile.
+
+### `ocx claude desktop export`
+
+Usage: `ocx claude desktop export <path|->`
+
+Export the persisted local Desktop profile.
+
+State-changing: yes.
+
+Drives no management route.
+
+JSON mode: `none`.
+
+- Local file output; - writes JSON to stdout. There is no --json flag. A file destination is overwritten; this is not a GUI draft export.
+
+### `ocx claude desktop import`
+
+Usage: `ocx claude desktop import <path> [--apply]`
+
+Import a local Desktop profile, optionally applying it as a static gateway.
+
+State-changing: yes.
+
+| Method | Route |
+|---|---|
+| POST | `/api/claude-desktop/apply` |
+
+| Flag | Value | Meaning |
+|---|---|---|
+| `--apply` | boolean | After saving, apply as a static gateway. |
+
+JSON mode: `none`.
+
+- Without --apply this only persists locally. With a live local proxy, gateway apply is delegated by HTTP; otherwise local helpers apply it.
+- Connected clients refuse import --apply. A saved profile can remain saved after application fails; no --json mode.
+
+### `ocx claude desktop apply`
+
+Usage: `ocx claude desktop [apply] [--first-party | --gateway [--static|--hybrid|--discovery-only]]`
+
+Apply Claude Desktop first-party interception or gateway profile.
+
+State-changing: yes.
+
+| Method | Route |
+|---|---|
+| POST | `/api/claude-desktop/apply` |
+
+| Flag | Value | Meaning |
+|---|---|---|
+| `--first-party` | boolean | Keep Desktop on claude.ai and intercept its Code tab. |
+| `--gateway` | boolean | Apply a third-party gateway profile. |
+| `--static` | boolean | Static gateway model catalog. |
+| `--hybrid` | boolean | Hybrid gateway catalog. |
+| `--discovery-only` | boolean | Discovery-only gateway catalog. |
+
+JSON mode: `none`.
+
+- Uses local helpers or the live local apply route; connected gateway clients use the hub profile download path. No --json mode.
+- First-party requires a local hub with interception enabled. Preserve account-risk warnings, trust prompts and ownership refusals; metadata grants no consent.
+- Application and committed-marker persistence can diverge; inspect status after application and preserve warnings.
+
+### `ocx codex-shim install`
+
+Usage: `ocx codex-shim install`
+
+Local Codex launcher shim install.
+
+State-changing: yes.
+
+Drives no management route.
+
+JSON mode: `none`.
+
+- Local launcher/PATH wrapper operation on macOS, Linux and Windows; no management API or JSON mode.
+- Installation diagnoses wrapper health and reports readiness warnings.
+
+### `ocx codex-shim status`
+
+Usage: `ocx codex-shim status`
+
+Local Codex launcher shim status.
+
+State-changing: no.
+
+Drives no management route.
+
+JSON mode: `none`.
+
+- Local launcher/PATH wrapper operation on macOS, Linux and Windows; no management API or JSON mode.
+- Inspects local launcher wrapper state.
+
+### `ocx codex-shim uninstall`
+
+Usage: `ocx codex-shim uninstall`
+
+Local Codex launcher shim uninstall.
+
+State-changing: yes.
+
+Drives no management route.
+
+JSON mode: `none`.
+
+- Local launcher/PATH wrapper operation on macOS, Linux and Windows; no management API or JSON mode.
+- remove aliases uninstall.
