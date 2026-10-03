@@ -46,8 +46,8 @@ State-changing: no.
 
 | Flag | Value | Meaning |
 |---|---|---|
-| `--range` | string | today | 1d | 7d | 30d | all; default 30d. |
-| `--surface` | string | all | codex | claude | grok; default all. |
+| `--range` | string | today \| 1d \| 7d \| 30d \| all; default 30d. |
+| `--surface` | string | all \| codex \| claude \| grok; default all. |
 | `--since` | string | Inclusive epoch milliseconds or ISO datetime with timezone; requires --until. |
 | `--until` | string | Inclusive end; requires --since. Custom bounds override --range. |
 | `--provider` | string | Filter provider. |
@@ -56,7 +56,7 @@ State-changing: no.
 
 JSON mode: `payload`.
 
-- Alias of usage. Connected clients instead read their own enrolled-key Hub report through /v1/usage; this is not whole-Hub management usage.
+- Alias of observe usage. Connected clients instead read their own enrolled-key Hub report through /v1/usage; this is not whole-Hub management usage.
 - Custom bounds require the server to confirm customWindow, since and until.
 
 ### `ocx logs`
@@ -533,8 +533,8 @@ State-changing: no.
 
 | Flag | Value | Meaning |
 |---|---|---|
-| `--range` | string | today | 1d | 7d | 30d | all; default 30d. |
-| `--surface` | string | all | codex | claude | grok; default all. |
+| `--range` | string | today \| 1d \| 7d \| 30d \| all; default 30d. |
+| `--surface` | string | all \| codex \| claude \| grok; default all. |
 | `--since` | string | Inclusive epoch milliseconds or ISO datetime with timezone; requires --until. |
 | `--until` | string | Inclusive end; requires --since. Custom bounds override --range. |
 | `--provider` | string | Filter provider. |
@@ -543,7 +543,7 @@ State-changing: no.
 
 JSON mode: `payload`.
 
-- Alias of usage. Connected clients instead read their own enrolled-key Hub report through /v1/usage; this is not whole-Hub management usage.
+- Also available as ocx usage. Connected clients read their own enrolled-key Hub report through /v1/usage; this is not whole-Hub management usage.
 - Custom bounds require the server to confirm customWindow, since and until.
 
 ### `ocx observe storage`
@@ -685,7 +685,7 @@ State-changing: yes.
 
 | Flag | Value | Meaning |
 |---|---|---|
-| `--mode` | string | compat | quiet; default compat. |
+| `--mode` | string | compat \| quiet; default compat. |
 | `--json` | boolean | Emit the result as JSON. |
 
 JSON mode: `payload`.
@@ -823,10 +823,10 @@ State-changing: yes.
 
 | Flag | Value | Meaning |
 |---|---|---|
-| `--enabled` | string | true | false. |
+| `--enabled` | string | true \| false. |
 | `--percent` | number | Oldest archived-session percentage; server validates the 1-100 policy range. |
-| `--mode` | string | quarantine | permanent. |
-| `--schedule` | string | startup | daily | weekly | manual. |
+| `--mode` | string | quarantine \| permanent. |
+| `--schedule` | string | startup \| daily \| weekly \| manual. |
 | `--json` | boolean | Emit the result as JSON. |
 
 JSON mode: `payload`.
@@ -1261,10 +1261,10 @@ State-changing: yes.
 
 | Flag | Value | Meaning |
 |---|---|---|
-| `--auto-start` | string | on | off for Codex autostart. |
-| `--stream-mode` | string | auto | legacy-tee | eager-relay. |
-| `--desktop-authless` | string | on | off for Codex Desktop authless. |
-| `--client-compaction` | string | on | off for native replay portability; summaries may consume provider quota. |
+| `--auto-start` | string | on \| off for Codex autostart. |
+| `--stream-mode` | string | auto \| legacy-tee \| eager-relay. |
+| `--desktop-authless` | string | on \| off for Codex Desktop authless. |
+| `--client-compaction` | string | on \| off for native replay portability; summaries may consume provider quota. |
 | `--json` | boolean | Emit the result as JSON. |
 
 JSON mode: `payload`.
@@ -1385,7 +1385,7 @@ State-changing: no.
 
 | Flag | Value | Meaning |
 |---|---|---|
-| `--channel` | string | latest | preview; default latest. |
+| `--channel` | string | latest \| preview; default latest. |
 | `--json` | boolean | Emit the result as JSON. |
 
 JSON mode: `payload`.
@@ -1406,8 +1406,8 @@ State-changing: yes.
 
 | Flag | Value | Meaning |
 |---|---|---|
-| `--channel` | string | latest | preview; default latest. |
-| `--restart` | string | on | off; default on. |
+| `--channel` | string | latest \| preview; default latest. |
+| `--restart` | string | on \| off; default on. |
 | `--yes` | boolean | Required confirmation for package update. |
 | `--json` | boolean | Emit the result as JSON. |
 
