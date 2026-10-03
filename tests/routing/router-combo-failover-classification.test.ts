@@ -172,6 +172,31 @@ describe("combo failure hop/stop verdicts", () => {
       response: { error: null } }))).toBe("hop");
   });
 
+  test("nested HTTP refusal selects one carrier without borrowing body metadata", () => {
+    const refusal = "The 'gpt-6-astra' model is not supported when using Codex with a ChatGPT account.";
+    for (const response of [{ detail: refusal }, { error: { message: refusal } }]) {
+      const body = JSON.stringify({ response });
+      expect(comboFailureDecision(400, body)).toBe("hop");
+      expect(comboFailureDecision(400, `Provider error 400: ${body}`)).toBe("hop");
+      expect(comboFailureDecision(400, body, { codexModelRefusal: "other" })).toBe("stop");
+      expect(comboFailureDecision(400, body, { code: "origin_rejected" })).toBe("stop");
+      expect(comboFailureDecision(400, body, { code: "upstream_no_response" })).toBe("stop");
+      expect(comboFailureDecision(400, body, { code: "cyber_policy" })).toBe("stop");
+      expect(comboFailureDecision(499, body)).toBe("stop");
+      expect(comboFailureDecision(422, body)).toBe("stop");
+      expect(comboFailureDecision(400, body.slice(0, -1))).toBe("stop");
+      expect(comboFailureDecision(400, JSON.stringify({ response, padding: "x".repeat(16_384) }))).toBe("stop");
+    }
+    for (const body of [
+      { detail: null, response: { detail: refusal } },
+      { detail: "bad input", response: { detail: refusal } },
+      { error: null, response: { error: { message: refusal } } },
+      { error: { message: "bad input" }, response: { error: { message: refusal } } },
+      { response: { error: { message: "bad input" } }, codexModelRefusal: "refusal" },
+      { response: { error: { message: "bad input" }, codexModelRefusal: "refusal" } },
+    ]) expect(comboFailureDecision(400, JSON.stringify(body))).toBe("stop");
+  });
+
   test("402 and 425 hop instead of ending the chain", () => {
     expect(comboFailureDecision(402, "payment required")).toBe("hop");
     expect(comboFailureDecision(425, "too early")).toBe("hop");

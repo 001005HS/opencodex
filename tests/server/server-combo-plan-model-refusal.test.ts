@@ -203,3 +203,48 @@ test("outer error presence blocks nested detail despite a model code", async () 
   expect(await response.text()).not.toContain("fallback succeeded");
   expect(sends).toEqual([firstModel]);
 });
+
+for (const carrier of ["detail", "error"] as const) {
+  test.each([0, 800])(`nested-only HTTP ${carrier} refusal hops (padding=%s)`, async padding => {
+    const nested = carrier === "detail" ? { detail: refusal } : { error: { message: refusal } };
+    const { response, sends } = await run({ response: nested, padding: "x".repeat(padding) });
+    expect(response.status).toBe(200);
+    await response.text();
+    expect(sends).toEqual([firstModel, secondModel]);
+  });
+}
+
+test("HTTP root carrier stays authoritative over a same-kind nested refusal", async () => {
+  for (const error of [null, { message: "bad input" }]) {
+    const { response, sends } = await run({ error, response: { error: { message: refusal } } });
+    expect(response.status).toBe(400);
+    await response.text();
+    expect(sends).toEqual([firstModel]);
+  }
+});
+
+test("HTTP nested carrier does not recursively search quotes or accept non-record responses", async () => {
+  for (const nested of [null, [], [{ detail: refusal }], { quoted: { detail: refusal } },
+    { response: { error: { message: refusal } } }]) {
+    const { response, sends } = await run({ response: nested });
+    expect(response.status).toBe(400);
+    await response.text();
+    expect(sends).toEqual([firstModel]);
+  }
+});
+
+for (const detailLevel of ["root", "response"] as const) {
+  for (const errorLevel of ["root", "response"] as const) {
+    test(`HTTP mixed ${detailLevel} detail / ${errorLevel} error stops before model-code hop`, async () => {
+      const root: Record<string, unknown> = { padding: "x".repeat(800) };
+      const nested: Record<string, unknown> = {};
+      (detailLevel === "root" ? root : nested).detail = null;
+      (errorLevel === "root" ? root : nested).error = { message: refusal, code: "unsupported_model" };
+      root.response = nested;
+      const { response, sends } = await run(root);
+      expect(response.status).toBe(400);
+      await response.text();
+      expect(sends).toEqual([firstModel]);
+    });
+  }
+}

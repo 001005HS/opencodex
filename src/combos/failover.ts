@@ -703,8 +703,14 @@ export function codexAccountModelRefusal(status: number, message: string): Codex
   if (CODEX_ACCOUNT_MODEL_REFUSAL.test(text)) return "refusal";
   try {
     const payload: unknown = JSON.parse(text);
-    return hasConflictingCodexModelRefusalEnvelopes(status, payload)
-      ? "ambiguous" : codexAccountModelRefusalPayload(status, payload);
+    if (hasConflictingCodexModelRefusalEnvelopes(status, payload)) return "ambiguous";
+    // A present root carrier stays authoritative, even when malformed or nonmatching.
+    if (payload && typeof payload === "object" && !Array.isArray(payload)
+      && !Object.hasOwn(payload, "detail") && !Object.hasOwn(payload, "error")
+      && Object.hasOwn(payload, "response")) {
+      return codexAccountModelRefusalPayload(status, (payload as Record<string, unknown>).response);
+    }
+    return codexAccountModelRefusalPayload(status, payload);
   } catch { return "other"; }
 }
 
