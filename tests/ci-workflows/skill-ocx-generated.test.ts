@@ -241,6 +241,29 @@ describe("generated operating-skill chapter contract", () => {
     });
   });
 
+  test("rendered flag tables retain enum choices, literal slashes and multiline meanings", () => {
+    withGenerator(root => {
+      const flags = [
+        { name: "--selection", value: "string", summary: "Choose alpha|beta|gamma." },
+        { name: "--path", value: "string", summary: "Use C:\\data\\* with left\\|right.\nNext line.\r\nFinal line." },
+        { name: "--optional", summary: "No explicit value kind." },
+      ];
+      const result = renderFixture(root, `Object.assign(CAPABILITIES.find(cap => cap.command.join(" ") === "access key list"), { flags: ${JSON.stringify(flags)} });`);
+      expect(result.status).toBe(0);
+      const files = JSON.parse(result.stdout) as Record<string, string>;
+      const markdown = files["01_surface_access-remote.md"]!.split("### `ocx access key list`\n")[1]!.split("\n### ")[0]!;
+      const html = Bun.markdown.html(markdown);
+      const rows = [...html.matchAll(/<tr>([\s\S]*?)<\/tr>/g)].map(row =>
+        [...row[1]!.matchAll(/<td>([\s\S]*?)<\/td>/g)].map(cell => cell[1]!));
+      const flagRows = rows.filter(row => row[0]?.startsWith("<code>--"));
+      expect(flagRows).toEqual([
+        ["<code>--selection</code>", "string", "Choose alpha|beta|gamma."],
+        ["<code>--path</code>", "string", "Use C:\\data\\* with left\\|right.<br>Next line.<br>Final line."],
+        ["<code>--optional</code>", "", "No explicit value kind."],
+      ]);
+    });
+  });
+
   test("unknown roots, duplicate invocations, anchor collisions and oversize chapters fail closed", () => {
     withGenerator((root) => {
       for (const [mutation, message] of [
