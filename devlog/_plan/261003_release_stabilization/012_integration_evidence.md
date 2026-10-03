@@ -15,6 +15,7 @@ This records landed work and remaining gates, not a production release receipt.
 | #6517 | `a99de42e7a5986c2443805fa6d833b8152f967ff` | 37135315210 | #6076 subsequently marked MERGED by preserved ancestry |
 | #6523 | `a41f67273c4937b852f26d726001641fe2026f63` | 37145111209 | #6507 account behavior carried; source superseded and closed, diagnostic-text logging excluded |
 | #6527 | `ab68539036fa89e0734ea21aa6b525ae4cc3ae36` | 37146395644 | #6505 superseded and closed; nested-only HTTP follow-up pending |
+| #6538 | `efc20e700b6fce67578e07b94336fc71aebc5a1c` | 37148359842 | Existing-format capacity guard; canonical #6370 remains excluded |
 
 All listed runs are successful final-head pull_request runs. Their actual checkout
 logs, selected executed jobs, actor/base/head gates and post-merge review counts
@@ -107,15 +108,21 @@ parallel regression or complete platform CI; both remain pending.
 The canonical spend migration proposed for #6370 is excluded from this release.
 Upgrade and recovery compatibility acceptance did not pass; the original PR stays
 open and its implementation work remains preserved in the owning worktree. This
-decision does not declare existing spend behavior correct. The existing-format capacity/booking-failure repair in PR #6538 remains pending
-and requires review and CI before candidate GO.
+decision does not declare existing spend behavior correct. The independent existing-format capacity guard in PR #6538 landed after review
+and successful exact-head CI37148359842. Its ledger format and hashing are unchanged.
 Private investigation and review evidence remain in ignored scratch.
 
 A post-merge review of #6527 identified a nested-only HTTP error-carrier case that
-still stops fallback. It is assigned to a new, minimal follow-up PR with independent
+still stops fallback. It is assigned to follow-up PR #6540 with independent
 closure and fresh CI; final regression cannot start from the current known-defective
 head. Lane C fixture repairs also remain pending. Final independent regression has
 not run; it starts after pending repairs land and their required checks pass. PR #6536
 (`dd9a980ec071285e628a35d8cdefaea785b8916b`) separately archives Lane B's public
 record, with corrected checkpoint counts and successful docs-only CI37147122129.
 Its skipped runtime jobs are not counted as runtime verification.
+
+The #6538 review records a nonblocking diagnostic limitation: native handlers can
+report a generic spend-exhausted reason when capacity prevented booking. The send
+is refused correctly. Supplied focused evidence totals 213 passes, and the original
+capacity probe changes from failure before repair to success after it. Final
+combined acceptance remains pending the other scoped repairs.
