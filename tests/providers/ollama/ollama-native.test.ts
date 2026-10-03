@@ -285,6 +285,120 @@ describe("ollama-native — request shape", () => {
     expect(messages[3].content).toBe("[hook] design findings requiring review");
   });
 
+  test("assistant commentary before parallel results keeps the original batch open", async () => {
+    const adapter = createOllamaNativeAdapter(ollamaProvider());
+    const { body } = await adapter.buildRequest(parsedWith([
+      {
+        role: "assistant",
+        content: [
+          { type: "toolCall", id: "call_commentary_first", name: "exec", arguments: { input: "text('first')" } },
+          { type: "toolCall", id: "call_commentary_second", name: "exec", arguments: { input: "text('second')" } },
+        ],
+        timestamp: 1,
+      },
+      { role: "assistant", content: [{ type: "text", text: "checking both results" }], timestamp: 2 },
+      { role: "toolResult", toolCallId: "call_commentary_second", toolName: "exec", content: "second result", isError: false, timestamp: 3 },
+      { role: "toolResult", toolCallId: "call_commentary_first", toolName: "exec", content: "first result", isError: false, timestamp: 4 },
+    ]));
+    const messages = JSON.parse(String(body)).messages;
+    expect(messages.map((message: { role: string }) => message.role))
+      .toEqual(["assistant", "tool", "tool", "assistant"]);
+    expect(messages[1]).toMatchObject({ tool_call_id: "call_commentary_first", content: "first result" });
+    expect(messages[2]).toMatchObject({ tool_call_id: "call_commentary_second", content: "second result" });
+    expect(messages[3].content).toBe("checking both results");
+  });
+
+  test("assistant commentary after one parallel result preserves the remaining genuine result", async () => {
+    const adapter = createOllamaNativeAdapter(ollamaProvider());
+    const { body } = await adapter.buildRequest(parsedWith([
+      {
+        role: "assistant",
+        content: [
+          { type: "toolCall", id: "call_partial_first", name: "exec", arguments: {} },
+          { type: "toolCall", id: "call_partial_second", name: "exec", arguments: {} },
+        ],
+        timestamp: 1,
+      },
+      { role: "toolResult", toolCallId: "call_partial_first", toolName: "exec", content: "first done", isError: false, timestamp: 2 },
+      { role: "assistant", content: [{ type: "text", text: "waiting for the second result" }], timestamp: 3 },
+      { role: "toolResult", toolCallId: "call_partial_second", toolName: "exec", content: "second done", isError: false, timestamp: 4 },
+    ]));
+    const messages = JSON.parse(String(body)).messages;
+    expect(messages.map((message: { role: string }) => message.role))
+      .toEqual(["assistant", "tool", "tool", "assistant"]);
+    expect(messages[1].content).toBe("first done");
+    expect(messages[2].content).toBe("second done");
+    expect(messages[3].content).toBe("waiting for the second result");
+  });
+
+  test("deferred assistant text and thinking retain their order without mutating parsed history", async () => {
+    const parsed = parsedWith([
+      { role: "assistant", content: [{ type: "toolCall", id: "call_thinking", name: "exec", arguments: {} }], timestamp: 1 },
+      { role: "developer", content: "context notice", timestamp: 2 },
+      { role: "assistant", content: [{ type: "text", text: "first comment" }, { type: "thinking", thinking: "synthetic reasoning" }], timestamp: 3 },
+      { role: "assistant", content: [{ type: "text", text: "second comment" }], timestamp: 4 },
+      { role: "toolResult", toolCallId: "call_thinking", toolName: "exec", content: "recorded result", isError: false, timestamp: 5 },
+    ]);
+    const original = JSON.stringify(parsed);
+    const { body } = await createOllamaNativeAdapter(ollamaProvider()).buildRequest(parsed);
+    const messages = JSON.parse(String(body)).messages;
+    expect(messages.map((message: { role: string }) => message.role))
+      .toEqual(["assistant", "tool", "system", "assistant", "assistant"]);
+    expect(messages[1].content).toBe("recorded result");
+    expect(messages[2].content).toBe("context notice");
+    expect(messages[3]).toMatchObject({ content: "first comment", thinking: "synthetic reasoning" });
+    expect(messages[4].content).toBe("second comment");
+    expect(JSON.stringify(parsed)).toBe(original);
+  });
+
+  test("assistant commentary after a complete batch keeps its existing wire position", async () => {
+    const { body } = await createOllamaNativeAdapter(ollamaProvider()).buildRequest(parsedWith([
+      { role: "assistant", content: [{ type: "toolCall", id: "call_complete", name: "exec", arguments: {} }], timestamp: 1 },
+      { role: "toolResult", toolCallId: "call_complete", toolName: "exec", content: "done", isError: false, timestamp: 2 },
+      { role: "assistant", content: [{ type: "text", text: "completed comment" }], timestamp: 3 },
+      { role: "user", content: "next turn", timestamp: 4 },
+    ]));
+    const messages = JSON.parse(String(body)).messages;
+    expect(messages.map((message: { role: string }) => message.role))
+      .toEqual(["assistant", "tool", "assistant", "user"]);
+    expect(messages[1].content).toBe("done");
+    expect(messages[2].content).toBe("completed comment");
+    expect(messages[3].content).toBe("next turn");
+  });
+
+  test("a new tool-call batch still settles an unresolved batch after assistant commentary", async () => {
+    const { body } = await createOllamaNativeAdapter(ollamaProvider()).buildRequest(parsedWith([
+      { role: "assistant", content: [{ type: "toolCall", id: "call_unfinished", name: "exec", arguments: {} }], timestamp: 1 },
+      { role: "assistant", content: [{ type: "text", text: "before the next batch" }], timestamp: 2 },
+      { role: "assistant", content: [{ type: "toolCall", id: "call_next", name: "exec", arguments: {} }], timestamp: 3 },
+      { role: "toolResult", toolCallId: "call_next", toolName: "exec", content: "next result", isError: false, timestamp: 4 },
+    ]));
+    const messages = JSON.parse(String(body)).messages;
+    expect(messages.map((message: { role: string }) => message.role))
+      .toEqual(["assistant", "tool", "assistant", "assistant", "tool"]);
+    expect(messages[1].tool_call_id).toBe("call_unfinished");
+    expect(messages[1].content).toContain("execution status unknown");
+    expect(messages[2].content).toBe("before the next batch");
+    expect(messages[4]).toMatchObject({ tool_call_id: "call_next", content: "next result" });
+  });
+
+  test("routed compaction preserves a result recorded after assistant commentary", async () => {
+    const parsed = parsedWith([
+      { role: "assistant", content: [{ type: "toolCall", id: "call_compaction", name: "exec", arguments: {} }], timestamp: 1 },
+      { role: "assistant", content: [{ type: "text", text: "commentary before compaction" }], timestamp: 2 },
+      { role: "toolResult", toolCallId: "call_compaction", toolName: "exec", content: "genuine result", isError: false, timestamp: 3 },
+      { role: "user", content: "summarize this history", timestamp: 4 },
+    ], { toolChoice: "none" });
+    parsed._compactionRequest = true;
+    const { body } = await createOllamaNativeAdapter(ollamaProvider()).buildRequest(parsed);
+    const request = JSON.parse(String(body));
+    expect(request.messages.map((message: { role: string }) => message.role))
+      .toEqual(["assistant", "tool", "assistant", "user"]);
+    expect(request.messages[1]).toMatchObject({ tool_call_id: "call_compaction", content: "genuine result" });
+    expect(request.messages[2].content).toBe("commentary before compaction");
+    expect(request.tools).toBeUndefined();
+  });
+
   test("a deferred user message keeps its text and images after the tool result", async () => {
     const adapter = createOllamaNativeAdapter(ollamaProvider());
     const png = "data:image/png;base64,iVBORw0KGgo=";
