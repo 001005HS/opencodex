@@ -466,3 +466,35 @@ test("different CLI account never clears or replays an uncertain refresh intent"
     expect(readOAuthRefreshIntent("anthropic", id)).toEqual(pending);
   } finally { clear.mockRestore(); }
 });
+
+
+test("different CLI account can clear an obsolete intent after durable same-account adoption", async () => {
+  const { id, credential } = await seed(); disk();
+  const pending = writeOAuthRefreshIntent("anthropic", id, credentialGeneration(credential));
+  const realClear = storeModule.clearOAuthRefreshIntentIfMatch;
+  let clears = 0;
+  const clear = spyOn(storeModule, "clearOAuthRefreshIntentIfMatch").mockImplementation((...args) => {
+    if (++clears === 1) throw new Error("synthetic post-adoption unlink failure");
+    return realClear(...args);
+  });
+  const warn = spyOn(console, "warn").mockImplementation(() => {});
+  try {
+    await expect(refreshAnthropicAccountWithLock("anthropic", id, noRefresh, credential, {
+      resolveIdentity: async access => proof(access),
+    })).resolves.toBe("synthetic-other");
+    const adopted = getAccountCredential("anthropic", id)!;
+    expect(readOAuthRefreshIntent("anthropic", id)).toEqual(pending);
+    expect(credentialGeneration(adopted)).not.toBe(pending.generation);
+    disk("synthetic-account-b-access", "synthetic-account-b-refresh");
+    const sent: string[] = [];
+    await expect(refreshAnthropicAccountWithLock("anthropic", id, {
+      ...OAUTH_PROVIDERS.anthropic!, refresh: async token => {
+        sent.push(token);
+        return { access: "synthetic-a-fresh", refresh: "synthetic-a-fresh-refresh", expires: Date.now() + 3600_000 };
+      },
+    }, adopted, { resolveIdentity: async access => proof(access, "synthetic-account-b") })).resolves.toBe("synthetic-a-fresh");
+    expect(sent).toEqual([adopted.refresh]);
+    expect(readOAuthRefreshIntent("anthropic", id)).toBeUndefined();
+    expect(getAccountSet("anthropic")!.accounts[0]!.needsReauth).toBeUndefined();
+  } finally { clear.mockRestore(); warn.mockRestore(); }
+});

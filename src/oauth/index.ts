@@ -970,7 +970,8 @@ export async function refreshAnthropicAccountWithLock(
       resumeAnthropicRefreshIntentCleanup(provider, accountId, pendingIntent);
       pendingIntent = undefined;
     }
-    if (observed.kind === "different" && pendingIntent) throw new OAuthLoginRequiredError(provider);
+    if (observed.kind === "different"
+      && (pendingIntent?.uncertain || pendingIntent?.generation === generation)) throw new OAuthLoginRequiredError(provider);
     if (!pendingIntent?.uncertain && pendingIntent?.generation === generation) {
       if (pendingIntent.staleOwner) throw new OAuthTokenRefreshStaleError();
       if (deps.replacedStaleFlight && pendingIntent.flightId === deps.replacedStaleFlight.flightId) {
