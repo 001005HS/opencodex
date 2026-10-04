@@ -15,6 +15,7 @@
   "skill-ocx-workflows.test.ts": "ci-workflows",
   "cli-capability-data.test.ts": "cli",
   "skill-ocx-generated.test.ts": "ci-workflows",
+  "ollama-native-tool-continuations.test.ts": "providers/ollama",
   "usage-antigravity-55.test.ts": "usage", "provider-antigravity-wire-snapshot.test.ts": "providers",
   "antigravity-discovered-families.test.ts": "adapters/google",
   "provider-antigravity-effort-families.test.ts": "providers",
