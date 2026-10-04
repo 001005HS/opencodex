@@ -152,6 +152,7 @@ export interface WriteJournalOptions {
  * plugins, model choice, and trusted projects.
  */
 export function writeJournal(options: WriteJournalOptions = {}): void {
+  assertCodexHomeOwner(CODEX_HOME);
   if (!existsSync(CODEX_CONFIG_PATH)) return;
   const config = options.configContent ?? readFileSync(CODEX_CONFIG_PATH, "utf-8");
   // Ownership is decided HERE, from the bytes about to be journaled — never taken
@@ -199,6 +200,7 @@ export function markJournalInjectedState(
   profile: string | null,
   ownership: InjectedJournalOwnership,
 ): void {
+  assertCodexHomeOwner(CODEX_HOME);
   const inspection = readCodexHomeJournal(JOURNAL_PATH);
   if (inspection.kind === "unknown") throw new CodexHomeOwnerRefusal("owner-unknown");
   const journal = inspection.kind === "read" ? inspection.journal as unknown as Journal : null;

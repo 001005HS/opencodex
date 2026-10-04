@@ -66,14 +66,15 @@ let backupTempSequence = 0;
  * An unreadable or absent file reports "differs", so the caller performs the real
  * write; that also converges a file that does not exist yet.
  */
-export function preparedBytesDifferFromDisk(prepared: PreparedCatalogFileWrite): boolean {
-  let onDisk: Buffer;
-  try {
-    onDisk = readFileSync(prepared.path);
-  } catch {
-    return true;
-  }
-  return !onDisk.equals(Buffer.from(prepared.content, "utf8"));
+function readExistingCatalogBytes(path: string): Buffer | null {
+  try { return readFileSync(path); } catch { return null; }
+}
+
+export function preparedBytesDifferFromDisk(
+  prepared: PreparedCatalogFileWrite,
+  onDisk: Buffer | null = readExistingCatalogBytes(prepared.path),
+): boolean {
+  return onDisk === null || !onDisk.equals(Buffer.from(prepared.content, "utf8"));
 }
 
 function isMissingPathError(error: unknown): boolean {
@@ -225,9 +226,9 @@ export function replaceActiveCodexCatalog(
   if (intent === "cache") {
     throw new CatalogWritePermitRefusal("A models-cache permit cannot replace the Codex catalog.");
   }
-  if (!preparedBytesDifferFromDisk(prepared)) return { kind: "unchanged" };
-  let routedBefore: number | null = null;
-  try { routedBefore = routedRowsFromJson(readFileSync(prepared.path, "utf8")); } catch { /* absent/unreadable */ }
+  const onDisk = readExistingCatalogBytes(prepared.path);
+  if (!preparedBytesDifferFromDisk(prepared, onDisk)) return { kind: "unchanged" };
+  const routedBefore = onDisk === null ? null : routedRowsFromJson(onDisk.toString("utf8"));
   if (intent === "refresh" && (routedBefore ?? 0) > 0 && routedRowsFromJson(prepared.content) === 0) {
     // K -> C, including the replacement: a config save cannot race the authority check.
     try {

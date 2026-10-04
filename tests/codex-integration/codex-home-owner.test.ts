@@ -96,7 +96,7 @@ test("injection binding selection preserves foreign evidence and adopts only leg
   rmSync(otherHome, { recursive: true });
   expect(opencodexHomeForInjection(otherHome)).toBe(ownHome);
 });
-test("snapshot and injected-state writers fill legacy and preserve foreign native snapshots", () => {
+test("snapshot and injected-state writers fill legacy, refresh owned native snapshots, and adopt stale bindings", () => {
   writeFileSync(join(codexHome, "config.toml"), 'model = "gpt-6.1-sol"\n');
   const script = `const j = require("./src/codex/journal");
     j.writeJournal({currentStateIsNative:true});
@@ -104,12 +104,34 @@ test("snapshot and injected-state writers fill legacy and preserve foreign nativ
     console.log(require("node:fs").readFileSync(j.JOURNAL_PATH,"utf8"));`;
   expect(run(script).opencodexHome).toBe(ownHome);
   bind(); expect(run(script).opencodexHome).toBe(ownHome);
-  bind(otherHome);
+  bind(ownHome);
   const replaced = run(script);
-  expect(replaced.opencodexHome).toBe(otherHome);
+  expect(replaced.opencodexHome).toBe(ownHome);
   expect(replaced.originalConfig).toBe(Buffer.from('model = "gpt-6.1-sol"\n').toString("base64"));
+  bind(otherHome);
   rmSync(otherHome, { recursive: true });
   expect(run(script).opencodexHome).toBe(ownHome);
+});
+test("direct snapshot and mark refuse foreign ownership preserving all recovery bytes", () => {
+  const configPath = join(codexHome, "config.toml");
+  const profilePath = join(codexHome, "opencodex.config.toml");
+  const journalPath = join(codexHome, CODEX_HOME_JOURNAL_FILE);
+  writeFileSync(configPath, 'model = "gpt-6.1-sol"\n');
+  writeFileSync(profilePath, "profile-before\n");
+  const bytes = JSON.stringify({ ...journal(otherHome), originalConfig: Buffer.from("foreign original").toString("base64"),
+    injectedConfigHash: "foreign-hash", injectedCatalogPath: "foreign-catalog.json" }, null, 2) + "\n";
+  writeFileSync(journalPath, bytes);
+  const result = run(`const j=require("./src/codex/journal");const fs=require("node:fs");let reasons=[],snapshots=[];
+    for(const fn of [()=>j.writeJournal({currentStateIsNative:true}),
+      ()=>j.markJournalInjectedState("routed", "new profile", {injectedOpenaiBaseUrl:"http://127.0.0.1:19999",injectedRealtimeWsBaseUrl:null,injectedCatalogPath:"new-catalog.json"})]) {
+      try {fn();} catch(e) {reasons.push(e.reason);}
+      snapshots.push(fs.readFileSync(j.JOURNAL_PATH,"utf8"));
+    }console.log(JSON.stringify({reasons,snapshots}));`);
+  expect(result.reasons).toEqual(["foreign-owner", "foreign-owner"]);
+  expect(result.snapshots).toEqual([bytes, bytes]);
+  expect(readFileSync(journalPath, "utf8")).toBe(bytes);
+  expect(readFileSync(configPath, "utf8")).toBe('model = "gpt-6.1-sol"\n');
+  expect(readFileSync(profilePath, "utf8")).toBe("profile-before\n");
 });
 test("corrupt journals refuse direct snapshot and mark without overwriting evidence", () => {
   writeFileSync(join(codexHome, "config.toml"), 'model = "gpt-6.1-sol"\n');

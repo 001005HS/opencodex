@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
+import * as fs from "node:fs";
 import { join } from "node:path";
 import { Database } from "bun:sqlite";
 import * as owner from "../../src/codex/codex-home-owner";
@@ -166,5 +167,27 @@ for (const state of ["foreign", "unknown"] as const) {
       expect(called).toBe(false);
     } finally { inspect.mockRestore(); }
     expect(acquire("cache", () => "released")).toEqual({ kind: "completed", value: "released" });
+  });
+}
+
+for (const mode of ["unchanged", "clearing", "missing", "read-error"] as const) {
+  test(`catalog ${mode} decision reads its on-disk bytes once`, () => {
+    if (mode === "missing") rmSync(catalogPath);
+    if (mode === "clearing") writeFileSync(join(opencodexHome, "config.json"), '{"providers":{}}');
+    const read = fs.readFileSync;
+    let reads = 0;
+    const spy = spyOn(fs, "readFileSync").mockImplementation((...args: Parameters<typeof fs.readFileSync>) => {
+      if (args[0] === catalogPath) {
+        reads += 1;
+        if (mode === "read-error") throw Object.assign(new Error("fixture unreadable"), { code: "EACCES" });
+      }
+      return read(...args);
+    });
+    try {
+      const result = replace(mode === "unchanged" || mode === "clearing" ? "refresh" : "restore", mode === "unchanged" ? routed : native);
+      expect(result).toEqual({ kind: "completed", value: { kind: mode === "unchanged" ? "unchanged" : "written" } });
+      expect(reads).toBe(1);
+    } finally { spy.mockRestore(); }
+    expect(readFileSync(catalogPath, "utf8")).toBe(mode === "unchanged" ? routed : native);
   });
 }
