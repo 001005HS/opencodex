@@ -1,5 +1,6 @@
 import { spendPoolAliasesError } from "../lib/spend-pool-continuity";
 import { isSubagentModelEntry, rawSubagentModelForce } from "./subagent-models";
+import { protocolConfigSchema } from "./schema/config-schema";
 import { createHash } from "node:crypto";
 import { lstatSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -651,7 +652,19 @@ export function validateConfigCandidate(value: unknown): { ok: true; config: Ocx
   if (memoryModels !== undefined && !memoryModelsSchema.safeParse(memoryModels).success) {
     return { ok: false, error: "schema_invalid: memoryModels: requires a nonblank model and an optional declared reasoningEffort per configured phase, and no other fields" };
   }
-  const routeValue = (rawConfigRecord(value)?.anthropicAccountPool as Record<string, unknown> | undefined)?.routes;
+  const protocols = rawConfigRecord(value)?.protocols;
+  if (protocols !== undefined && !protocolConfigSchema.safeParse(protocols).success) {
+    return { ok: false, error: "schema_invalid: protocols: expected valid protocol policy and boolean rollout flags" };
+  }
+  const rawAnthropicPool = rawConfigRecord(value)?.anthropicAccountPool;
+  const anthropicPool = rawConfigRecord(rawAnthropicPool);
+  if (rawAnthropicPool !== undefined && !anthropicPool) {
+    return { ok: false, error: "schema_invalid: anthropicAccountPool: must be an object" };
+  }
+  if (anthropicPool && Object.hasOwn(anthropicPool, "nativeMessages") && typeof anthropicPool.nativeMessages !== "boolean") {
+    return { ok: false, error: "schema_invalid: anthropicAccountPool.nativeMessages: must be a boolean" };
+  }
+  const routeValue = anthropicPool?.routes;
   if (routeValue !== undefined) {
     const parsed = parseAnthropicModelRoutes(routeValue);
     if (!parsed.ok) return { ok: false, error: `schema_invalid: anthropicAccountPool.routes: ${parsed.error}` };
