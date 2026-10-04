@@ -357,7 +357,7 @@ Conflicting provider credential headers fail before dispatch on every OAuth buil
 builds without a provider UUID.
 Native OAuth Messages collect top-level and typed inline tool declarations before rewriting declared
 client names in tool choices, uses, references, additions and removals, including typed tool-result
-content. Typed builtin names stay fixed; ambiguous original or wire-name collisions are refused.
+content. Typed built-in names stay fixed; ambiguous original or wire-name collisions are refused.
 The copy-on-write traversal leaves input schemas, tool arguments, unknown containers and cache markers
 (including lifetimes) opaque. Nested inline support is structural; it does not assert upstream acceptance.
 Key-auth and caller-forward requests retain their metadata. The answer's

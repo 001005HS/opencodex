@@ -3,6 +3,7 @@
 Depends on B1. Publish `codex/next-release-261004-claude-native` as manual child of tools. Combining client compatibility and dispatch is intentional: selecting native for a real pooled client without preserving its identity/preamble/betas would admit a request the replacement cannot faithfully send. No preference/default changes in this layer.
 
 ## Exact change map
+
 Use the complete public #6534 diff at `829b203b3e65530a4cdaaa121f2da15484c2c9b7`, excluding B1 hunks already carried, The equivalent #6547 commits `c46145193613d54574c779806192e8ff4f19ace5` (dispose refusal before rebind) and `5f3cf4ed0b4a63604133863442002fb9ac824b16` (blank session fallback) corroborate behavior already in the pinned #6534 head and are not applied again. Adapt to current routing/refusal owners, never restore obsolete ownership from a source patch.
 
 - MODIFY `src/adapters/anthropic/client-identity.ts`: recognize bounded observed CLI/Desktop Code compatibility bundles; keep WeakMap-backed opaque handles, header exclusion, first-party-only forwarding and operator header precedence. Expose observed-identity predicate for native preamble/beta consumers.
@@ -19,6 +20,7 @@ Use the complete public #6534 diff at `829b203b3e65530a4cdaaa121f2da15484c2c9b7`
 - MODIFY `structure/data-planes/protocol-paths.md`, `structure/providers/anthropic-account-pool.md`, `docs-site/src/content/docs/guides/claude-code.md`: replace obsolete pool exclusion with explicit-rollout native contract; no default-on claim yet.
 
 ## Acceptance and verification
+
 Real local fake endpoints exercise two usable accounts, sticky session, model route, eligible shared-quota 429 and classified account 403 before output, bounded attempt exhaustion, refusal cancellation before rebind, and partial-output termination without another physical send. Manual selection, pause, generation or UUID change during async preparation must not emit stale binding. Opaque content/cache markers are equal across rebuild except declared tool/account metadata fields. CLI/Desktop preamble and beta cases use fabricated compatibility headers only. Token counting and preview select same body/lane as runtime without refreshing or selecting credentials.
 
 Run focused test files above plus existing native bridge/opaque-state tests, `bun run typecheck`, structure/privacy/layout/ratchet gates and docs build. Use fake isolated OAuth homes; no credential or live-provider access. Source regressions may need sibling test modules to respect downward ratchets, registered in both layout inventories. Security review is independent; unshipped discoveries stay ignored scratch.

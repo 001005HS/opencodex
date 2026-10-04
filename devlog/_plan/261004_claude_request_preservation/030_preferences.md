@@ -3,6 +3,7 @@
 Depends on B2/B3. Publish `codex/next-release-261004-claude-settings` as a manual child of native. This layer carries #6547 settings behavior while correcting precedence: an explicit operator false rollout remains false. Source tests asserting false becomes true are deliberately replaced by precedence regressions.
 
 ## Field chain and exact changes
+
 The new optional `anthropicAccountPool.nativeMessages` boolean is created by API/UI, serialized by existing config persistence, parsed by schema/config diagnostics, resolved by protocol settings and consumed by eligibility, preview, count_tokens and runtime. DTO/UI normalization must preserve false.
 
 - MODIFY `src/types/config.ts`: add optional nativeMessages boolean to existing Anthropic pool type.
@@ -20,7 +21,9 @@ The new optional `anthropicAccountPool.nativeMessages` boolean is created by API
 - MODIFY `docs-site/src/content/docs/guides/claude-code.md`, `reference/configuration/providers.md`, `reference/configuration/server.md`, `structure/providers/anthropic-account-pool.md` and affected protocol contract: default only when no explicit opt-out; pool-off rules; cache remains account-specific. Review translated pages and amend contradictory statements.
 
 ## Activation matrix
+
 Pool absent/disabled + flags absent -> off. Pool enabled + flags absent + preference absent/true -> eligible Anthropic native on. Each explicit false flag wins; malformed flag or container fails closed. Preference false wins over explicit true flags for pooled routes. Other providers retain their own rollout. Invalid native preference -> false without losing providers. Raw malformed preference/rollout input is tested in resolver and DTO, not only parsed-file tests. Both API routes reject wrong provider/nonboolean; persistence failure leaves live config unchanged and UI shows error; concurrent unrelated disk edit survives. 204 false write remains false. Preview revision changes when effective policy changes; count sends no requests. GUI checkbox toggles and reload reflects actual saved choice.
 
 ## Verification and publication
+
 Focused backend/GUI tests, root typecheck and GUI lint/typecheck, structure/privacy/layout/ratchet; docs build. Observe local rendered checkbox and first state change with mocked endpoints and fake account data; capture screenshot outside PR branch and publish via pr-assets (or reuse source image only if accurate). Every source hunk is carried/amended/dropped explicitly; all three layers carry Claire Novotny attribution. Current-head hosted checks inspected, broad/native/live missing evidence remains draft-bound. No merge or source closure.
