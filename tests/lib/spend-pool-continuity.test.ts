@@ -20,6 +20,7 @@ import { claimDispatchSpendProof, createRequestExecutionBudget, deriveRequestExe
 import { createPoolContinuity } from "../../src/lib/spend-pool-continuity";
 import { listWorkflowBudgetEvents, resetWorkflowBudgetsForTest, workflowSpendCeilingReached } from "../../src/lib/workflow-budget";
 import { createRequestSpendTracker } from "../../src/server/responses/request-spend";
+import type { RequestLogContext } from "../../src/server/request-log";
 
 const salt = "5".repeat(64);
 const alias = (kind: string, id: string) => createHash("sha256").update(salt).update("\0").update(kind).update("\0").update(id).digest("hex").slice(0, 32);
@@ -196,8 +197,11 @@ describe("historical pool identity continuity", () => {
   test("observe-only records already-sent requests while ambiguity still blocks new dispatches", () => {
     const disk = journal([checkpoint([["unknown-label", 40, 0]])]);
     const ledger = createSpendReservationLedger({ journal: disk, salt, policy: policy(), now: () => 2 });
-    const tracker = createRequestSpendTracker({ provider: "provider-display", spendPoolId: "provider", usageLogInputTokens: 10 }, undefined, ledger);
+    const context: RequestLogContext = { model: "fixture", provider: "provider-display", spendPoolId: "provider", usageLogInputTokens: 10 };
+    const tracker = createRequestSpendTracker(context, undefined, ledger);
     expect(tracker.charge()).toBe(false);
+    expect(tracker.refusals).toBe(1);
+    expect(context.errorCode).toBe("workflow_pool_history_unresolved");
     expect(tracker.charge({ alreadySent: true })).toBe(true);
     tracker.settle({ inputTokens: 8, outputTokens: 0 });
     expect(ledger.snapshot("pool", "provider")?.settled).toBe(8);

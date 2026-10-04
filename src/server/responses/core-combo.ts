@@ -1,3 +1,4 @@
+import type { CodexAccountModelRefusal } from "../../combos/failover";
 import {
   isCodexReasoningEffort,
   isDeclaredReasoningEffort,
@@ -787,6 +788,7 @@ export async function executeComboResponses(
     const completedTarget = { provider: pick.target.provider, model: pick.target.model };
     const writerGeneration = pick.writerGeneration;
     let consumedChildFailure: ConsumedComboFailure | undefined;
+    let preflightModelRefusal: CodexAccountModelRefusal | undefined;
     const callbackGate = createChildPassthroughCallbackGate({
       ...options,
       onResponseComplete: model => {
@@ -911,6 +913,7 @@ export async function executeComboResponses(
         callbackGate.discard();
         terminalRecorder?.("failed", preflight.response.status);
         response = preflight.response;
+        preflightModelRefusal = preflight.codexModelRefusal;
       } else {
         response = preflight.response;
         if (nativePassthrough) markNativePassthroughSseResponse(response);
@@ -953,6 +956,7 @@ export async function executeComboResponses(
     try {
       failure = consumedChildFailure
         ?? await consumeComboFailure(response, options.abortSignal);
+      if (preflightModelRefusal !== undefined) failure = { ...failure, codexModelRefusal: preflightModelRefusal };
     } catch (error) {
       if (options.abortSignal?.aborted) {
         retainCancelledAttempt();
@@ -997,6 +1001,7 @@ export async function executeComboResponses(
       ? "stop"
       : comboFailureDecision(failure.response.status, failure.classificationText, {
         code: failure.upstreamCode,
+        codexModelRefusal: failure.codexModelRefusal,
       });
     const wantsStream = (rawBody as { stream?: unknown } | null)?.stream === true;
     // Local byte admission has its own diagnostic; do not relabel it as an upstream refusal.

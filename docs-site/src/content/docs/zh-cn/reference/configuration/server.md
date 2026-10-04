@@ -260,3 +260,7 @@ The dashboard warns about old or unknown CLI versions, unavailable targets, and 
 如果这样的旧写入程序已经运行，新读取程序会拒绝无法识别且用量大于零的历史记录，
 直到操作员再次显式核实所有剩余映射。存储或日志完整性导致的拒绝与别名问题分开，仍使用
 `workflow_spend_undurable`；不安全文件或所有权问题可能改为作为存储错误向上传递，同样不会允许请求通过。
+
+## 令牌预留与额度
+
+如果请求受 `spend.root.maxTokens`、`spend.identity.maxTokens` 或 `spend.pool.maxTokens` 限制，但因跟踪容量已满或发送 ID 重复等原因无法记录预留，则会在分派前拒绝新的发送。没有适用额度限制的请求仍保持仅观察模式。
