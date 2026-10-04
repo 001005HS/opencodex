@@ -299,7 +299,10 @@ Caller betas. The ingress hands over `anthropic-beta` explicitly; caller `Author
 `x-api-key` never reach the managed provider.
 `src/adapters/anthropic/beta-allowlist.ts` keeps a value only when it is on the list for the
 destination's class and re-emits it in the list's own spelling: `interleaved-thinking-2025-05-14`
-for `api.anthropic.com`, nothing for an Anthropic-compatible host. Proxy-owned betas (the OAuth
+for `api.anthropic.com`, nothing for an Anthropic-compatible host. A caller-requested
+`inline-tools-2026-09-15` is also retained for first-party requests whose outgoing system-message
+content directly contains typed inline definitions or tool references in additions/removals.
+Arguments, schemas and nested/unknown containers do not activate this allowance; no beta is injected. Proxy-owned betas (the OAuth
 pair) are set by the builder, and an operator's configured beta is merged, not replaced. Any
 dropped value adds `anthropic-beta-dropped` to the trace; the value itself is never recorded.
 
@@ -352,6 +355,11 @@ The local pool id is never used; malformed, absent and unknown metadata stays un
 Every rebuild starts from the source body; the binding also checks UUID equality before send.
 Conflicting provider credential headers fail before dispatch on every OAuth build, including
 builds without a provider UUID.
+Native OAuth Messages collect top-level and typed inline tool declarations before rewriting declared
+client names in tool choices, uses, references, additions and removals, including typed tool-result
+content. Typed built-in names stay fixed; ambiguous original or wire-name collisions are refused.
+The copy-on-write traversal leaves input schemas, tool arguments, unknown containers and cache markers
+(including lifetimes) opaque. Nested inline support is structural; it does not assert upstream acceptance.
 Key-auth and caller-forward requests retain their metadata. The answer's
 `tool_use` names are mapped back for exactly those names. A 401 or 429 is answered as the bridge
 answers an unpooled account: no refresh replay, no same-token replay, no rotation.

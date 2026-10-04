@@ -93,6 +93,12 @@ Operational contract when enabled:
 
 See [Configuration](/reference/configuration/providers/#anthropicaccountpool-experimental).
 
+For managed native OAuth requests, declared custom tools use consistent names across deferred
+references and inline additions or removals. Tool arguments, schemas and cache markers are retained.
+Ambiguous tool declarations are rejected before sending a request. For inline tool changes in
+system messages, send the required `inline-tools-2026-09-15` beta; the first-party native builder
+preserves that requested header with the typed blocks. See [Claude’s inline tool contract](https://platform.claude.com/docs/en/build-with-claude/mid-conversation-system-messages).
+
 ## Quickstart
 
 ```bash
