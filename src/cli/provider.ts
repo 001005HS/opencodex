@@ -340,6 +340,7 @@ async function handleAdd(args: string[], deps: ProviderCommandDeps): Promise<voi
     return;
   }
 
+  if (sync?.warning) console.log(`   Warning: ${sync.warning}`);
   const registryLabel = registryEntry ? ` (${registryEntry.label})` : "";
   console.log(`✅ Provider "${name}"${registryLabel} added.`);
   for (const line of modelSelectionGuidance(name)) console.log(line);
