@@ -33,6 +33,8 @@ export const poolSchema = z.object({
   }),
   // The server returns a static validation diagnostic here; never forward its text.
   routesError: z.string().transform(() => "Stored model routes are invalid.").optional(), inert: z.boolean().optional(),
+  // Saved, but post-save bookkeeping failed. Only this fixed code is projected.
+  warning: z.literal("config_bookkeeping_failed").optional(),
 });
 export const thresholdReceipt = z.object({ ok: z.literal(true), id: accountId,
   autoSwitchThresholdOverride: nullableThreshold, autoSwitchThreshold: threshold });

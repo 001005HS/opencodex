@@ -283,8 +283,10 @@ Use `--enabled on|off`, `--threshold 0..100`, `--strategy`, `--sticky 1..100`, a
 `--quota-window` only where supported. OpenAI does not support pool enabled/window
 writes; `reset-first` is OpenAI-only, `least-loaded` Kiro-only, and Anthropic windows
 are `five-hour`, `weekly`, `max-utilization`. Omitted fields stay unchanged.
-Read DTO fields such as routes or per-account concurrency do not imply a setter
-in this command; use only the listed CLI options.
+Read DTO fields such as routes, per-account concurrency or Anthropic `nativeMessages`
+do not imply a setter in this command; use only the listed CLI options. A save that
+returns `warning: "config_bookkeeping_failed"` was persisted but needs a fresh read to
+confirm the live state.
 
 ```bash
 ocx account pool anthropic --threshold 80 --quota-window five-hour --json

@@ -189,6 +189,16 @@ describe("pool field masks and actual policy projection", () => {
     const f = fixture(() => ({ ...dto, supported: ["strategy"] }));
     expect(await policy("pool", ["openai", "--sticky", "3"], f.deps)).toBe(2); expect(f.calls).toHaveLength(1);
   });
+  test("pool save keeps the server's fixed bookkeeping warning in JSON and human output", async () => {
+    const dto = unifiedPoolSettingsDto({ port: 10100, providers: {}, defaultProvider: "anthropic" }, "anthropic", "anthropic");
+    const handler = (call: Call) => call.method === "GET" ? dto : { ...dto, enabled: false, warning: "config_bookkeeping_failed" };
+    let f = fixture(handler);
+    expect(await policy("pool", ["anthropic", "--enabled", "off", "--json"], f.deps)).toBe(0);
+    expect(result().warning).toBe("config_bookkeeping_failed");
+    stdout.mockClear(); f = fixture(handler);
+    expect(await policy("pool", ["anthropic", "--enabled", "off"], f.deps)).toBe(0);
+    expect(String(stdout.mock.calls[0]![0])).toContain("configuration bookkeeping failed");
+  });
   test("pool mismatched provider or changed write evidence cannot succeed", async () => {
     const dto = unifiedPoolSettingsDto({ port: 10100, providers: {}, defaultProvider: "openai" }, "openai", "codex");
     const f = fixture(() => dto);
