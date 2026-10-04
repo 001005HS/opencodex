@@ -306,6 +306,45 @@ describe("Codex catalog self-heal (#6529)", () => {
     expect(h.converges).toHaveLength(1);
   });
 
+  for (const gate of ["idle", "client", "off"] as const) {
+    test(`matching owner publication rearms release while ${gate} gate is closed`, async () => {
+      let idle = true, client = false;
+      const h = harness({ gates: { idle: () => idle, clientConnected: () => client } });
+      h.publish({ kind: "native-released", path: "/codex/opencodex-catalog.json" });
+      if (gate === "idle") idle = false;
+      if (gate === "client") client = true;
+      if (gate === "off") h.config.clientIntegrations = { codex: false };
+      h.publish({ kind: "published", path: "/codex/opencodex-catalog.json", intent: "refresh" });
+      expect(h.converges).toHaveLength(0);
+      idle = true; client = false; h.config.clientIntegrations = { codex: true };
+      h.rewrite(empty);
+      await h.handle.tickForTests();
+      expect(h.converges).toHaveLength(1);
+      expect(h.handle.lastHeal()?.committed).toBe(true);
+    });
+  }
+
+  test("legitimate owner emptiness observed while busy consumes no heal slot", async () => {
+    let idle = false;
+    const h = harness({ gates: { idle: () => idle } });
+    h.rewrite(empty);
+    h.publish({ kind: "published", path: "/codex/opencodex-catalog.json", intent: "refresh" });
+    await h.handle.tickForTests();
+    idle = true;
+    h.advance(CATALOG_HEAL_RECHECK_MS);
+    await h.handle.tickForTests();
+    expect(h.converges).toHaveLength(0);
+    expect(h.handle.lastHeal()).toBeNull();
+    // All three success slots remain available for later genuine losses.
+    h.rewrite(full);
+    h.publish({ kind: "published", path: "/codex/opencodex-catalog.json", intent: "refresh" });
+    for (let index = 0; index < CATALOG_HEAL_MAX_HEALS; index++) {
+      h.rewrite(empty);
+      await h.handle.tickForTests();
+    }
+    expect(h.converges).toHaveLength(CATALOG_HEAL_MAX_HEALS);
+  });
+
   test("external owner empty publication during failed heal waits for terminal retry acceptance", async () => {
     const h = harness({ republish: empty });
     const entered = deferred(), finish = deferred();

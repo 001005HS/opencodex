@@ -258,7 +258,8 @@ export function startCodexCatalogSelfHeal(options: { port?: number; deps?: Catal
       return;
     }
     if (running) return; // Catalog-success/cache-failure must not accept a baseline.
-    if (!evaluateCatalogSelfHealGates(gates).open || event.path === null || path === null || !sameCatalogHealPath(event.path, path)) return;
+    // A committed owner publication supplies a read-only baseline even while heal writes are gated.
+    if (event.path === null || path === null || !sameCatalogHealPath(event.path, path)) return;
     updateTarget(path);
     released = false;
     pendingRetry = null;
