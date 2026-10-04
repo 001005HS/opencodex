@@ -81,7 +81,9 @@ async function pool(args: string[], json: boolean, deps: RuntimeApiDeps): Promis
   const after = parseDto(poolSchema, await request("/api/pool/settings", pinned, { provider, ...patch }));
   requireEqual(after.provider, provider); requireEqual(after.kind, before.kind);
   for (const [key, value] of Object.entries(patch)) requireEqual(record(after)[key], value);
-  return output(after, json, "Pool policy saved.");
+  return output(after, json, after.warning === "config_bookkeeping_failed"
+    ? "Pool policy saved, but configuration bookkeeping failed. Re-read the pool policy to confirm the current state."
+    : "Pool policy saved.");
 }
 
 async function codex(sub: "auto-switch" | "credits" | "quota-activation", args: string[], json: boolean, deps: RuntimeApiDeps): Promise<number> {
