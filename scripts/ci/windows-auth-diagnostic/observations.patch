@@ -1,0 +1,224 @@
+--- a/tests/preload.ts
++++ b/tests/preload.ts
+@@ -142,3 +142,6 @@
+ });
+ afterAll(cleanup.afterAll);
+ process.on("exit", cleanup.onExit);
++
++// Temporary NON-RELEASE observation overlay; normal isolation above remains intact.
++await import("../scripts/ci/windows-auth-diagnostic/preload");
+--- a/tests/server/server-management-auth.test.ts
++++ b/tests/server/server-management-auth.test.ts
+@@ -197,13 +197,19 @@
+   // Drain producers before the final handle-release barrier. Native-main
+   // release can finish ACL-backed startup work under CODEX_HOME and register
+   // another child reap; waiting for reaps before that release misses the child.
++  Reflect.get(globalThis, "__ocxWindowsAuthTrace")?.("native-barrier-start", testHome);
+   await flushNativeMainStartupReleases();
++  Reflect.get(globalThis, "__ocxWindowsAuthTrace")?.("native-barrier-end", testHome);
+   // Flush all homes before restoring environment variables, including startup
+   // rollback flights that no successfully returned server could have awaited.
++  Reflect.get(globalThis, "__ocxWindowsAuthTrace")?.("config-barrier-start", testHome);
+   await flushConfigDirHardeningForTests();
++  Reflect.get(globalThis, "__ocxWindowsAuthTrace")?.("config-barrier-end", testHome);
+   // The caller-facing ACL timeout may settle before icacls actually exits.
+   // Deletion waits for actual reaps, after every producer above has settled.
++  Reflect.get(globalThis, "__ocxWindowsAuthTrace")?.("acl-barrier-start", testHome);
+   await flushWindowsSecretAclReapsBeforeRemoval(testHome);
++  Reflect.get(globalThis, "__ocxWindowsAuthTrace")?.("acl-barrier-end", testHome);
+   resetContextRelayActivationForTests();
+   if (previousCodexHome === undefined) delete process.env.CODEX_HOME;
+   else process.env.CODEX_HOME = previousCodexHome;
+@@ -218,6 +224,7 @@
+   if (previousAdminToken === undefined) delete process.env.OPENCODEX_ADMIN_AUTH_TOKEN;
+   else process.env.OPENCODEX_ADMIN_AUTH_TOKEN = previousAdminToken;
+   if (testHome) removeTreeWithRetry(testHome);
++  Reflect.get(globalThis, "__ocxWindowsAuthTrace")?.("fixture-end", testHome);
+   testHome = "";
+ });
+
+@@ -1410,6 +1417,7 @@
+   });
+
+   test("self logout revokes only the current GUI session and admin credentials get 403", async () => {
++    Reflect.get(globalThis, "__ocxWindowsAuthTrace")?.("arm", testHome);
+     const config = remoteConfig();
+     saveConfig(config);
+     const state = initializeManagementAuthState(config);
+@@ -1439,7 +1447,9 @@
+         headers: { Origin: origin, "x-opencodex-api-key": "admin-secret" },
+       })).status).toBe(403);
+     } finally {
+-      await server.stop(true);
++      Reflect.get(globalThis, "__ocxWindowsAuthTrace")?.("server-stop-start", testHome);
++      await server.stop(true);
++      Reflect.get(globalThis, "__ocxWindowsAuthTrace")?.("server-stop-end", testHome);
+     }
+   });
+
+--- a/scripts/test-temp.ts
++++ b/scripts/test-temp.ts
+@@ -192,10 +192,16 @@
+
+   for (let attempt = 0; attempt <= delays.length; attempt += 1) {
+     try {
++      Reflect.get(globalThis, "__ocxWindowsAuthTrace")?.("remove-start", path, attempt);
+       remove(path);
++      Reflect.get(globalThis, "__ocxWindowsAuthTrace")?.("remove-success", path, attempt);
+       return;
+     } catch (error) {
+-      if (!TRANSIENT_REMOVE_CODES.has(errorCode(error)) || attempt === delays.length) throw error;
++      Reflect.get(globalThis, "__ocxWindowsAuthTrace")?.("remove-error", path, error && typeof error === "object" && "errno" in error ? error.errno : undefined, attempt, errorCode(error));
++      if (!TRANSIENT_REMOVE_CODES.has(errorCode(error)) || attempt === delays.length) {
++        Reflect.get(globalThis, "__ocxWindowsAuthTrace")?.("remove-terminal", path, attempt);
++        throw error;
++      }
+       sleep(delays[attempt]!);
+     }
+   }
+--- a/src/config/paths.ts
++++ b/src/config/paths.ts
+@@ -39,10 +39,12 @@
+     // This is an optional read-path harden. Waiting synchronously here used to stop the Bun
+     // event loop (including /healthz) for the full icacls timeout. Required mutation paths keep
+     // their own awaited/fail-closed hardening; ordinary config reads only start one soft flight.
++    Reflect.get(globalThis, "__ocxWindowsAuthTrace")?.("config-flight-start", dir);
+     const flight = hardenSecretDirAsync(dir, { required: false })
+       .then(() => undefined)
+       .catch(() => undefined)
+       .finally(() => {
++        Reflect.get(globalThis, "__ocxWindowsAuthTrace")?.("config-flight-end", dir);
+         if (configDirHardeningFlights.get(dir) === flight) configDirHardeningFlights.delete(dir);
+       });
+     configDirHardeningFlights.set(dir, flight);
+--- a/src/lib/windows-secret-acl.ts
++++ b/src/lib/windows-secret-acl.ts
+@@ -392,7 +392,9 @@
+ async function defaultAsyncIcaclsRunner(args: string[], timeoutMs: number): Promise<IcaclsResult> {
+   const proc = trySpawnIcacls(args);
+   if (!proc) return spawnFailedResult();
++  Reflect.get(globalThis, "__ocxWindowsAuthTrace")?.("acl-spawn", args[0], proc.pid);
+   const { exitCode, timedOut } = await waitForSubprocessExit(proc, timeoutMs);
++  Reflect.get(globalThis, "__ocxWindowsAuthTrace")?.("acl-exit", args[0], proc.pid, exitCode ?? -999);
+   const stdout = !timedOut && proc.stdout
+     ? await new Response(proc.stdout).text().catch(() => "")
+     : "";
+@@ -440,7 +442,9 @@
+     pendingAsyncIcaclsReaps.set(targetPath, pending);
+   }
+   pending.add(reap);
++  Reflect.get(globalThis, "__ocxWindowsAuthTrace")?.("reap-add", targetPath);
+   void reap.finally(() => {
++    Reflect.get(globalThis, "__ocxWindowsAuthTrace")?.("reap-end", targetPath);
+     pending!.delete(reap);
+     if (pending!.size === 0) pendingAsyncIcaclsReaps.delete(targetPath);
+   });
+@@ -471,6 +475,8 @@
+  */
+ export async function flushWindowsSecretAclReapsBeforeRemoval(rootPath: string): Promise<void> {
+   while (true) {
++    Reflect.get(globalThis, "__ocxWindowsAuthTrace")?.("reap-root", rootPath);
++    for (const target of pendingAsyncIcaclsReaps.keys()) Reflect.get(globalThis, "__ocxWindowsAuthTrace")?.("reap-match", target, pathIsAtOrBelow(target, rootPath));
+     const pending = [...pendingAsyncIcaclsReaps]
+       .filter(([targetPath]) => pathIsAtOrBelow(targetPath, rootPath))
+       .flatMap(([, reaps]) => [...reaps]);
+--- a/src/quota/reset-poller.ts
++++ b/src/quota/reset-poller.ts
+@@ -133,6 +133,7 @@
+  * the timer running at the default for the few microtasks before this settles.
+  */
+ export async function syncQuotaResetPollerCadence(): Promise<void> {
++  Reflect.get(globalThis, "__ocxWindowsAuthTrace")?.("quota-cadence", undefined);
+   const { resolveQuotaResetPollMs } = await import("./reset-notify-config");
+   const configured = resolveQuotaResetPollMs();
+   // 0 is passive-only: tick() already returns before probing, and the timer stays unref'd.
+--- a/src/quota/reset-activation.ts
++++ b/src/quota/reset-activation.ts
+@@ -27,6 +27,7 @@
+     import("./reset-observer"),
+   ]);
+
++  Reflect.get(globalThis, "__ocxWindowsAuthTrace")?.("quota-activation", undefined);
+   if (!isQuotaResetNotificationEnabled()) {
+     // Deliberately clears a previously installed sink. Disabling in config must actually stop
+     // delivery on the next check, not merely stop new observations.
+--- a/src/quota/reset-notify-config.ts
++++ b/src/quota/reset-notify-config.ts
+@@ -128,6 +128,7 @@
+ }
+
+ export function currentQuotaResetNotify(): ResolvedQuotaResetNotify {
++  Reflect.get(globalThis, "__ocxWindowsAuthTrace")?.("quota-resolve", getConfigDir());
+   const now = Date.now();
+   if (cached && now - cached.checkedAt < STAT_TTL_MS) return cached.resolved;
+
+@@ -139,6 +140,7 @@
+
+   let resolved = DISABLED;
+   try {
++    Reflect.get(globalThis, "__ocxWindowsAuthTrace")?.("quota-load", getConfigDir());
+     resolved = resolveQuotaResetNotify(
+       (loadConfig() as { quotaResetNotify?: unknown }).quotaResetNotify,
+     );
+--- a/src/codex/native-main-owner.ts
++++ b/src/codex/native-main-owner.ts
+@@ -103,7 +103,8 @@
+   entry.database = undefined;
+   if (!database) return;
+   try { database.exec("ROLLBACK"); } catch { /* close still releases the OS-backed lock */ }
+-  try { database.close(); } catch { /* the process exit path is best-effort */ }
++  Reflect.get(globalThis, "__ocxWindowsAuthTrace")?.("owner-close-start", entry.lockPath);
++  try { database.close(); Reflect.get(globalThis, "__ocxWindowsAuthTrace")?.("owner-close-ok", entry.lockPath); } catch { Reflect.get(globalThis, "__ocxWindowsAuthTrace")?.("owner-close-error", entry.lockPath); /* the process exit path is best-effort */ }
+ }
+
+ function closeEntry(entry: OwnerEntry): void {
+--- a/src/codex/native-main-claim.ts
++++ b/src/codex/native-main-claim.ts
+@@ -117,8 +117,10 @@
+ }
+
+ function releaseClaim(database: Database | undefined, file: StableLockFile | undefined): void {
++  const diagnosticClaimPath = database?.filename;
+   try { database?.exec("ROLLBACK"); } catch { /* close still releases the OS-backed claim */ }
+-  try { database?.close(); } catch { /* operation already completed */ }
++  Reflect.get(globalThis, "__ocxWindowsAuthTrace")?.("claim-close-start", diagnosticClaimPath);
++  try { database?.close(); Reflect.get(globalThis, "__ocxWindowsAuthTrace")?.("claim-close-ok", diagnosticClaimPath, database !== undefined); } catch { Reflect.get(globalThis, "__ocxWindowsAuthTrace")?.("claim-close-error", diagnosticClaimPath); /* operation already completed */ }
+   try { file?.close(); } catch { /* operation already completed */ }
+ }
+
+--- a/src/codex/native-profile-manager.ts
++++ b/src/codex/native-profile-manager.ts
+@@ -381,7 +381,8 @@
+       return result;
+     } finally {
+       try { database.exec("ROLLBACK"); } catch { /* close still releases the OS-backed lock */ }
+-      try { database.close(); } catch { /* transaction is already ending */ }
++      Reflect.get(globalThis, "__ocxWindowsAuthTrace")?.("profile-close-start", this.context.lockPath);
++      try { database.close(); Reflect.get(globalThis, "__ocxWindowsAuthTrace")?.("profile-close-ok", this.context.lockPath); } catch { Reflect.get(globalThis, "__ocxWindowsAuthTrace")?.("profile-close-error", this.context.lockPath); /* transaction is already ending */ }
+       try { lockFile?.close(); } catch { /* SQLite handle already released the transaction */ }
+       this.activeRootIdentity = null;
+       this.activeLockFile = null;
+--- a/src/lib/spend-ledger-owner.ts
++++ b/src/lib/spend-ledger-owner.ts
+@@ -213,7 +213,8 @@
+       }
+       let failure: unknown;
+       try { owner.database.exec("ROLLBACK"); } catch (error) { failure = error; }
+-      try { owner.database.close(); } catch (error) { failure ??= error; }
++      Reflect.get(globalThis, "__ocxWindowsAuthTrace")?.("spend-close-start", owner.home);
++      try { owner.database.close(); Reflect.get(globalThis, "__ocxWindowsAuthTrace")?.("spend-close-ok", owner.home); } catch (error) { Reflect.get(globalThis, "__ocxWindowsAuthTrace")?.("spend-close-error", owner.home); failure ??= error; }
+       if (failure !== undefined) {
+         throw new SpendLedgerOwnerError(
+           "SPEND_LEDGER_OWNER_UNAVAILABLE",
+--- a/src/codex/native-main-lock-file.ts
++++ b/src/codex/native-main-lock-file.ts
+@@ -50,7 +50,9 @@
+       entry.refs = Math.max(0, entry.refs - 1);
+       if (entry.refs !== 0) return;
+       if (stableLockEntries.get(path) === entry) stableLockEntries.delete(path);
++      Reflect.get(globalThis, "__ocxWindowsAuthTrace")?.("fd-close-start", path);
+       closeSync(entry.fd);
++      Reflect.get(globalThis, "__ocxWindowsAuthTrace")?.("fd-close-ok", path);
+     },
+   };
+ }

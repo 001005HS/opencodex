@@ -1,0 +1,15 @@
+{
+  "tests/preload.ts": "859063db4f76a8986da0dd589a0a92485917f18ea0e3941d3e58d98c4da3a00d",
+  "tests/server/server-management-auth.test.ts": "aeeb918fb45a29b2f4eb831b995184df0363c9ff7d22be2099161f9f01ecbfb2",
+  "scripts/test-temp.ts": "9e588138d0437c2d12e236821c1ec63b310cea8f9b922605b10e82c2f67b6d26",
+  "src/config/paths.ts": "37f6b7f0c9e078d7fe79e2aaf54ba2961aa4cbeb281d84b3d950e89846bfaf3f",
+  "src/lib/windows-secret-acl.ts": "3100c8468917e0484c287bb1a6b05b1a74c5916207ddc2dfc63318f17ed0eecd",
+  "src/quota/reset-poller.ts": "b30205d8216a4ce063f64435cfeec9b563e884e9d6fc284e7ae688bea8fcf963",
+  "src/quota/reset-activation.ts": "97eb08abf8d5dbede7250eaa4e9eb8ade15b8512c2fbc9f70f5e4bb81a8239db",
+  "src/quota/reset-notify-config.ts": "1dfe6ff330547f0852d459cb660e1338951dce44b4b456edb4fd3b9d17d07302",
+  "src/codex/native-main-owner.ts": "a16ef678a47530d6e190263d26407365c3ffe47ca4e285c4f136072740cf2d9b",
+  "src/codex/native-main-claim.ts": "f68443d088f08ef8b84e663939d83d8010157a7a6377eb85142e5c09f8247931",
+  "src/codex/native-profile-manager.ts": "5fe33a50c243b01400cbdba6d320e7bc87f123c96aa7096f36fe5a2d8a203e53",
+  "src/lib/spend-ledger-owner.ts": "6f150d1bdce26b79d174a6ea5984984fa1c414445696f4614ad05cebbfbefac1",
+  "src/codex/native-main-lock-file.ts": "96248ccb3b7352b3ad70ba73a75cadccaf5a5463162f721e600621b2e0ffa9b1"
+}
