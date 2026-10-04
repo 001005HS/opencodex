@@ -23,6 +23,7 @@
   "skill-ocx-workflows.test.ts": "ci-workflows",
   "cli-capability-data.test.ts": "cli",
   "skill-ocx-generated.test.ts": "ci-workflows",
+  "droid-normalized-reasoning-defaults.test.ts": "clients",
   "responses-combo-exhausted-error.test.ts": "responses",
   "cli-config-default-show.test.ts": "cli",
   "ollama-native-tool-continuations.test.ts": "providers/ollama",
