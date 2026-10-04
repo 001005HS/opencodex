@@ -14,7 +14,7 @@ const row = z.object({
     fiveHourEnabled: z.boolean(), weeklyEnabled: z.boolean() }).optional(),
 });
 export const rosterSchema = z.object({ accounts: z.array(row).refine(rows => new Set(rows.map(r => r.id)).size === rows.length) });
-const fields = z.enum(["enabled", "strategy", "stickyLimit", "autoSwitchThreshold", "quotaWindow", "maxConcurrentPerAccount", "routes"]);
+const fields = z.enum(["enabled", "strategy", "stickyLimit", "autoSwitchThreshold", "quotaWindow", "maxConcurrentPerAccount", "routes", "nativeMessages"]);
 export const poolSchema = z.object({
   provider: z.string(), kind: z.enum(["codex", "anthropic", "generic"]), supported: z.array(fields),
   enabled: z.boolean().nullable(), enabledEffective: z.boolean(),
@@ -22,6 +22,8 @@ export const poolSchema = z.object({
   stickyLimit: z.number().int().min(1).max(100).nullable(), autoSwitchThreshold: nullableThreshold,
   quotaWindow: z.enum(["five-hour", "weekly", "max-utilization"]).nullable(),
   maxConcurrentPerAccount: z.number().int().min(1).max(100).nullable(),
+  // Anthropic native Messages preference; null for kinds that do not honour it. Optional for older servers.
+  nativeMessages: z.boolean().nullable().optional(),
   routes: z.unknown().transform((value, ctx) => {
     if (value === null) return null;
     const parsed = parseAnthropicModelRoutes(value);
