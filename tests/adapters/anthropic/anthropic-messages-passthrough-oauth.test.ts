@@ -393,3 +393,74 @@ describe("native OAuth typed tool-name preservation", () => {
     expect(shaped.oauthToolNames).toBeUndefined();
   });
 });
+
+// Complete root builder contract, independent of the later native-client compatibility layer.
+describe("inline tool feature beta at the native builder boundary", () => {
+  const beta = "inline-tools-2026-09-15";
+  const definition = { type: "tool_addition", tool: { type: "tool_definition", definition: {
+    name: "lookup", input_schema: { type: "object" },
+  } }, cache_control: { type: "ephemeral", ttl: "1h" } };
+  const request = (block: unknown) => ({ max_tokens: 64, tools: [{ name: "initial", input_schema: {} }],
+    messages: [{ role: "user", content: "fixture" }, { role: "system", content: [block] }] });
+
+  test("forwards the required requested beta with an inline definition and OAuth names", () => {
+    const body = request(definition);
+    const before = structuredClone(body);
+    const built = buildAnthropicMessagesPassthroughRequest(oauthProvider(), "claude-wire", body, undefined,
+      { callerAnthropicBeta: `${beta.toUpperCase()},${beta}` });
+    expect(built.headers["anthropic-beta"]).toBe(`${ANTHROPIC_OAUTH_BETA},${beta}`);
+    expect(built.droppedBetas).toBe(false);
+    const content = (built.wireBody.messages as typeof body.messages)[1]!.content as typeof definition[];
+    expect(content[0]!.tool.definition.name).toBe("custom_lookup");
+    expect(JSON.parse(built.body)).toEqual(built.wireBody);
+    expect(content[0]!.cache_control).toEqual({ type: "ephemeral", ttl: "1h" });
+    expect(built.oauthToolNames?.get("custom_lookup")).toBe("lookup");
+    expect(body).toEqual(before);
+  });
+
+  for (const type of ["tool_addition", "tool_removal"]) test(`forwards the beta for ${type} references`, () => {
+    const body = request({ type, tool: { type: "tool_reference", name: "initial" } });
+    const built = buildAnthropicMessagesPassthroughRequest(oauthProvider(), "m", body, undefined,
+      { callerAnthropicBeta: beta });
+    expect(built.headers["anthropic-beta"]).toBe(`${ANTHROPIC_OAUTH_BETA},${beta}`);
+    expect(built.droppedBetas).toBe(false);
+  });
+
+  test("does not synthesize betas and still drops unknown or oversized caller headers", () => {
+    const body = request(definition);
+    expect(buildAnthropicMessagesPassthroughRequest(oauthProvider(), "m", body).headers["anthropic-beta"])
+      .toBe(ANTHROPIC_OAUTH_BETA);
+    const built = buildAnthropicMessagesPassthroughRequest(oauthProvider(), "m", body, undefined,
+      { callerAnthropicBeta: `${beta},unknown-feature` });
+    expect(built.headers["anthropic-beta"]).toBe(`${ANTHROPIC_OAUTH_BETA},${beta}`);
+    expect(built.droppedBetas).toBe(true);
+    expect(buildAnthropicMessagesPassthroughRequest(oauthProvider(), "m", body, undefined,
+      { callerAnthropicBeta: `${beta},${"x".repeat(2048)}` }).headers["anthropic-beta"]).toBe(ANTHROPIC_OAUTH_BETA);
+  });
+
+  test("key auth gets the feature beta only on a first-party destination", () => {
+    const first = buildAnthropicMessagesPassthroughRequest(oauthProvider({ authMode: "key" }), "m", request(definition), undefined,
+      { callerAnthropicBeta: beta });
+    expect(first.headers["anthropic-beta"]).toBe(beta);
+    const compatible = buildAnthropicMessagesPassthroughRequest(oauthProvider({ authMode: "key", baseUrl: "https://compatible.example" }), "m", request(definition), undefined,
+      { callerAnthropicBeta: beta });
+    expect(compatible.headers).not.toHaveProperty("anthropic-beta");
+    expect(compatible.droppedBetas).toBe(true);
+  });
+
+  test("opaque lookalikes and unsupported placement do not enable beta forwarding", () => {
+    for (const body of [SOURCE, request({ type: "text", text: JSON.stringify(definition) }),
+      request({ type: "tool_use", name: "initial", input: definition }),
+      request({ type: "unknown", content: [definition] }),
+      request({ type: "tool_addition", tool: { type: "tool_definition", definition: null } }),
+      request({ type: "tool_removal", tool: { type: "tool_definition", definition: { name: "lookup" } } }),
+      request({ type: "tool_result", content: [definition] }),
+      { ...request(definition), messages: [{ role: "assistant", content: [definition] }] },
+      { ...SOURCE, tools: [{ name: "initial", input_schema: definition }] }]) {
+      const built = buildAnthropicMessagesPassthroughRequest(oauthProvider(), "m", body, undefined,
+        { callerAnthropicBeta: beta });
+      expect(built.headers["anthropic-beta"]).toBe(ANTHROPIC_OAUTH_BETA);
+      expect(built.droppedBetas).toBe(true);
+    }
+  });
+});

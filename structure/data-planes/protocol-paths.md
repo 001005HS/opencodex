@@ -299,7 +299,10 @@ Caller betas. The ingress hands over `anthropic-beta` explicitly; caller `Author
 `x-api-key` never reach the managed provider.
 `src/adapters/anthropic/beta-allowlist.ts` keeps a value only when it is on the list for the
 destination's class and re-emits it in the list's own spelling: `interleaved-thinking-2025-05-14`
-for `api.anthropic.com`, nothing for an Anthropic-compatible host. Proxy-owned betas (the OAuth
+for `api.anthropic.com`, nothing for an Anthropic-compatible host. A caller-requested
+`inline-tools-2026-09-15` is also retained for first-party requests whose outgoing system-message
+content directly contains typed inline definitions or tool references in additions/removals.
+Arguments, schemas and nested/unknown containers do not activate this allowance; no beta is injected. Proxy-owned betas (the OAuth
 pair) are set by the builder, and an operator's configured beta is merged, not replaced. Any
 dropped value adds `anthropic-beta-dropped` to the trace; the value itself is never recorded.
 

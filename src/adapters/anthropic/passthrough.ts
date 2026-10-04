@@ -106,6 +106,19 @@ function isClientTool(tool: unknown): tool is Rec & { name: string } {
   return isRec(tool) && typeof tool.name === "string" && (tool.type === undefined || tool.type === "custom");
 }
 
+/** Only documented system-message tool blocks enable the caller's inline-tools beta. */
+function hasInlineToolChanges(body: Rec): boolean {
+  return Array.isArray(body.messages) && body.messages.some(message => isRec(message)
+    && message.role === "system" && Array.isArray(message.content) && message.content.some(block => {
+      if (!isRec(block) || !isRec(block.tool)) return false;
+      if (block.type !== "tool_addition" && block.type !== "tool_removal") return false;
+      const tool = block.tool;
+      return tool.type === "tool_reference" && typeof tool.name === "string"
+        || block.type === "tool_addition" && tool.type === "tool_definition"
+          && isRec(tool.definition) && typeof tool.definition.name === "string";
+    }));
+}
+
 /** Allocate only once the first changed item is encountered. */
 function mapPreservingIdentity<T>(items: T[], mapItem: (item: T) => T): T[] {
   let out: T[] | undefined;
@@ -286,7 +299,8 @@ export function buildAnthropicMessagesPassthroughRequest(
     }
   }
   if (domain?.firstPartyAnthropic) applyAnthropicClientIdentity(headers, options.clientIdentity, provider.headers);
-  const betas = allowlistAnthropicBetas(options.callerAnthropicBeta, domain?.firstPartyAnthropic ? "first-party" : "compatible");
+  const betas = allowlistAnthropicBetas(options.callerAnthropicBeta, domain?.firstPartyAnthropic ? "first-party" : "compatible",
+    { inlineTools: hasInlineToolChanges(wireBody) });
   mergeAnthropicBetaHeader(headers, betas.betas);
   return {
     url,
