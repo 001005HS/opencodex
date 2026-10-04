@@ -82,6 +82,8 @@ receipt adds `sync: {status, ok}`; only `status: "applied"` with `ok: true` clea
 `needsSync`. No proxy (`not-running`), refused sync or failed sync returns nonzero
 while preserving the local save. Policy-skipped or catalog-only results may exit
 0 with `needsSync: true`; they are not an applied client sync.
+Catalog ownership or saved-config safety refusals leave the catalog unchanged, return exit 1,
+and show recovery guidance in human output or `sync.warning` in JSON, even if config injection succeeded.
 
 For authorized live changes:
 

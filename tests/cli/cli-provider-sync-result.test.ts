@@ -2,6 +2,9 @@ import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { readFileSync, writeFileSync } from "node:fs";
 import { handleProviderCommand, type ProviderCommandDeps } from "../../src/cli/provider";
 import { syncModelsToCodex, type CodexSyncResult } from "../../src/codex/sync";
+import { refreshCodexModelCatalog } from "../../src/codex/refresh";
+import { FOREIGN_CODEX_HOME_OWNER_MESSAGE, UNKNOWN_CODEX_HOME_OWNER_MESSAGE,
+  unbackedRoutedRemovalMessage } from "../../src/codex/catalog/routed-removal";
 import type { LiveProxy } from "../../src/server/proxy-liveness";
 import { createTempHome, type TempHome } from "../helpers/temp-home";
 import { validateConfigCandidate } from "../../src/config";
@@ -138,6 +141,50 @@ describe("provider add keeps requested local sync independent of JSON output", (
     expect(printed().includes("Models synced to Codex.")).toBe(expected);
     if (!expected) expect(printed()).toContain("Model catalog did not converge");
   });
+  for (const mode of ["applied", "external", "disabled"] as const) {
+    test.each([
+      { reason: "foreign_owner" as const, warning: FOREIGN_CODEX_HOME_OWNER_MESSAGE },
+      { reason: "owner_unknown" as const, warning: UNKNOWN_CODEX_HOME_OWNER_MESSAGE },
+      { reason: "unbacked_routed_removal" as const, warning: unbackedRoutedRemovalMessage(2) },
+    ])(`${mode} safety refusal preserves $reason guidance through CLI output`, async ({ reason, warning }) => {
+      const config = configured();
+      if (mode === "disabled") {
+        config.clientIntegrations = { codex: false };
+        writeFileSync(home.path("config.json"), JSON.stringify(config));
+      }
+      let invalidations = 0, injections = 0;
+      const result = await syncModelsToCodex(19223, config, null, {
+        admitCodexWrite: () => ({ kind: "admitted" }),
+        currentExternalCodexModelProvider: () => mode === "external" ? "external" : null,
+        refreshReasoningMetadata: async () => {},
+        injectCodexConfig: async () => { injections++; return { success: true, message: "fixture injection succeeded" }; },
+        refreshCodexModelCatalog: async () => refreshCodexModelCatalog(config, {
+          existsSync: () => true,
+          invalidateCodexModelsCache: () => { invalidations++; return true; },
+          syncCatalogModels: async () => ({ added: 0, path: home.path("catalog.json"), catalogWritten: false,
+            comboOmissions: [], refreshOutcome: "refused", skippedReason: reason, protectedRoutedNamespaces: 2 }),
+        }),
+      }, { catalogEvenWhenNotInjected: mode !== "applied" });
+      const status = mode === "applied" ? "applied" : "catalog-only";
+      expect(result).toMatchObject({ status, ok: true, refreshOutcome: "refused", warning,
+        catalogExists: true, catalogWritten: false, cacheSynced: false });
+      expect(invalidations).toBe(0);
+      expect(injections).toBe(mode === "applied" ? 2 : 0);
+      // Only the known safety guidance may survive; appended arbitrary diagnostics stay private.
+      const cliResult = { ...result, warning: `${warning} fixture-private-extra-diagnostic` };
+      await handleProviderCommand([...add, "--sync", "--json"], syncDeps(cliResult));
+      expect(process.exitCode).toBe(1);
+      expect(JSON.parse(printed())).toMatchObject({ needsSync: true,
+        sync: { status, ok: false, warning, catalog: { converged: false, written: false, cacheSynced: false } } });
+      expect(printed()).not.toContain("fixture-private");
+      stdout.mockClear();
+      await handleProviderCommand([...add, "--force", "--sync"], syncDeps(cliResult));
+      expect(process.exitCode).toBe(1);
+      expect(printed()).toContain(warning);
+      expect(printed()).not.toContain("fixture-private");
+      expect(printed()).not.toContain("Models synced to Codex.");
+    });
+  }
   test.each(["key", "oauth", "local"])("canonical OpenAI refuses new %s auth before saving or syncing", async mode => {
     const before = readFileSync(home.path("config.json"), "utf8");
     let syncCalls = 0;

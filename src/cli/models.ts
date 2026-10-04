@@ -151,6 +151,7 @@ function printCustomMutation(action: "added" | "removed", model: OcxCustomModel,
       needsSync: !complete, sync }, null, 2));
     return;
   }
+  if (sync.warning) console.log(`Warning: ${sync.warning}`);
   console.log(`${action === "added" ? "Added" : "Removed"} custom model ${routedSlug(model.provider, model.modelId)}${action === "added" ? ` (${model.id})` : ""}.`);
   if (sync.status === "skipped") console.log("Custom model saved; client sync was skipped by the integration policy.");
   else if (!complete && sync.status !== "not-attempted") console.log("Custom model saved; client/catalog sync remains incomplete. Inspect the target before retrying.");
