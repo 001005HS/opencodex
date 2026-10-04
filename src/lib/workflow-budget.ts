@@ -43,6 +43,8 @@ export interface WorkflowSpendDenialDetail {
   readonly limit: number;
   /** Tokens the refused reservation would have taken the scope to, where that is known. */
   readonly projected?: number;
+  /** A pool ceiling also includes unknown-owner history conservatively charged to every pool. */
+  readonly includesUnboundPoolHistory?: boolean;
 }
 
 /** Operator-facing name for each scope. What an operator calls it, not what the type calls it. */
@@ -207,8 +209,8 @@ export type WorkflowDenial =
  * accurate for exactly one of them. Worse, the wire cannot carry the distinction on its own:
  * `classifyError` rewrites every 429 to `rate_limit_error` / `rate_limit_exceeded`, so the body
  * of a refusal this proxy made is shaped exactly like a provider rate limit. Each sentence
- * therefore says which ceiling fired AND that no provider was contacted, because that is the
- * first thing an operator needs and the only place left to put it.
+ * therefore names which ceiling fired; send refusals describe the dispatch that was stopped
+ * without making claims about earlier attempts in the same request.
  */
 export function workflowDenialSummary(
   reason: WorkflowDenial,
@@ -248,7 +250,10 @@ export function workflowDenialSummary(
             + (spend.projected !== undefined
               ? " (this send would have taken it to " + formatTokenCount(spend.projected) + ")"
               : "")
-            + ", so no provider was contacted. Spend is durable, so it does not roll forward"
+            + (spend.includesUnboundPoolHistory
+              ? ". The total includes unassigned historical provider-pool balances, conservatively counted against every provider pool until verified mappings assign them; this can overrestrict otherwise unused pools"
+              : "")
+            + ", so this send was refused before contacting a provider. Spend is durable, so it does not roll forward"
             + " with the send window: raise or remove spend." + spend.scope
             + ".maxTokens in config.json to grant more."
           : "This proxy refused the request locally: the task reached a configured token"
@@ -301,6 +306,8 @@ export interface WorkflowBudgetEvent {
   readonly spendScope?: SpendScope;
   /** That scope's ceiling, so the event is readable without the config open beside it. */
   readonly spendLimit?: number;
+  /** The pool ceiling conservatively included unidentified historical pool balances. */
+  readonly spendIncludesUnboundPoolHistory?: boolean;
   /** Windowed sends at the moment of the event. */
   readonly sends: number;
   /** Windowed distinct children at the moment of the event. */
@@ -359,6 +366,7 @@ export function recordWorkflowRefusalEvent(
     rootId,
     reason,
     ...(spend ? { spendScope: spend.scope, spendLimit: spend.limit } : {}),
+    ...(spend?.includesUnboundPoolHistory ? { spendIncludesUnboundPoolHistory: true } : {}),
     sends: state ? windowedSends(state, now) : 0,
     children: state ? windowedChildren(state, now) : 0,
   });
@@ -389,6 +397,8 @@ export type WorkflowDecision =
       spendLimit?: number;
       /** Tokens the refused reservation would have taken the scope to, where known. */
       spendProjected?: number;
+      /** A pool ceiling includes unbound historical balances for every candidate pool. */
+      spendIncludesUnboundPoolHistory?: boolean;
     };
 
 /**
@@ -521,6 +531,7 @@ export function admitWorkflowTurn(
           spendScope: denial.scope,
           spendLimit: denial.limit,
           ...(denial.projected !== undefined ? { spendProjected: denial.projected } : {}),
+          ...(denial.includesUnboundPoolHistory ? { spendIncludesUnboundPoolHistory: true } : {}),
         }
         : {}),
     };
@@ -595,7 +606,12 @@ export function admitWorkflowTurn(
       return refuse(
         reason,
         denial.reason === "spend-limit-exceeded"
-          ? { scope: denial.scope, limit: denial.limit, projected: denial.projected }
+          ? {
+            scope: denial.scope,
+            limit: denial.limit,
+            projected: denial.projected,
+            ...(denial.includesUnboundPoolHistory ? { includesUnboundPoolHistory: true } : {}),
+          }
           : undefined,
       );
     }
@@ -747,7 +763,13 @@ export function workflowSpendCeilingReached(
   const root = rootId ? spentRootCeiling(rootId, ledger, excludingSendId) : undefined;
   if (root) return root;
   const limit = ledger.policy.pool.maxTokens;
-  return poolId && limit !== undefined && ledger.exhausted("pool", poolId, excludingSendId) ? { scope: "pool", limit } : undefined;
+  return poolId && limit !== undefined && ledger.exhausted("pool", poolId, excludingSendId)
+    ? {
+      scope: "pool",
+      limit,
+      ...(ledger.hasUnboundPositivePoolHistory() ? { includesUnboundPoolHistory: true } : {}),
+    }
+    : undefined;
 }
 
 export interface WorkflowBudgetSnapshot {

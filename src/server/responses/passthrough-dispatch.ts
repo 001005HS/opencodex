@@ -164,6 +164,7 @@ import { ambiguousResendAllowanceFor, selfContainedResponsesBody } from "./reset
 import { upstreamErrorMessageFromPayload, ENCRYPTED_FUNCTION_OUTPUT_REJECTION } from "../../lib/errors";
 import { isTransientConsoleGoUploadRejection } from "../../providers/opencode-zen-rate-limit";
 import { planReasoningEffortDowngrade } from "../../providers/reasoning-metadata";
+import { unboundPoolSpendRefusalResponse } from "../workflow-refusal";
 
 /** Prepares and recovers one native Responses exchange before client commitment. */
 export async function preparePassthroughExchange(
@@ -894,7 +895,8 @@ export async function preparePassthroughExchange(
         releaseUpstreamHostAdmission(nativeHostState.lease);
         nativeHostState.lease = null;
         releaseCodexAuthContextProbeLease(admissionState.authCtx);
-        return formatErrorResponse(429, "request_send_budget_exhausted", err.message);
+        return unboundPoolSpendRefusalResponse(logCtx)
+          ?? formatErrorResponse(429, "request_send_budget_exhausted", err.message);
       }
       const refusal = unwrapUpstreamRetryEvidenceError(err);
       // Pacing may outlive the selected account's admission. No fetch occurred, so do

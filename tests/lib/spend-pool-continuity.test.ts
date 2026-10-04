@@ -14,17 +14,18 @@ import {
 } from "../../src/lib/spend-reservation-ledger";
 import { acquireOwnedSpendHome } from "../helpers/owned-spend-home";
 import { removeTreeWithRetry } from "../helpers/remove-tree";
-import { admitHttpWorkflowTurn, workflowDecisionRefusalResponse } from "../../src/server/workflow-refusal";
+import { admitHttpWorkflowTurn, unboundPoolSpendRefusalMessage, unboundPoolSpendRefusalResponse } from "../../src/server/workflow-refusal";
 import { createResponsesSendBudget } from "../../src/server/responses/request-send-budget";
 import { claimDispatchSpendProof, createRequestExecutionBudget, deriveRequestExecutionBudget, reportDispatchSends } from "../../src/lib/request-execution-budget";
 import { createPoolContinuity } from "../../src/lib/spend-pool-continuity";
-import { listWorkflowBudgetEvents, resetWorkflowBudgetsForTest, workflowSpendCeilingReached } from "../../src/lib/workflow-budget";
+import { admitWorkflowTurn, listWorkflowBudgetEvents, resetWorkflowBudgetsForTest, workflowDenialSummary, workflowSpendCeilingReached } from "../../src/lib/workflow-budget";
 import { createRequestSpendTracker } from "../../src/server/responses/request-spend";
 import type { RequestLogContext } from "../../src/server/request-log";
 
 const salt = "5".repeat(64);
 const alias = (kind: string, id: string) => createHash("sha256").update(salt).update("\0").update(kind).update("\0").update(id).digest("hex").slice(0, 32);
 const pool = (id: string) => alias("pool", id);
+const currentPool = (id: string) => alias("pool-current", id);
 const policy = (poolAliases?: unknown, overrides: Partial<SpendReservationPolicy> = {}): SpendReservationPolicy => ({
   ...DEFAULT_SPEND_RESERVATION_POLICY, pool: { maxTokens: 100 }, poolAliases, ...overrides,
 });
@@ -65,16 +66,134 @@ describe("historical pool identity continuity", () => {
     }
   });
 
-  test("unmapped historical debt fails closed across labels, providers, pruning and restart", () => {
+  test("unbound positive history is charged once against every candidate pool across pruning and restart", () => {
     const disk = journal([checkpoint([["provider-old-label", 100, 0]])]);
     for (let restart = 0; restart < 2; restart += 1) {
-      const ledger = createSpendReservationLedger({ journal: disk, salt, policy: policy(), now: () => 100_000 });
+      const ledger = createSpendReservationLedger({ journal: disk, salt, policy: policy(), now: () => 1_000_000_000 });
+      expect(ledger.checkPoolContinuity()).toBeUndefined();
+      expect(ledger.hasUnboundPositivePoolHistory()).toBe(true);
       ledger.prune();
       for (const id of ["provider", "provider-old-label", "unrelated-provider"]) {
-        expect(reserve(ledger, `${restart}-${id}`, id)).toMatchObject({ reserved: false, denial: { reason: "pool-history-unresolved" } });
+        expect(reserve(ledger, `${restart}-${id}`, id)).toMatchObject({
+          reserved: false,
+          denial: { reason: "spend-limit-exceeded", scope: "pool", limit: 100, projected: 101, includesUnboundPoolHistory: true },
+        });
       }
       expect(ledger.snapshot("pool", "provider-old-label")?.settled).toBe(100);
     }
+  });
+
+  test("tracking capacity pressure cannot evict unbound positive pool history", () => {
+    const disk = journal([checkpoint([["old-label", 10, 0]])]);
+    const ledger = createSpendReservationLedger({ journal: disk, salt,
+      policy: policy(undefined, { maxTrackedScopes: 1 }), now: () => 2 });
+    expect(reserve(ledger, "cannot-forget-history", "provider", 1)).toMatchObject({
+      reserved: false, denial: { reason: "tracking-capacity-exhausted", scope: "pool" },
+    });
+    expect(ledger.snapshot("pool", "old-label")?.settled).toBe(10);
+    expect(disk.lines.map(line => JSON.parse(line)).filter(record => record.kind === "drop")).toEqual([]);
+  });
+
+  test("an exhausted candidate overlay protects its under-limit proven group from retention", () => {
+    const record = checkpoint([["verified-label", 60, 0], ["unbound-label", 40, 0], ["empty-old-label", 0, 0]]);
+    const disk = journal([record]);
+    const ledger = createSpendReservationLedger({ journal: disk, salt,
+      policy: policy({ [pool("verified-label")]: "provider" }, { retentionMs: 5 }), now: () => 100 });
+    expect(ledger.checkPoolContinuity()).toBeUndefined();
+    expect(ledger.snapshot("pool", "provider")?.settled).toBe(100);
+    ledger.prune(100); // All entries are older than the retention cutoff.
+    expect(ledger.snapshot("pool", "provider")?.settled).toBe(100);
+    expect(disk.lines.map(line => JSON.parse(line)).filter(record => record.kind === "drop")).toEqual([
+      { v: 1, kind: "drop", scope: "pool", alias: pool("empty-old-label"), at: 100 },
+    ]);
+    expect(reserve(ledger, "still-exhausted", "provider", 1)).toMatchObject({ reserved: false,
+      denial: { reason: "spend-limit-exceeded", projected: 101, includesUnboundPoolHistory: true } });
+  });
+
+  test("proven group plus each unbound balance admits under/exact totals and refuses over", () => {
+    const disk = journal([checkpoint([["verified-label", 25, 0], ["unbound-label", 10, 5]])]);
+    const ledger = createSpendReservationLedger({ journal: disk, salt,
+      policy: policy({ [pool("verified-label")]: "provider" }), now: () => 2 });
+
+    // Proven group: 25. Unbound history: 10 settled + 5 unresolved. Neither bucket is copied.
+    expect(ledger.snapshot("pool", "provider")).toEqual({ settled: 35, reserved: 0, unresolved: 5, exhausted: false });
+    expect(reserve(ledger, "under", "provider", 59).reserved).toBe(true); // 99 total
+    expect(ledger.abandon("under")).toBe(true);
+    expect(reserve(ledger, "exact", "provider", 60).reserved).toBe(true); // 100 total
+    expect(reserve(ledger, "over", "provider", 1)).toMatchObject({
+      reserved: false,
+      denial: { reason: "spend-limit-exceeded", projected: 101, includesUnboundPoolHistory: true },
+    });
+
+    // The same unbound 15 is also counted once for a different candidate provider.
+    expect(reserve(ledger, "other-exact", "unrelated-provider", 85).reserved).toBe(true);
+    expect(ledger.snapshot("pool", "unrelated-provider")).toEqual({ settled: 10, reserved: 85, unresolved: 5, exhausted: true });
+    expect(ledger.hasUnboundPositivePoolHistory()).toBe(true);
+  });
+
+  test("same-spelling unknown history stays unbound and is not counted twice", () => {
+    const disk = journal([checkpoint([["provider", 40, 0]])]);
+    const ledger = createSpendReservationLedger({ journal: disk, salt, policy: policy(), now: () => 2 });
+
+    // Matching the current provider's salted alias is not identity evidence by itself.
+    expect(ledger.checkPoolContinuity()).toBeUndefined();
+    expect(ledger.hasUnboundPositivePoolHistory()).toBe(true);
+    expect(reserve(ledger, "same-spelling-exact", "provider", 60).reserved).toBe(true);
+    expect(ledger.snapshot("pool", "provider")).toEqual({ settled: 40, reserved: 60, unresolved: 0, exhausted: true });
+    // The legacy alias stays unknown and overlays every candidate, while the new send is
+    // stored under the canonical-current domain and belongs only to the routed provider.
+    expect(JSON.parse(disk.lines.at(-1)!).targets).toEqual([{ scope: "pool", alias: currentPool("provider") }]);
+    expect(reserve(ledger, "unrelated-under-overlay", "unrelated-provider", 60).reserved).toBe(true);
+    expect(ledger.snapshot("pool", "unrelated-provider")).toEqual({
+      settled: 40, reserved: 60, unresolved: 0, exhausted: true,
+    });
+    expect(reserve(ledger, "unrelated-over", "third-provider", 61)).toMatchObject({
+      reserved: false,
+      denial: { reason: "spend-limit-exceeded", projected: 101, includesUnboundPoolHistory: true },
+    });
+
+    // An explicit operator mapping on restart moves only the legacy 40-token balance into
+    // this provider's current group; it does not copy it or assign it by spelling.
+    const mapped = createSpendReservationLedger({ journal: disk, salt,
+      policy: policy({ [pool("provider")]: "provider" }), now: () => 3 });
+    expect(mapped.checkPoolContinuity()).toBeUndefined();
+    expect(mapped.hasUnboundPositivePoolHistory()).toBe(false);
+    expect(mapped.snapshot("pool", "provider")).toMatchObject({ settled: 40, unresolved: 60 });
+    expect(reserve(mapped, "unrelated-after-mapping", "unrelated-provider", 41)).toMatchObject({
+      reserved: false,
+      denial: { reason: "spend-limit-exceeded", projected: 101 },
+    });
+  });
+
+  test("unbound history is overlaid when a pool ceiling is enabled later", () => {
+    const disk = journal([checkpoint([["old-label", 40, 0]])]);
+    const ledger = createSpendReservationLedger({ journal: disk, salt,
+      policy: policy(undefined, { pool: {} }), now: () => 2 });
+
+    expect(reserve(ledger, "observe-only", "provider", 10).reserved).toBe(true);
+    expect(ledger.settle("observe-only", { inputTokens: 10, outputTokens: 0 })).toBe(true);
+    expect(ledger.hasUnboundPositivePoolHistory()).toBe(true);
+    ledger.reconfigure(policy());
+
+    expect(reserve(ledger, "exact-after-enable", "provider", 50).reserved).toBe(true);
+    expect(reserve(ledger, "over-after-enable", "provider", 1)).toMatchObject({
+      reserved: false,
+      denial: { reason: "spend-limit-exceeded", projected: 101, includesUnboundPoolHistory: true },
+    });
+  });
+
+  test("competing same-process admissions include the shared unbound balance", async () => {
+    const ledger = createSpendReservationLedger({
+      journal: journal([checkpoint([["old-label", 40, 0]])]), salt, policy: policy(), now: () => 2,
+    });
+    const attempts = await Promise.all([
+      Promise.resolve().then(() => reserve(ledger, "contender-a", "provider", 35)),
+      Promise.resolve().then(() => reserve(ledger, "contender-b", "provider", 35)),
+    ]);
+    expect(attempts[0]?.reserved).toBe(true);
+    expect(attempts[1]).toMatchObject({ reserved: false,
+      denial: { reason: "spend-limit-exceeded", scope: "pool", projected: 110, includesUnboundPoolHistory: true } });
+    expect(ledger.snapshot("pool", "provider")).toMatchObject({ settled: 40, reserved: 35 });
   });
 
   test("explicit aliases aggregate each original balance once, including canonical history", () => {
@@ -186,27 +305,67 @@ describe("historical pool identity continuity", () => {
       { v: 1, kind: "drop", scope: "pool", alias: pool("oldest"), at: 50 },
     ]);
     expect(ledger.snapshot("pool", "provider")?.settled).toBe(20);
-    expect(ledger.snapshot("pool", "other")?.settled).toBe(0);
+    expect(ledger.snapshot("pool", "other")).toBeUndefined();
     expect(ledger.snapshot("root", "new-root")?.reserved).toBe(1);
     const restarted = createSpendReservationLedger({ journal: disk, salt, policy: config, now: () => 50 });
     expect(restarted.snapshot("pool", "provider")?.settled).toBe(20);
-    expect(restarted.snapshot("pool", "other")?.settled).toBe(0);
+    expect(restarted.snapshot("pool", "other")).toBeUndefined();
     expect(restarted.snapshot("root", "new-root")?.unresolved).toBe(1);
   });
 
-  test("observe-only records already-sent requests while ambiguity still blocks new dispatches", () => {
+  test("observe-only charges already-sent requests while unbound history still constrains admission", () => {
     const disk = journal([checkpoint([["unknown-label", 40, 0]])]);
     const ledger = createSpendReservationLedger({ journal: disk, salt, policy: policy(), now: () => 2 });
     const context: RequestLogContext = { model: "fixture", provider: "provider-display", spendPoolId: "provider", usageLogInputTokens: 10 };
     const tracker = createRequestSpendTracker(context, undefined, ledger);
-    expect(tracker.charge()).toBe(false);
-    expect(tracker.refusals).toBe(1);
-    expect(context.errorCode).toBe("workflow_pool_history_unresolved");
     expect(tracker.charge({ alreadySent: true })).toBe(true);
+    expect(tracker.refusals).toBe(0);
+    expect(context.errorCode).toBeUndefined();
     tracker.settle({ inputTokens: 8, outputTokens: 0 });
-    expect(ledger.snapshot("pool", "provider")?.settled).toBe(8);
+    expect(ledger.snapshot("pool", "provider")?.settled).toBe(48); // current settled 8 plus shared unknown 40
     expect(ledger.snapshot("pool", "unknown-label")?.settled).toBe(40);
-    expect(reserve(ledger, "new").reserved).toBe(false);
+    expect(reserve(ledger, "exact", "provider", 52).reserved).toBe(true);
+    expect(ledger.abandon("exact")).toBe(true);
+    const refused = reserve(ledger, "over", "provider", 53);
+    expect(refused).toMatchObject({ reserved: false,
+      denial: { reason: "spend-limit-exceeded", projected: 101, includesUnboundPoolHistory: true } });
+    const rootRefusal = admitWorkflowTurn("root-with-unbound-history", "interactive", undefined, undefined, 2,
+      { sendId: "root-over", poolId: "provider", inputTokens: 53, outputCeilingTokens: 0 }, ledger);
+    expect(rootRefusal).toMatchObject({ admitted: false, reason: "workflow-spend-exhausted",
+      spendScope: "pool", spendIncludesUnboundPoolHistory: true });
+    const message = workflowDenialSummary("workflow-spend-exhausted", {
+      scope: "pool", limit: 100, projected: 101, includesUnboundPoolHistory: true,
+    }).message;
+    expect(message).toContain("unassigned historical provider-pool balances");
+    expect(message).not.toContain("unknown-label");
+    expect(message).not.toContain(alias("pool", "unknown-label"));
+    expect(message).not.toContain(salt);
+  });
+
+  test("reservation crossing explains unbound-history refusal without exposing its alias", async () => {
+    resetWorkflowBudgetsForTest();
+    const disk = journal([checkpoint([["private-old-label", 40, 0]])]);
+    const ledger = createSpendReservationLedger({ journal: disk, salt, policy: policy(), now: () => 2 });
+    const context: RequestLogContext = {
+      model: "fixture", provider: "provider", spendPoolId: "provider", usageLogInputTokens: 10,
+    };
+    const tracker = createRequestSpendTracker(context, "root-unbound", ledger);
+
+    expect(tracker.charge({ alreadySent: true })).toBe(true);
+    context.usageLogInputTokens = 51; // the next physical send would cross the cap after that upstream contact
+    expect(tracker.charge()).toBe(false);
+    const message = unboundPoolSpendRefusalMessage(context);
+    expect(message).toContain("unassigned historical provider-pool balances");
+    expect(message).toContain("this send was refused before contacting a provider");
+    expect(message).not.toContain("private-old-label");
+    expect(message).not.toContain(alias("pool", "private-old-label"));
+    expect(message).not.toContain(salt);
+    const response = unboundPoolSpendRefusalResponse(context);
+    expect(response?.status).toBe(429);
+    expect(await response!.text()).toContain(message!);
+    expect(listWorkflowBudgetEvents(1)[0]).toMatchObject({
+      reason: "workflow-spend-exhausted", spendIncludesUnboundPoolHistory: true,
+    });
   });
 
   test("malformed or conflicting maps fail closed without clearing ceilings or saved links", () => {
@@ -229,7 +388,7 @@ describe("historical pool identity continuity", () => {
     disk.append = () => { throw new Error("synthetic write failure"); };
     const ledger = createSpendReservationLedger({ journal: disk, salt, policy: policy({ [pool("label")]: "provider" }), now: () => 2 });
     expect(reserve(ledger, "new")).toMatchObject({ reserved: false, denial: { reason: "reserve-not-durable" } });
-    expect(ledger.snapshot("pool", "provider")).toBeUndefined();
+    expect(ledger.snapshot("pool", "provider")?.settled).toBe(40); // the unbound view is visible without a committed link
     expect(ledger.snapshot("pool", "label")?.settled).toBe(40);
     expect(disk.lines).toHaveLength(1);
   });
@@ -263,7 +422,7 @@ describe("historical pool identity continuity", () => {
 });
 
 
-test("rootless HTTP and passthrough preflight refuse before any synthetic fetch", () => {
+test("unbound history waits for routing, then limits each candidate before any synthetic fetch", async () => {
   const previous = process.env.OPENCODEX_HOME;
   const home = mkdtempSync(join(tmpdir(), "ocx-pool-history-"));
   process.env.OPENCODEX_HOME = home;
@@ -274,24 +433,23 @@ test("rootless HTTP and passthrough preflight refuse before any synthetic fetch"
     configureSharedSpendLedger(policy());
     resetWorkflowBudgetsForTest();
     const rooted = admitHttpWorkflowTurn(new Headers({ "x-codex-parent-thread-id": "synthetic-root" }));
-    expect(rooted).toMatchObject({ admitted: false, reason: "workflow-pool-history-unresolved" });
-    expect(listWorkflowBudgetEvents()).toMatchObject([{ rootId: "synthetic-root", reason: "workflow-pool-history-unresolved" }]);
-    if (rooted && !rooted.admitted) workflowDecisionRefusalResponse(rooted);
-    expect(listWorkflowBudgetEvents()).toHaveLength(1);
+    expect(rooted).toMatchObject({ admitted: true, lease: { rootId: "synthetic-root" } });
+    if (rooted?.admitted) rooted.lease.release();
+    expect(listWorkflowBudgetEvents()).toHaveLength(0);
     let syntheticFetches = 0;
     const decision = admitHttpWorkflowTurn(new Headers());
-    expect(decision).toMatchObject({ admitted: false, reason: "workflow-pool-history-unresolved" });
-    if (!decision || decision.admitted) syntheticFetches += 1;
-    else {
-      const response = workflowDecisionRefusalResponse(decision);
-      expect(response.status).toBe(429);
-      expect(response.headers.get("x-opencodex-local-refusal")).toBe("workflow_pool_history_unresolved");
-    }
+    expect(decision).toBeUndefined();
     const budget = createResponsesSendBudget({ req: new Request("https://fixture.example.test/v1/responses"), options: {}, logCtx: { model: "fixture", provider: "provider" } });
     expect(budget).toBeInstanceOf(Response);
-    if (!(budget instanceof Response)) syntheticFetches += 1;
+    if (budget instanceof Response) {
+      expect(budget.status).toBe(429);
+      expect(budget.headers.get("x-opencodex-local-refusal")).toBe("workflow_spend_exhausted");
+      const body = await budget.text();
+      expect(body).toContain("unassigned historical provider-pool balances");
+      expect(body).not.toContain("old-label");
+    } else syntheticFetches += 1;
     expect(syntheticFetches).toBe(0);
-    expect(listWorkflowBudgetEvents()).toHaveLength(1); // rootless refusals add no event
+    expect(listWorkflowBudgetEvents()).toHaveLength(0); // rootless refusals add no event
     configureSharedSpendLedger(policy({ [pool("old-label")]: "provider" }));
     expect(admitHttpWorkflowTurn(new Headers())).toBeUndefined();
     const mappedBudget = createResponsesSendBudget({ req: new Request("https://fixture.example.test/v1/responses"), options: {}, logCtx: { model: "fixture", provider: "provider-display", spendPoolId: "provider" } });
@@ -328,11 +486,18 @@ test("actual old-reader compaction preserves raw spend; compatible rollback reso
   old.settle("old-again", { inputTokens: 12, outputTokens: 0 });
   const returned = createSpendReservationLedger({ journal: disk, salt,
     policy: policy({ [pool("old-label")]: "provider" }), now: () => 4 });
-  expect(returned.checkPoolContinuity()?.reason).toBe("pool-history-unresolved");
-  expect(returned.snapshot("pool", "new-old-label")?.settled).toBe(12);
+  expect(returned.checkPoolContinuity()).toBeUndefined();
+  expect(returned.snapshot("pool", "new-old-label")?.settled).toBe(20); // unbound 12 plus canonical-looking 8, both still unassigned
+  expect(returned.snapshot("pool", "provider")?.settled).toBe(60);
+  expect(returned.snapshot("pool", "unrelated-provider")?.settled).toBe(20);
+  expect(reserve(returned, "candidate-after-old-writer", "unrelated-provider", 80).reserved).toBe(true);
+  expect(returned.abandon("candidate-after-old-writer")).toBe(true);
   returned.reconfigure(policy({ [pool("old-label")]: "provider", [pool("provider")]: "provider", [pool("new-old-label")]: "provider" }));
   expect(returned.checkPoolContinuity()).toBeUndefined();
   expect(returned.snapshot("pool", "provider")?.settled).toBe(60);
+  const restarted = createSpendReservationLedger({ journal: disk, salt, policy: policy(), now: () => 5 });
+  expect(restarted.checkPoolContinuity()).toBeUndefined();
+  expect(restarted.snapshot("pool", "provider")?.settled).toBe(60);
 });
 
 for (const kind of ["compaction", "combo"] as const) {
@@ -505,19 +670,19 @@ test("preflight retains unrelated reservations, debt and mismatched scope or led
 });
 
 test("prepaid exclusion follows only its canonical pool and retains settled/unresolved history", () => {
-  const disk = journal([checkpoint([["historical", 30, 10]])]);
+  const disk = journal([checkpoint([["historical", 30, 10], ["unbound", 10, 5]])]);
   const ledger = createSpendReservationLedger({ salt, journal: disk, policy: policy({ [pool("historical")]: "provider" }), now: () => 2 });
-  const tracker = createRequestSpendTracker({ provider: "provider", usageLogInputTokens: 60 }, undefined, ledger);
+  const tracker = createRequestSpendTracker({ provider: "provider", usageLogInputTokens: 45 }, undefined, ledger);
   const budget = createRequestExecutionBudget(undefined, undefined, tracker);
   const decision = budget.reserveDispatch({ sendClass: "initial", targetKey: "provider", countedExternally: true });
   if (!decision.allowed) throw new Error("synthetic permit refused");
   const proof = claimDispatchSpendProof(budget, decision.permit)!;
-  expect(ledger.snapshot("pool", "provider")).toMatchObject({ settled: 30, unresolved: 10, reserved: 60 });
+  expect(ledger.snapshot("pool", "provider")).toMatchObject({ settled: 40, unresolved: 15, reserved: 45 });
   expect(workflowSpendCeilingReached(undefined, ledger, "provider", proof)).toBeUndefined();
   ledger.reconfigure(policy({ [pool("historical")]: "renamed", [pool("provider")]: "renamed" }));
   expect(ledger.checkPoolContinuity()).toBeUndefined();
   expect(workflowSpendCeilingReached(undefined, ledger, "renamed", proof)).toBeUndefined();
-  expect(reserve(ledger, "other", "unrelated", 100).reserved).toBe(true);
+  expect(reserve(ledger, "other", "unrelated", 85).reserved).toBe(true);
   expect(workflowSpendCeilingReached(undefined, ledger, "unrelated", proof)).toMatchObject({ scope: "pool" });
   ledger.reconfigure(policy(undefined, { pool: { maxTokens: 40 } }));
   expect(workflowSpendCeilingReached(undefined, ledger, "renamed", proof)).toMatchObject({ scope: "pool" });

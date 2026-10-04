@@ -949,23 +949,27 @@ aliases, not the original provider/account names, so OpenCodex does not guess a 
 current account roster, a label prefix, or a shortened account ID.
 
 If `spend.pool.maxTokens` is configured and positive historical pool balances remain unidentified,
-inference admission returns local HTTP 429 with
-`x-opencodex-local-refusal: workflow_pool_history_unresolved` before contacting a provider.
-This can temporarily block otherwise valid requests, including requests without a workflow root.
-After routing, preflight also refuses a canonical pool that is already exhausted by its combined
-balances. A recovery or combo send already admitted by a reservation does not count that same
-reservation against itself a second time; all other reservations remain counted.
+the ledger keeps each balance in its original scope and conservatively counts it once against every
+candidate provider pool, in addition to that provider's verified group. A request is admitted only
+when that total plus its reservation fits the ceiling. This may restrict an otherwise unused pool
+until the operator verifies mappings; the request-local refusal explains this overrestriction
+without exposing aliases or journal contents. Unidentified history alone does not block admission
+before a route is known. After routing, preflight also refuses a canonical pool whose conservative
+total is already exhausted. A recovery or combo send already admitted by a reservation does not
+count that same reservation against itself a second time; all other reservations remain counted.
 This check does not turn post-reported passthrough sends into atomic reservations:
 a crossing send, concurrent admissions or retries reported afterwards retain their existing limits.
 Observe-only installs remain observe-only. Root and identity ceilings remain in force independently.
 
 To resolve it, an operator must verify which canonical provider each historical salted pool alias
-belongs to, using their own retained evidence. Add a top-level `spendPoolAliases` object in
+belongs to, using their own retained evidence. Verified mappings keep an old balance from being
+charged to every candidate pool. Add a top-level `spendPoolAliases` object in
 `config.json`: each key is the exact 32-character lowercase hexadecimal pool alias from that same
 installation's journal; each value is its verified canonical provider ID. An old alias that already
 represents the canonical provider still needs an explicit entry when it lacks identity metadata.
-A positive alias that cannot be identified stays blocked. Do not infer a match from similar names,
-account deletion, or a short-label collision, and do not share the journal or salt publicly.
+A positive alias that cannot be identified remains conservatively charged to every candidate pool.
+Do not infer a match from similar names, account deletion, a current provider name/hash, or a
+short-label collision, and do not share the journal or salt publicly.
 
 Keep `spendPoolAliases` outside `spend`: older versions reject unknown keys inside `spend` and can
 disable the entire section. Invalid top-level mappings are rejected on configuration writes;
@@ -993,7 +997,8 @@ change the salt, raise ceilings, or disable enforcement to make a downgrade appe
 An unmodified older binary is **not a supported rollback**. It can read the v1 raw balances but
 does not enforce the cross-alias provider total, may create a new account-label pool, and may discard
 optional identity metadata when compacting. There is no automatic downgrade barrier. If such an old
-writer has run, the new reader refuses unidentified positive history until the operator explicitly
-verifies all remaining mappings again. Storage or journal-integrity denials are separate from an
-alias problem and keep `workflow_spend_undurable`; unsafe-file/ownership failures may instead
-propagate as storage errors, without admitting the request.
+writer has run, the new reader conservatively counts unidentified positive history against every
+candidate provider pool until the operator verifies the remaining mappings. Storage or
+journal-integrity denials are separate from an alias problem and keep `workflow_spend_undurable`;
+unsafe-file/ownership failures may instead propagate as storage errors, without admitting the
+request.

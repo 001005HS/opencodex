@@ -84,8 +84,9 @@ export function createResponsesSendBudget(
   // returns -- a refusal an operator cannot tell from an ordinary budget exhaustion, on a
   // ceiling they configured themselves. Asked before dispatch, it names the scope and the
   // number instead. Returns undefined and touches no ledger when no ceiling is configured.
-  // Passthrough reports sends after they leave. Historical identity uncertainty must
-  // refuse here as well as in reserve(), including requests with no workflow root.
+  // Passthrough reports sends after they leave. Invalid or conflicting identity evidence
+  // still refuses here as well as in reserve(), including requests with no workflow root.
+  // Positive unbound balances alone are instead overlaid on each candidate pool below.
   const continuityRefusal = poolContinuityRefusalReason();
   if (continuityRefusal) {
     return workflowRefusalResponse(continuityRefusal, logCtx, undefined, workflowRootId);

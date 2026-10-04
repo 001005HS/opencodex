@@ -97,6 +97,22 @@ export function workflowRefusalResponse(
   return refusal;
 }
 
+/** Render the approved conservative-overlay explanation after a dispatch reservation refuses. */
+export function unboundPoolSpendRefusalMessage(
+  logCtx: Pick<RequestLogContext, "spendRefusalDetail">,
+): string | undefined {
+  const detail = logCtx.spendRefusalDetail;
+  if (!detail?.includesUnboundPoolHistory) return undefined;
+  return workflowDenialSummary("workflow-spend-exhausted", detail).message;
+}
+
+/** HTTP form for pre-commit send-budget catches; the tracker already recorded the event. */
+export function unboundPoolSpendRefusalResponse(logCtx: RequestLogContext): Response | undefined {
+  const detail = logCtx.spendRefusalDetail;
+  if (!detail?.includesUnboundPoolHistory) return undefined;
+  return workflowRefusalResponse("workflow-spend-exhausted", logCtx, undefined, undefined, detail);
+}
+
 /**
  * Admit one HTTP turn against its root workflow budget.
  *
@@ -145,6 +161,7 @@ export function workflowDecisionRefusalResponse(
       scope: decision.spendScope,
       limit: decision.spendLimit,
       ...(decision.spendProjected !== undefined ? { projected: decision.spendProjected } : {}),
+      ...(decision.spendIncludesUnboundPoolHistory ? { includesUnboundPoolHistory: true } : {}),
     }
     : undefined;
   return workflowRefusalResponse(decision.reason, logCtx, refusalLog, undefined, spend);

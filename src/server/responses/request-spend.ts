@@ -44,7 +44,7 @@ export function createRequestSpendTracker(
   logCtx: Pick<
     RequestLogContext,
     "provider" | "accountLogLabel" | "usageLogInputTokens" | "spendOutputCeilingTokens" | "spendInputEstimateTokens" | "spendPoolId"
-  > & Partial<Pick<RequestLogContext, "localTerminalReason" | "terminalSource" | "errorCode">>,
+  > & Partial<Pick<RequestLogContext, "localTerminalReason" | "terminalSource" | "errorCode" | "spendRefusalDetail">>,
   rootId: string | undefined,
   injected?: SpendReservationLedger,
 ): RequestSpendTracker {
@@ -127,10 +127,17 @@ export function createRequestSpendTracker(
               ? "workflow-tracking-exhausted"
               : "workflow-spend-exhausted";
         const detail = denial.reason === "spend-limit-exceeded"
-          ? { scope: denial.scope, limit: denial.limit, projected: denial.projected } : undefined;
+          ? {
+            scope: denial.scope,
+            limit: denial.limit,
+            projected: denial.projected,
+            ...(denial.includesUnboundPoolHistory ? { includesUnboundPoolHistory: true } : {}),
+          }
+          : undefined;
         const summary = workflowDenialSummary(reason, detail);
         markLocalRequestLogRefusal(logCtx, summary.code);
         logCtx.errorCode = summary.code;
+        if (detail?.includesUnboundPoolHistory) logCtx.spendRefusalDetail = detail;
         recordWorkflowRefusalEvent(rootId, reason, Date.now(), detail);
         return false;
       }

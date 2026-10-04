@@ -137,13 +137,18 @@ for automatically assigning old balances. Old canonical-looking aliases also nee
 mapping when their positive history predates identity metadata. Zero-balance history needs none.
 
 The ledger retains original scope balances and reservation targets. The canonical view adds each
-member once, keeping settled, reserved and unresolved buckets separate. Explicit links can join
-previously canonical groups for a verified rename; an already redirected alias cannot be assigned
-to a different group. The complete proposed graph is validated atomically, so a verified merge
-that repeats existing member aliases is independent of salted-key order. A removed config entry
-never removes a journaled link. Group activity,
-last-seen time and exhaustion govern retention; unidentified positive balances cannot be evicted.
-Identity evidence is bounded and retained even when dormant under-limit scopes are evicted.
+proven member once, keeping settled, reserved and unresolved buckets separate. Until ownership is
+verified, every positive unbound pool balance is also counted once against each candidate provider
+pool. The unbound balance stays in its original scope; a current provider name or matching salted
+alias does not establish ownership. This conservative overlay may restrict an otherwise unused
+provider pool until an operator supplies a verified mapping. Applying a mapping moves that balance
+from the overlay into its proven group without copying it. Explicit links can join previously
+canonical groups for a verified rename; an already redirected alias cannot be assigned to a
+different group. The complete proposed graph is validated atomically, so a verified merge that
+repeats existing member aliases is independent of salted-key order. A removed config entry never
+removes a journaled link. Group activity, last-seen time and exhaustion govern retention; unbound
+positive balances cannot be evicted. Identity evidence is bounded and retained even when dormant
+under-limit scopes are evicted.
 Each eviction pass aggregates pool groups once before choosing candidates. Retention uses the
 group's newest activity; capacity pressure still removes only the oldest eligible individual
 scope per pass, and every removal journals its original scope alias.
@@ -154,16 +159,18 @@ journal. New reservations still use the routed canonical pool ID. Replays and co
 the links; complete invalid metadata fails closed, including at the final line, and corruption is
 never compacted away. Unparseable torn final JSON keeps the existing conservative replay rule.
 
-With a configured pool ceiling, any remaining unidentified positive pool history or invalid/
-conflicting mapping refuses admission. HTTP workflow admission and the Responses pre-dispatch
-seam check this even without a root ID, before passthrough transports that report sends afterwards.
-After routing, that seam also refuses an already-exhausted canonical pool, including mapped historical totals.
-A prepaid child excludes only its own open reservation, proven by its exact permit, shared send
-ledger and still-pending receipt. Proof is single-use; unrelated reservations and other pool groups
-remain counted. HTTP continuity refusals record one rooted workflow event; rootless ones record none.
-It is a snapshot check, not a new atomic reservation for report-only transports: crossing sends,
-concurrent preflight admissions and retries reported afterwards retain their existing limitations.
-`workflow_pool_history_unresolved` identifies the local 429 without disclosing aliases; storage
+With a configured pool ceiling, an invalid or conflicting mapping refuses admission. Unbound
+positive history alone does not block HTTP admission before a route is known; once a candidate
+pool is known, its reservation check includes the proven group and every unbound positive balance.
+The Responses pre-dispatch seam checks this even without a root ID, before passthrough transports
+that report sends afterwards. Its local refusal explains when unknown-owner history contributed,
+without exposing aliases or journal contents. A prepaid child excludes only its own open
+reservation, proven by its exact permit, shared send ledger and still-pending receipt. Proof is
+single-use; unrelated reservations and other proven pool groups remain counted. HTTP continuity
+refusals still record one rooted workflow event; rootless ones record none. It is a snapshot check,
+not a new atomic reservation for report-only transports: crossing sends, concurrent preflight
+admissions and retries reported afterwards retain their existing limitations. `workflow_pool_history_unresolved`
+identifies an invalid or conflicting identity-metadata refusal without disclosing aliases; storage
 or replay failures keep `workflow_spend_undurable`. Already-sent reports still book actual spend.
 Observe-only mode has no new token refusal, and root/identity accounting remains independent.
 
@@ -173,8 +180,9 @@ salt loses newer spend and is not a supported rollback. Unmodified older binarie
 they can read v1 counters but do not enforce the canonical aggregate, can introduce fresh account
 label pools, and can discard optional identity metadata during compaction. There is no automatic
 downgrade barrier and no unknown-record fence. If that unsupported write has happened, the current
-reader requires explicit mappings for the remaining unidentified balances rather than assuming
-zero. `tests/lib/spend-pool-continuity.test.ts` exercises this using the frozen pre-change reader,
+reader conservatively counts remaining unidentified positive balances against every candidate
+pool until the operator verifies their mappings. `tests/lib/spend-pool-continuity.test.ts` exercises
+this using the frozen pre-change reader,
 as well as exact aggregation, active/unresolved sends, retention, failures and rootless preflight.
 
 Budget reservations retain their exact durable proof until their own dispatch/report confirms

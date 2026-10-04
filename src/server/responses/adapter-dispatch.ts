@@ -98,6 +98,7 @@ import { resolveClientRetryAfter } from "../../lib/retry-after";
 import { cancelBodyOnAbort } from "../../lib/abort";
 import { chargeWorkflowSends } from "../../lib/workflow-budget";
 import { isAntigravityValidationRefusal } from "./antigravity-validation-refusal";
+import { unboundPoolSpendRefusalResponse } from "../workflow-refusal";
 
 /** One responsibility of the Responses request pipeline; state owners are explicit. */
 export async function prepareAdapterExchange(
@@ -406,7 +407,8 @@ export async function prepareAdapterExchange(
     // blaming the provider makes the caller send the whole turn again -- the amplification this
     // budget exists to stop. The passthrough path has answered 429 here since #4546.
     if (err instanceof SendBudgetExhaustedError) {
-      return formatErrorResponse(429, SEND_BUDGET_EXHAUSTED_CODE, err.message);
+      return unboundPoolSpendRefusalResponse(logCtx)
+        ?? formatErrorResponse(429, SEND_BUDGET_EXHAUSTED_CODE, err.message);
     }
     const msg = describeUpstreamConnectFailure(err, connectMs);
     return formatErrorResponse(502, "upstream_error", msg);
@@ -621,7 +623,8 @@ export async function prepareAdapterExchange(
         // Same rule on the recovery leg: the ladder refused to send again, so the answer names
         // this proxy rather than the provider it never reached.
         if (err instanceof SendBudgetExhaustedError) {
-          return { failed: formatErrorResponse(429, SEND_BUDGET_EXHAUSTED_CODE, err.message) };
+          return { failed: unboundPoolSpendRefusalResponse(logCtx)
+            ?? formatErrorResponse(429, SEND_BUDGET_EXHAUSTED_CODE, err.message) };
         }
         const msg = describeUpstreamConnectFailure(err, connectMs);
         return { failed: formatErrorResponse(502, "upstream_error", msg) };

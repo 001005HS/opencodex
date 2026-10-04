@@ -191,6 +191,8 @@ export type SpendDenial =
       readonly scopeId: string;
       readonly limit: number;
       readonly projected: number;
+      /** Pool checks include all unbound positive history until an operator verifies its owner. */
+      readonly includesUnboundPoolHistory?: boolean;
     }
   /** This send id is already known -- open, settled, lost or abandoned. */
   | { readonly reason: "duplicate-send-id"; readonly sendId: string }
@@ -623,6 +625,8 @@ export interface SpendReservationLedger {
   reserve(request: SpendReservationRequest): SpendReservationDecision;
   /** Pre-dispatch guard, including transports which report their sends after dispatch. */
   checkPoolContinuity(): SpendDenial | undefined;
+  /** Whether any positive pool balance is still unbound and therefore charged to each candidate pool. */
+  hasUnboundPositivePoolHistory(): boolean;
   /**
    * The send left for upstream. Until this is called the reservation may be abandoned for
    * free; after it, a missing usage frame becomes unresolved spend. Returns false when the
@@ -727,9 +731,23 @@ export function createSpendReservationLedger(options: {
    * credential id, a pool name -- never leaves this function, so nothing identifying is
    * written to disk or held in a map key.
    */
-  const aliasFor = (kind: SpendScope | "send", id: string): string =>
+  const aliasFor = (kind: SpendScope | "send" | "pool-current", id: string): string =>
     createHash("sha256").update(salt).update("\u0000").update(kind).update("\u0000").update(id)
       .digest("hex").slice(0, 32);
+
+  // An old unbound label may hash exactly like today's provider ID. Only in that ambiguous
+  // case, put new routed spend in a separate hash domain so it belongs to this candidate
+  // without treating the old balance as verified ownership. Existing proven groups keep
+  // their alias, and explicit mappings of old aliases target the same current alias.
+  const poolAliasFor = (provider: string): string => {
+    const legacyAlias = aliasFor("pool", provider);
+    const legacy = scopes.get(scopeKey("pool", legacyAlias));
+    const hasPositiveHistory = legacy !== undefined
+      && legacy.settled + legacy.reserved + legacy.unresolved > 0;
+    const ambiguous = hasPositiveHistory
+      && (!poolContinuity.known(legacyAlias) || poolContinuity.resolve(legacyAlias) !== legacyAlias);
+    return ambiguous ? aliasFor("pool-current", provider) : legacyAlias;
+  };
 
   const scopeState = (scope: SpendScope, alias: string): ScopeState => {
     const key = scopeKey(scope, alias);
@@ -744,22 +762,34 @@ export function createSpendReservationLedger(options: {
   const historicalPools = (): Set<string> => new Set([...scopes].filter(([key, state]) =>
     key.startsWith("pool\0") && state.settled + state.reserved + state.unresolved > 0,
   ).map(([key]) => key.slice(5)));
-  const unknownPoolHistory = (): boolean => [...historicalPools()].some(alias => !poolContinuity.known(alias));
-  const poolState = (alias: string): ScopeState | undefined => {
+  const hasUnboundPositivePoolHistory = (): boolean => [...historicalPools()].some(alias => !poolContinuity.known(alias));
+  const poolState = (alias: string): { totals: ScopeState; includesUnboundHistory: boolean } | undefined => {
     const group = poolContinuity.resolve(alias);
     let total: ScopeState | undefined;
+    let includesUnboundHistory = false;
     for (const [key, state] of scopes) {
-      if (!key.startsWith("pool\0") || poolContinuity.resolve(key.slice(5)) !== group) continue;
+      if (!key.startsWith("pool\0")) continue;
+      const member = key.slice(5);
+      const unbound = !poolContinuity.known(member);
+      if (unbound) {
+        // Ownership cannot be inferred because an old alias hashes to a current provider ID.
+        // Keep that original balance out of the proven group, then charge it once through the
+        // conservative overlay below for every candidate provider.
+        if (state.settled + state.reserved + state.unresolved === 0) continue;
+        includesUnboundHistory = true;
+      } else if (poolContinuity.resolve(member) !== group) {
+        continue;
+      }
       total ??= { settled: 0, reserved: 0, unresolved: 0, lastSeenAt: 0 };
       total.settled += state.settled;
       total.reserved += state.reserved;
       total.unresolved += state.unresolved;
       total.lastSeenAt = Math.max(total.lastSeenAt, state.lastSeenAt);
     }
-    return total;
+    return total ? { totals: total, includesUnboundHistory } : undefined;
   };
   const stateFor = (scope: SpendScope, alias: string): ScopeState | undefined =>
-    scope === "pool" ? poolState(alias) : scopes.get(scopeKey(scope, alias));
+    scope === "pool" ? poolState(alias)?.totals : scopes.get(scopeKey(scope, alias));
 
   const limitFor = (scope: SpendScope): number | undefined => policy[scope].maxTokens;
 
@@ -773,7 +803,7 @@ export function createSpendReservationLedger(options: {
     const refs: ScopeRef[] = [];
     if (targets.rootId !== undefined) refs.push({ scope: "root", alias: aliasFor("root", targets.rootId) });
     if (targets.identityId !== undefined) refs.push({ scope: "identity", alias: aliasFor("identity", targets.identityId) });
-    if (targets.poolId !== undefined) refs.push({ scope: "pool", alias: aliasFor("pool", targets.poolId) });
+    if (targets.poolId !== undefined) refs.push({ scope: "pool", alias: poolAliasFor(targets.poolId) });
     return refs;
   };
 
@@ -939,12 +969,23 @@ export function createSpendReservationLedger(options: {
    */
   const evictScopes = (at: number, force: boolean): number => {
     const cutoff = at - policy.retentionMs;
-    // Candidate selection uses one snapshot of each pool group for the whole pass.
-    // Re-scanning all scopes per pool member repeats work on every reservation.
+    // Candidate selection uses one snapshot of each proven pool group plus the shared
+    // unbound overlay for the whole pass. Re-scanning all scopes per pool member repeats
+    // work on every reservation.
     const pools = new Map<string, ScopeState>();
+    const unboundPoolTotal: ScopeState = { settled: 0, reserved: 0, unresolved: 0, lastSeenAt: 0 };
     for (const [key, state] of scopes) {
       if (!key.startsWith("pool\0")) continue;
-      const group = poolContinuity.resolve(key.slice(5));
+      const alias = key.slice(5);
+      if (!poolContinuity.known(alias)) {
+        if (state.settled + state.reserved + state.unresolved > 0) {
+          unboundPoolTotal.settled += state.settled;
+          unboundPoolTotal.reserved += state.reserved;
+          unboundPoolTotal.unresolved += state.unresolved;
+        }
+        continue;
+      }
+      const group = poolContinuity.resolve(alias);
       let total = pools.get(group);
       if (!total) pools.set(group, total = { settled: 0, reserved: 0, unresolved: 0, lastSeenAt: 0 });
       total.settled += state.settled;
@@ -956,7 +997,19 @@ export function createSpendReservationLedger(options: {
     for (const [key, state] of scopes) {
       const separator = key.indexOf("\0");
       const scope = key.slice(0, separator) as SpendScope;
-      const effective = scope === "pool" ? pools.get(poolContinuity.resolve(key.slice(separator + 1)))! : state;
+      const alias = key.slice(separator + 1);
+      const unboundZero = scope === "pool" && !poolContinuity.known(alias)
+        && state.settled + state.reserved + state.unresolved === 0;
+      const proven = scope === "pool" ? pools.get(poolContinuity.resolve(alias)) : undefined;
+      const effective = scope === "pool" && !unboundZero
+        ? {
+          settled: (proven?.settled ?? 0) + unboundPoolTotal.settled,
+          reserved: (proven?.reserved ?? 0) + unboundPoolTotal.reserved,
+          unresolved: (proven?.unresolved ?? 0) + unboundPoolTotal.unresolved,
+          // The overlay affects exhaustion but does not merge retention age across identities.
+          lastSeenAt: proven?.lastSeenAt ?? 0,
+        }
+        : state;
       if (effective.reserved > 0) continue;
       if (scope === "pool" && state.settled + state.unresolved > 0
         && !poolContinuity.known(key.slice(separator + 1))) continue;
@@ -1046,7 +1099,7 @@ export function createSpendReservationLedger(options: {
 
   const preparePoolContinuity = (at: number, requested?: string): SpendDenial | undefined => {
     const evidence = poolContinuity.prepare(policy.poolAliases, requested, historicalPools(),
-      provider => aliasFor("pool", provider), at, maxTrackedScopes());
+      poolAliasFor, at, maxTrackedScopes());
     if (evidence === false) return { reason: "pool-history-unresolved" };
     if (evidence) {
       // A v1 checkpoint atomically carries the unchanged balances AND salted identity
@@ -1054,7 +1107,9 @@ export function createSpendReservationLedger(options: {
       if (!append(checkpointRecord(at, evidence))) return { reason: "reserve-not-durable", sendId: "" };
       if (!poolContinuity.restore(evidence)) return { reason: "pool-history-unresolved" };
     }
-    return unknownPoolHistory() ? { reason: "pool-history-unresolved" } : undefined;
+    // Unbound positive history is accounted conservatively in every candidate pool view.
+    // Only invalid/conflicting identity evidence or a failed durable write refuses here.
+    return undefined;
   };
 
   /** The denial when tracking cannot fit this request, or undefined when it can. */
@@ -1087,6 +1142,11 @@ export function createSpendReservationLedger(options: {
       if (policy.pool.maxTokens === undefined) return undefined;
       if (corruptRecords > 0) return { reason: "journal-corrupt", corruptRecords };
       return preparePoolContinuity(now());
+    },
+
+    hasUnboundPositivePoolHistory(): boolean {
+      assertOwnedAccounting?.();
+      return hasUnboundPositivePoolHistory();
     },
 
     reserve(request: SpendReservationRequest): SpendReservationDecision {
@@ -1124,7 +1184,8 @@ export function createSpendReservationLedger(options: {
         // it is to let the total go OVER the ceiling so the next request can be refused.
         const limit = request.alreadySent === true ? undefined : limitFor(ref.scope);
         if (limit === undefined) continue;
-        const state = stateFor(ref.scope, ref.alias);
+        const poolView = ref.scope === "pool" ? poolState(ref.alias) : undefined;
+        const state = ref.scope === "pool" ? poolView?.totals : scopes.get(scopeKey(ref.scope, ref.alias));
         const projected = (state ? state.settled + state.reserved + state.unresolved : 0) + tokens;
         if (projected > limit) {
           const scopeId = ref.scope === "root"
@@ -1132,7 +1193,10 @@ export function createSpendReservationLedger(options: {
             : ref.scope === "identity" ? request.scopes.identityId : request.scopes.poolId;
           return {
             reserved: false,
-            denial: { reason: "spend-limit-exceeded", scope: ref.scope, scopeId: scopeId ?? "", limit, projected },
+            denial: {
+              reason: "spend-limit-exceeded", scope: ref.scope, scopeId: scopeId ?? "", limit, projected,
+              ...(poolView?.includesUnboundHistory ? { includesUnboundPoolHistory: true } : {}),
+            },
           };
         }
       }
@@ -1205,7 +1269,8 @@ export function createSpendReservationLedger(options: {
       // Reading accounting from a handle whose ownership has ended is as wrong as writing it:
       // the figures describe a journal this process no longer owns.
       assertOwnedAccounting?.();
-      const state = stateFor(scope, aliasFor(scope, scopeId));
+      const alias = scope === "pool" ? poolAliasFor(scopeId) : aliasFor(scope, scopeId);
+      const state = stateFor(scope, alias);
       if (!state) return undefined;
       return {
         settled: state.settled,
@@ -1217,7 +1282,7 @@ export function createSpendReservationLedger(options: {
 
     exhausted(scope: SpendScope, scopeId: string, excludingSendId?: string): boolean {
       assertOwnedAccounting?.();
-      const alias = aliasFor(scope, scopeId);
+      const alias = scope === "pool" ? poolAliasFor(scopeId) : aliasFor(scope, scopeId);
       const state = stateFor(scope, alias);
       if (!state) return false;
       const own = excludingSendId === undefined ? undefined : reservations.get(aliasFor("send", excludingSendId));
