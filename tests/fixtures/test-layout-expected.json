@@ -31,6 +31,7 @@
   "skill-ocx-workflows.test.ts": "ci-workflows",
   "cli-capability-data.test.ts": "cli",
   "skill-ocx-generated.test.ts": "ci-workflows",
+  "responses-combo-exhausted-error.test.ts": "responses",
   "cli-config-default-show.test.ts": "cli",
   "ollama-native-tool-continuations.test.ts": "providers/ollama",
   "usage-antigravity-55.test.ts": "usage", "provider-antigravity-wire-snapshot.test.ts": "providers",
