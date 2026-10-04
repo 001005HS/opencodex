@@ -17,31 +17,16 @@ import { dropProviderCustomModels } from "../providers/provider-id-rewrite";
 import type { OcxProviderConfig } from "../types";
 import { findLiveProxy } from "../server/proxy-liveness";
 import { syncModelsToCodex } from "../codex/sync";
-import { FOREIGN_CODEX_HOME_OWNER_MESSAGE, UNKNOWN_CODEX_HOME_OWNER_MESSAGE,
-  unbackedRoutedRemovalMessage } from "../codex/catalog/routed-removal";
 import { codexAccountNamespaceProviderCollisionError } from "../codex/account-namespace-match";
 import { modelSelectionGuidance, modelSelectionNextSteps } from "./model-selection-guidance";
 import { isCanonicalOpenAiForwardProvider } from "../providers/openai-tiers-destination";
 import { providerRelativeSendPathConfigError } from "../config/provider-relative-send-path";
 import type { RuntimeApiDeps } from "./runtime-api";
+import { projectLocalSyncResult, type LocalSyncResult } from "./local-sync-result";
 import { providerManagementConfigError } from "../server/auth-cors";
 
 export interface ProviderCommandDeps extends RuntimeApiDeps {
   syncModels?: typeof syncModelsToCodex;
-}
-
-/** Project only the catalog owner's path-free safety guidance, not arbitrary sync errors. */
-function catalogSafetyWarning(warning: string | undefined): string | undefined {
-  if (!warning) return undefined;
-  for (const message of [FOREIGN_CODEX_HOME_OWNER_MESSAGE, UNKNOWN_CODEX_HOME_OWNER_MESSAGE]) {
-    if (warning.startsWith(message)) return message;
-  }
-  const countText = /^Codex catalog left unchanged: this refresh would remove the routed models of (\d+) /.exec(warning)?.[1];
-  if (!countText) return undefined;
-  const count = Number(countText);
-  if (!Number.isSafeInteger(count) || count < 1) return undefined;
-  const message = unbackedRoutedRemovalMessage(count);
-  return warning.startsWith(message) ? message : undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -323,24 +308,14 @@ async function handleAdd(args: string[], deps: ProviderCommandDeps): Promise<voi
 
   validateAndSave(config);
 
-  let sync: { status: "applied" | "catalog-only" | "skipped" | "refused" | "not-running" | "failed"; ok: boolean;
-    warning?: string; configApplied?: boolean; catalog?: { exists: boolean; written: boolean; cacheSynced: boolean; converged: boolean } } | undefined;
+  let sync: LocalSyncResult | undefined;
   if (wantsSync) {
     try {
       const live = await (deps.findLiveProxy ?? findLiveProxy)();
       if (!live) sync = { status: "not-running", ok: false };
       else {
         const result = await (deps.syncModels ?? syncModelsToCodex)(live.port, config, null);
-        const warning = catalogSafetyWarning(result.warning);
-        const converged = result.catalogExists && result.refreshOutcome !== "refused" && !warning;
-        sync = {
-          status: result.status,
-          ...(warning ? { warning } : {}),
-          ok: result.ok && (result.status === "skipped" || (result.status !== "refused" && converged)),
-          configApplied: result.status === "applied" && result.ok,
-          catalog: { exists: result.catalogExists, written: result.catalogWritten,
-            cacheSynced: result.cacheSynced, converged },
-        };
+        sync = projectLocalSyncResult(result);
       }
     } catch {
       // Dependency errors can contain keys, paths or request details. Keep a fixed outcome.
