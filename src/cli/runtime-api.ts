@@ -37,11 +37,15 @@ export class CliUsageError extends Error {
   }
 }
 
+export const PROXY_NOT_RUNNING_MESSAGE = "Proxy is not running. Start the intended proxy with: ocx start. No request was sent.";
+
 export class RuntimeApiError extends Error {
   constructor(
     message: string,
     readonly status: number,
     readonly body: unknown,
+    /** Local discovery refusals occur before the management request is sent. */
+    readonly code?: "proxy_not_running" | "client_role_management_unavailable",
   ) {
     super(message);
     this.name = "RuntimeApiError";
@@ -74,12 +78,12 @@ function clientRoleManagementRefusal(port: number): string {
 export async function runtimeBaseUrl(deps: RuntimeApiDeps = {}): Promise<string> {
   if (deps.baseUrl) return deps.baseUrl.replace(/\/$/, "");
   const live = await (deps.findLiveProxy ?? findLiveProxy)();
-  if (!live) throw new RuntimeApiError("Proxy is not running. Start it with: ocx start", 503, null);
+  if (!live) throw new RuntimeApiError(PROXY_NOT_RUNNING_MESSAGE, 503, null, "proxy_not_running");
   // The role comes from the same identity-checked /healthz body liveness already parsed, so
   // this costs no extra request. Only the client role is refused: an absent role is a
   // standalone or hub proxy (or a legacy body that predates the field), and both serve /api/*.
   if (live.role === "client") {
-    throw new RuntimeApiError(clientRoleManagementRefusal(live.port), 503, null);
+    throw new RuntimeApiError(clientRoleManagementRefusal(live.port), 503, null, "client_role_management_unavailable");
   }
   return `http://${probeHostname(live.hostname)}:${live.port}`;
 }
@@ -87,6 +91,33 @@ export async function runtimeBaseUrl(deps: RuntimeApiDeps = {}): Promise<string>
 function stringField(record: Record<string, unknown>, key: string): string | undefined {
   const value = record[key];
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function integrationRecoveryMessage(reason: string | undefined): string | undefined {
+  switch (reason) {
+    case "not_installed": return "The client is not installed. Run: ocx integration client status.";
+    case "non_loopback": return "The integration requires a loopback destination. Run: ocx integration client status.";
+    case "drift_requires_confirm": return "The client configuration changed. Run `ocx integration client status` before explicitly confirming restore.";
+    case "snapshot_expired": return "The recovery snapshot expired. Run `ocx integration client status` before creating a new change.";
+    case "superseded_store": return "The client uses a different configuration store. Run `ocx integration client status`, then disable and enable the selected client.";
+    case "unsafe": return "The client config path is unsafe to edit (for example a link or a competing file). Run `ocx integration client status` to see the affected path.";
+    case "conflict": return "The client config no longer matches the recorded ownership. Run `ocx integration client status`; add --overwrite-conflict to enable only if replacing it is intended.";
+    case "write_failed": return "The client config write failed. Run `ocx integration client status` before retrying.";
+    default: return undefined;
+  }
+}
+
+/**
+ * Integration writer detail is the only server prose this client appends beside the primary
+ * error. Scope it to the normalized request pathname (dot segments resolved, no query) and to
+ * an unredirected response so no other route's body can ride along.
+ */
+function isIntegrationRoute(path: string, response: Response): boolean {
+  if (response.redirected) return false;
+  let pathname: string;
+  try { pathname = new URL(path.startsWith("/") ? path : "/" + path, "http://cli.invalid").pathname; }
+  catch { return false; }
+  return /^\/api\/client-integrations(?:\/|$)/.test(pathname);
 }
 
 /**
@@ -106,7 +137,7 @@ function stringField(record: Record<string, unknown>, key: string): string | und
  * (#4662). Name the route instead, so any listener that does not serve a path stays legible
  * even if another one starts answering this way.
  */
-function responseMessage(body: unknown, status: number): string {
+function responseMessage(body: unknown, status: number, integrationRoute = false): string {
   if (typeof body === "string" && body.trim()) return body.trim().slice(0, 400);
   if (!body || typeof body !== "object") return `Management request failed (${status})`;
   const record = body as Record<string, unknown>;
@@ -123,6 +154,13 @@ function responseMessage(body: unknown, status: number): string {
     if (primary) break;
   }
   const parts = [primary ?? `Management request failed (${status})`];
+  // Integration mutation routes carry a writer explanation beside a generic error. Its prose is
+  // server text (paths, upstream errors), so render fixed guidance keyed on the closed reason
+  // code instead of echoing it; other management bodies keep their presentation contract.
+  if (integrationRoute && stringField(record, "message") && stringField(record, "message") !== primary) {
+    const fixed = integrationRecoveryMessage(stringField(record, "reason"));
+    if (fixed) parts.push(`Details: ${fixed}`);
+  }
   const reason = stringField(record, "reason");
   // A body of {ok:false, reason:"…"} with no `error` key used to degrade to the
   // generic line, discarding the only actionable field.
@@ -162,7 +200,9 @@ export async function runtimeRequest<T = unknown>(
     try { body = JSON.parse(text); }
     catch { body = text; }
   }
-  if (!response.ok) throw new RuntimeApiError(responseMessage(body, response.status), response.status, body);
+  if (!response.ok) {
+    throw new RuntimeApiError(responseMessage(body, response.status, isIntegrationRoute(path, response)), response.status, body);
+  }
   return body as T;
 }
 
