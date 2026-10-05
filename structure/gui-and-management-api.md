@@ -568,7 +568,7 @@ retry, last trusted device details, and the existing poll cadence. Outside same-
 ownership, a GET HTTP failure stops polling without starting a second login POST.
 
 Pairing-grant source limiting applies only to invalid guesses from an allowed browser origin; disallowed
-origins record no limiter state, and a valid grant redeems even from a throttled source.
+origins record no limiter state, and a valid grant redeems even from a throttled source. Standalone grant delivery also requires a one-use configuration-write intent; see [Standalone pairing delivery](remote-link.md#standalone-pairing-delivery).
 
 ## Durable provider PATCH
 
