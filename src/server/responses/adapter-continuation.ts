@@ -104,7 +104,8 @@ export function createAdapterContinuations(
     | "noteAdapterPhysicalSend"
     | "noteAdapterRecoveryWithheld"
     | "remainingTransientSendBudget"
-    | "noteTransientSends"
+    | "adapterSendBudget"
+    | "transientSendReporter"
     | "reserveCredentialHop"
     | "pendingHopPermit"
     | "sendBudgetExhausted"
@@ -139,7 +140,7 @@ export function createAdapterContinuations(
     noteAdapterPhysicalSend,
     noteAdapterRecoveryWithheld,
     remainingTransientSendBudget,
-    noteTransientSends,
+    transientSendReporter,
     reserveCredentialHop,
     sendBudgetExhausted,
   } = sendBudgetState;
@@ -215,6 +216,8 @@ export function createAdapterContinuations(
       try {
         if (transportState.activeAdapter.fetchResponse) {
           transportState.noteRoutedAttemptSend(continuationEstimate, replayKind);
+          const producer = adapterDispatchBudget?.beginSpendProducer?.();
+          try {
           return await withProviderRequestSlot(route.providerName, route.provider, nextParsed.modelId, upstream.signal, pacingSlot =>
             transportState.activeAdapter.fetchResponse!(builtContinuationRequest, {
               kiroPreferAccountFailover: route.providerName === "kiro" && isGenericOAuthFailoverEnabled(config, "kiro"),
@@ -232,6 +235,7 @@ export function createAdapterContinuations(
                 modelId: nextParsed.modelId,
               }),
             }));
+          } finally { producer?.close(); }
         }
         // Same #1851 scope guard as the initial send: transient-5xx retry only for direct
         // Google AI Studio; every other adapter keeps reset-only semantics here.
@@ -241,6 +245,9 @@ export function createAdapterContinuations(
           : fetchWithResetRetry;
         return await fetchContinuationWithRetryPolicy(
           recovery => {
+            sendBudgetState.adapterSendBudget?.startRequest?.({
+              poolId: logCtx.spendPoolId ?? route.providerName, identityId: logCtx.accountLogLabel,
+            });
             transportState.noteRoutedAttemptSend(continuationEstimate, recovery ?? replayKind);
             return fetchWithHeaderTimeout(
               builtContinuationRequest.url,
@@ -265,10 +272,10 @@ export function createAdapterContinuations(
             // Same request-scoped budget as the initial send and the 429/rotation refetches:
             // a terminal-guard continuation is another leg of ONE request, so handing it a
             // fresh `attempts` would let one request exceed the configured total-send ceiling.
-            ...(continuationTransientPolicy
+            ...(continuationTransientPolicy || sendBudgetState.adapterSendBudget?.spendEnforced
               ? {
-                attempts: remainingTransientSendBudget(continuationTransientPolicy.attempts),
-                onSendsConsumed: noteTransientSends,
+                attempts: remainingTransientSendBudget(continuationTransientPolicy?.attempts ?? 1),
+                onSendsConsumed: transientSendReporter(),
               }
               : {}),
           },
@@ -518,9 +525,9 @@ export function createAdapterContinuations(
               recordAttemptCredentialSource(logCtx.activeAttempt, route.providerName, route.provider, transportState.activeAdapter.name);
               // The replay goes out on the next iteration. An adapter that owns its ladder
               // reserves for that send itself, so hand this reservation down rather than let it
-              // take a second one for the same replay. A helper-routed replay needs no handoff:
-              // its reporter settles the booking made above.
-              if (adapterOwnsDispatch) sendBudgetState.pendingHopPermit = hop.permit;
+              // take a second one for the same replay. A helper-routed replay carries the
+              // same permit so its reporter settles only this booking.
+              sendBudgetState.pendingHopPermit = hop.permit;
               nextContinuationRecoveryKind = "oauth-account-429";
               kiroRefusalPendingReplay = response;
               continue;
@@ -609,9 +616,9 @@ export function createAdapterContinuations(
               recordAttemptCredentialSource(logCtx.activeAttempt, route.providerName, route.provider, transportState.activeAdapter.name);
               // The replay goes out on the next iteration. An adapter that owns its ladder
               // reserves for that send itself, so hand this reservation down rather than let it
-              // take a second one for the same replay. A helper-routed replay needs no handoff:
-              // its reporter settles the booking made above.
-              if (adapterOwnsDispatch) sendBudgetState.pendingHopPermit = hop.permit;
+              // take a second one for the same replay. A helper-routed replay carries the
+              // same permit so its reporter settles only this booking.
+              sendBudgetState.pendingHopPermit = hop.permit;
               nextContinuationRecoveryKind = "oauth-account-429";
               continue;
             }

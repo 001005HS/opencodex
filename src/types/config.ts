@@ -1048,6 +1048,8 @@ export interface OcxConfig {
    * upgrade against a number nobody chose.
    */
   spend?: OcxSpendConfig;
+  /** Historical salted pool aliases; h(pool,P) cannot map to Q != P for any configured provider P. */
+  spendPoolAliases?: Record<string, string>;
   /** Opt-in per-account activation of newly reset Codex quota windows. */
   codexQuotaAutoRefresh?: Record<string, {
     fiveHour?: boolean;

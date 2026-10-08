@@ -1,3 +1,4 @@
+import { readExistingSpendSalt, spendPoolAliasesError, validatePoolAliasOwners } from "../lib/spend-pool-alias-validation";
 import { isSubagentModelEntry, rawSubagentModelForce } from "./subagent-models";
 import { protocolConfigSchema } from "./schema/config-schema";
 import { createHash } from "node:crypto";
@@ -13,7 +14,7 @@ import { loopbackCompanionAllowed } from "../codex/loopback-target";
 import { UPSTREAM_HOST_CIRCUIT_MAX_THRESHOLD } from "../codex/upstream-host-health";
 import { MAX_APP_OWNED_MEMORY_BUDGET_MB, MIN_APP_OWNED_MEMORY_BUDGET_MB } from "../lib/app-owned-memory";
 import { isMissingPathError } from "./atomic-write";
-import { getConfigPath } from "./paths";
+import { getConfigDir, getConfigPath } from "./paths";
 import { getDefaultConfig } from "./proxy-env";
 import { salvageConfigCandidate } from "./salvage";
 import {
@@ -81,6 +82,23 @@ export type ConfigDiagnostics = {
   warnings?: string[];
 };
 
+function rawPoolAliasesError(value: unknown): string | undefined {
+  const record = rawConfigRecord(value);
+  if (!record) return undefined;
+  const aliases = record.spendPoolAliases;
+  const shapeError = spendPoolAliasesError(aliases);
+  if (shapeError) return shapeError;
+  const mapping = rawConfigRecord(aliases);
+  if (!mapping || Object.keys(mapping).length === 0) return undefined;
+  const providers = rawConfigRecord(record.providers ?? {});
+  if (!providers) return "providers must be an object to validate spendPoolAliases";
+  const targetError = spendPoolAliasesError(aliases, Object.keys(providers));
+  if (targetError) return targetError;
+  const salt = readExistingSpendSalt(getConfigDir());
+  if (!salt) return "spendPoolAliases requires a safely readable existing spend salt";
+  return validatePoolAliasOwners(aliases, salt, Object.keys(providers));
+}
+
 export type ConfigFileSnapshot = {
   diagnostics: ConfigDiagnostics;
   /** Exact file contents, including a possible BOM, used as the optimistic revision. */
@@ -145,6 +163,9 @@ function validFileConfigDiagnostics(config: OcxConfig, rawParsed: unknown): Conf
   if (codexPoolWarning) warnings.push(codexPoolWarning);
   const spendWarning = malformedSpendWarning(rawParsed);
   if (spendWarning) warnings.push(spendWarning);
+  if (rawPoolAliasesError(rawParsed)) {
+    warnings.push("spendPoolAliases invalid: configured pool admission is refused until the mapping is corrected");
+  }
   const plaintextWarning = malformedPlaintextV2AgentMessagesWarning(rawParsed);
   if (plaintextWarning) warnings.push(plaintextWarning);
   if (syncDisabledReason) {
@@ -668,6 +689,7 @@ export function validateConfigCandidate(value: unknown): { ok: true; config: Ocx
     ?? agentTaskRecoveryError(value)
     ?? quotaResetNotifyError(value)
     ?? catalogAutoRefreshError(value)
+    ?? (rawPoolAliasesError(value) ? "schema_invalid: spendPoolAliases: invalid pool identity mapping" : null)
     ?? spendError(value)
     ?? codexPoolError(value)
     ?? googleAntigravityStaticCatalogVersionError(value)

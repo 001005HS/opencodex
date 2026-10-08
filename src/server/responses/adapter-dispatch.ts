@@ -106,6 +106,7 @@ import { isCanonicalOpenAiForwardProvider } from "../../providers/openai-tiers";
 import { mapCodexAuthContextErrorToResponse } from "./codex-auth-error";
 import { chargeWorkflowSends } from "../../lib/workflow-budget";
 import { isAntigravityValidationRefusal } from "./antigravity-validation-refusal";
+import { unboundPoolSpendRefusalResponse } from "../workflow-refusal";
 
 /** One responsibility of the Responses request pipeline; state owners are explicit. */
 export async function prepareAdapterExchange(
@@ -159,7 +160,8 @@ export async function prepareAdapterExchange(
     | "noteAdapterPhysicalSend"
     | "noteAdapterRecoveryWithheld"
     | "remainingTransientSendBudget"
-    | "noteTransientSends"
+    | "adapterSendBudget"
+    | "transientSendReporter"
     | "recoverySendAllowance"
     | "recoveryClassFor"
     | "sendBudgetExhausted"
@@ -198,7 +200,7 @@ export async function prepareAdapterExchange(
     noteAdapterPhysicalSend,
     noteAdapterRecoveryWithheld,
     remainingTransientSendBudget,
-    noteTransientSends,
+    transientSendReporter,
     recoverySendAllowance,
     recoveryClassFor,
     sendBudgetExhausted,
@@ -337,6 +339,8 @@ export async function prepareAdapterExchange(
   try {
     if (transportState.activeAdapter.fetchResponse) {
       transportState.noteRoutedAttemptSend(inputTokenEstimate);
+      const producer = adapterDispatchBudget?.beginSpendProducer?.();
+      try {
       upstreamResponse = await withProviderRequestSlot(route.providerName, route.provider, route.modelId, upstream.signal, pacingSlot =>
         transportState.activeAdapter.fetchResponse!(builtInitialRequest, {
           kiroPreferAccountFailover: route.providerName === "kiro" && isGenericOAuthFailoverEnabled(config, "kiro"),
@@ -356,6 +360,7 @@ export async function prepareAdapterExchange(
               ? createCodexAuthDispatchGuard(admissionState.authCtx, options.codexAuthPolicy ?? config, route.modelId, options.admission, options.visionDescribeTerminal === true) : undefined,
           }),
         }));
+      } finally { producer?.close(); }
     } else {
       // #1851 scope guard: transient-5xx retry on this generic adapter path is opt-in for
       // direct Google AI Studio only (Vertex/Antigravity use fetchResponse above). Other
@@ -365,13 +370,14 @@ export async function prepareAdapterExchange(
       // legacy direct-Google exception is preserved exactly; every other adapter still keeps
       // reset-only semantics so combo failover hops on the first 5xx.
       const transientPolicy = transientRetryPolicyFor(route.provider);
+      const resetPolicy = resetReplayPolicyFor(route.provider);
       const compactPrepaid = options.compactionRecoveryAttempted ? sendBudgetState.pendingHopPermit : undefined;
       if (compactPrepaid) sendBudgetState.pendingHopPermit = undefined;
       let compactPrepaidUsed = false;
       // Combo and emergency compaction admission already book this target's first send.
       // Its configured initial ceiling is target-local; the shared remainder below still
       // accounts for earlier targets without deducting their sends from this target twice.
-      const initialSendCap = transientPolicy || resetReplayPolicyFor(route.provider)
+      const initialSendCap = transientPolicy || resetPolicy
         ? transientSendCapFor(transientPolicy?.attempts,
           (options.comboAttempt || compactPrepaid) ? 0 : sendBudgetState.sendsUsed)
         : 1;
@@ -380,6 +386,11 @@ export async function prepareAdapterExchange(
         : fetchWithResetRetry;
       upstreamResponse = await fetchWithRetryPolicy(
         recovery => {
+          // Unconfigured generic sends may omit the counting reporter. Capture policy
+          // independently so a later recovery still belongs to this request's start.
+          sendBudgetState.adapterSendBudget?.startRequest?.({
+            poolId: logCtx.spendPoolId ?? route.providerName, identityId: logCtx.accountLogLabel,
+          });
           if (compactPrepaid && !compactPrepaidUsed) {
             if (!compactPrepaid.use()) throw new SendBudgetExhaustedError(safeHostLabel(builtInitialRequest.url));
             compactPrepaidUsed = true;
@@ -402,12 +413,18 @@ export async function prepareAdapterExchange(
           abortSignal: upstream.signal,
           label: safeHostLabel(builtInitialRequest.url),
           claimAmbiguousResend: claimPreHeaderResend,
-          ...(transientPolicy || resetReplayPolicyFor(route.provider) || compactPrepaid
+          ...(sendBudgetState.adapterSendBudget?.spendEnforced || options.comboDispatchPermit || transientPolicy || resetPolicy || compactPrepaid
             ? {
               // A pending compaction permit already booked this leg's first physical send.
-              attempts: Math.min(initialSendCap,
-                remainingTransientSendBudget(initialSendCap) + (compactPrepaid ? 1 : 0)),
-              onSendsConsumed: noteTransientSends,
+              ...(transientPolicy || resetPolicy || compactPrepaid
+                ? {
+                  attempts: Math.min(initialSendCap,
+                    remainingTransientSendBudget(initialSendCap) + (compactPrepaid ? 1 : 0)),
+                }
+                : {}),
+              // Keep the exact combo or compaction receipt on the helper callback. The reporter
+              // also settles the request and workflow counters for reset-only retries.
+              onSendsConsumed: transientSendReporter(compactPrepaid ?? options.comboDispatchPermit),
             }
             : {}),
         },
@@ -441,7 +458,8 @@ export async function prepareAdapterExchange(
     // blaming the provider makes the caller send the whole turn again -- the amplification this
     // budget exists to stop. The passthrough path has answered 429 here since #4546.
     if (err instanceof SendBudgetExhaustedError) {
-      return formatErrorResponse(429, SEND_BUDGET_EXHAUSTED_CODE, err.message);
+      return unboundPoolSpendRefusalResponse(logCtx)
+        ?? formatErrorResponse(429, SEND_BUDGET_EXHAUSTED_CODE, err.message);
     }
     const msg = describeUpstreamConnectFailure(err, connectMs);
     return formatErrorResponse(502, "upstream_error", msg);
@@ -545,6 +563,8 @@ export async function prepareAdapterExchange(
         try {
           if (transportState.activeAdapter.fetchResponse) {
             transportState.noteRoutedAttemptSend(retryEstimate, recovery);
+            const producer = adapterDispatchBudget?.beginSpendProducer?.();
+            try {
             return await withProviderRequestSlot(route.providerName, route.provider, route.modelId, upstream.signal, pacingSlot => {
               // The dispatch boundary is HERE, not before the pacing wait: that wait can reject for
               // an abort, a saturated queue, an expired slot or a removed provider, and none of
@@ -574,6 +594,7 @@ export async function prepareAdapterExchange(
                 }),
               });
             });
+            } finally { producer?.close(); }
           }
           // #2643 review: this leg used to call fetchWithHeaderTimeout directly, so an
           // opted-in provider's transient-5xx policy applied to the initial send and to
@@ -585,7 +606,7 @@ export async function prepareAdapterExchange(
           const refetchWithPolicy = (route.provider.adapter === "google" || refetchTransientPolicy)
             ? fetchWithTransientRetry
             : fetchWithResetRetry;
-          const helperCountsSends = refetchTransientPolicy !== null || resetReplayPolicyFor(route.provider) !== null;
+          const helperCountsSends = sendBudgetState.adapterSendBudget?.spendEnforced === true || refetchTransientPolicy !== null || resetReplayPolicyFor(route.provider) !== null;
           const prepaid = sendBudgetState.pendingHopPermit;
           const configuredTotal = refetchTransientPolicy?.attempts;
           const refetchCap = transientSendCapFor(configuredTotal,
@@ -605,6 +626,9 @@ export async function prepareAdapterExchange(
           try {
             return await refetchWithPolicy(
               recoveryKind => {
+                sendBudgetState.adapterSendBudget?.startRequest?.({
+                  poolId: logCtx.spendPoolId ?? route.providerName, identityId: logCtx.accountLogLabel,
+                });
                 if (refetchAllowance?.permit && !refetchAllowance.permit.use()) {
                   throw new SendBudgetExhaustedError(safeHostLabel(retryRequest.url));
                 }
@@ -633,7 +657,7 @@ export async function prepareAdapterExchange(
                 ...(refetchAllowance
                   ? {
                     attempts: refetchAllowance.attempts,
-                    onSendsConsumed: noteTransientSends,
+                    onSendsConsumed: transientSendReporter(refetchAllowance.permit),
                   }
                   : {}),
               },
@@ -677,7 +701,8 @@ export async function prepareAdapterExchange(
         // Same rule on the recovery leg: the ladder refused to send again, so the answer names
         // this proxy rather than the provider it never reached.
         if (err instanceof SendBudgetExhaustedError) {
-          return { failed: formatErrorResponse(429, SEND_BUDGET_EXHAUSTED_CODE, err.message) };
+          return { failed: unboundPoolSpendRefusalResponse(logCtx)
+            ?? formatErrorResponse(429, SEND_BUDGET_EXHAUSTED_CODE, err.message) };
         }
         const msg = describeUpstreamConnectFailure(err, connectMs);
         return { failed: formatErrorResponse(502, "upstream_error", msg) };
