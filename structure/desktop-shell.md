@@ -331,6 +331,28 @@ terminal before its own silence wait or claim. Only parsed `stopped` or validate
 rechecks the approved subject and compatibility. Declining attaches as a guest; a failed claim
 does not pretend a stopped runtime was restored.
 
+Live supervision is a third independent fact, alongside liveness and durable ownership.
+On macOS and Linux, the read-only probe verifies that the runtime's direct parent is
+`opencodex-desktop` and the child executable is that app's sibling `ocx`; two complete
+process snapshots must agree. The target runtime PID, `ocx.pid`, and the PID in
+`runtime-port.json` must agree wherever present; mismatches make supervision unknown.
+The attestation secret is never included in supervision evidence. Windows reports
+supervision as unsupported.
+
+When ownership is `none`, `src/service/desktop-startup.ts` can report
+`supervisor: { supervisorPid, runtimePid, app }` with `owned: false`. Restart safety
+credits this live supervision only when that same app's Start at Login registration is
+verified, the proxy is running, and the diagnostic is fresh and viable. This evidence
+never creates or changes an ownership claim; unknown ownership and CLI-owned claims do
+not enter the unowned diagnostic branch. Unverified login registration produces Desktop
+recovery guidance with no recommended shell command.
+
+Older runtimes cannot report this evidence. When an attested live startup verdict has
+no desktop diagnostic but a local probe verifies Desktop supervision of that live PID,
+status and doctor use the shared selector's local verdict; status JSON records
+`startupSource: "local-supervision-override"`. The service summary uses that selected
+verdict too. A live verdict that already carries desktop diagnostics remains authoritative.
+
 ### Desktop runtime ownership acceptance
 
 The consent surface labels the exact ownership subject it is about to record. A relaunch of the
