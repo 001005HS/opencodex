@@ -568,9 +568,9 @@ provider and account types (`src/types/provider.ts`, `src/types/accounts.ts`), a
 request shape (`src/types/request.ts`). Two files also own small resolvers that must agree at every
 boundary. `src/types/tools.ts` owns tool-name identity: namespaced and dotted names, declared-name
 normalization, and `tool_choice` alias resolution, so every adapter matches a declared tool the
-same way. `src/types/wire.ts` owns accepted wire enumerations such as the per-provider upstream
-HTTP-version pin, shared by the config load schema, the management write boundary, and the fetch
-runtime, so no boundary accepts a value another rejects.
+same way. `src/types/wire.ts` owns accepted wire enumerations such as the per-provider upstream HTTP-version pin, shared by
+config load, management writes and fetch, so no boundary accepts a value another rejects. It also hard-pins OpenCode Go's
+`claude-haiku-5-5`, `minimax-m2.5`, `minimax-m2.7`, `minimax-m3`, and `union-alpha` to Anthropic across direct and captured static policy resolution, even with Chat/Responses overrides.
 
 `src/types/config.ts` declares the optional per-phase `memoryModels` setting;
 `src/types/request.ts` carries the selected phase through combo handoffs without changing the
