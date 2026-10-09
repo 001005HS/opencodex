@@ -679,6 +679,11 @@ ocx agent roles
 ocx agent roles set explorer xai/grok-4.5
 ```
 
+`ocx agent roles set <role> <model> --effort <level>` also sets the role's reasoning effort: it
+rewrites the role file's `model_reasoning_effort` line and writes `[codex].agents.<role>.reasoning`
+in omo.jsonc when LazyCodex has that level (`ultra` stays in the role file only, and an older
+`reasoning` is removed). A Save that changes only the model leaves both effort values as they were.
+
 ### Auto-assign
 
 Auto-assign is part of omo (Codex / LazyCodex): it sits above the role table in that section and
