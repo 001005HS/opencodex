@@ -647,6 +647,13 @@ The MiniMax and MiniMax (CN) provider cards can also show Coding Plan quota when
 key has an active plan. The dashboard reads the plan's 5-hour window and, when present, weekly
 window; these are display observations and do not change model routing.
 
+Ollama Cloud provider cards read quota from `/api/balance` first, with `/api/usage` as a
+fallback for older deployments. A parsed fallback report supersedes an earlier failure;
+otherwise hard 4xx responses (except 404/408/429) clear the last good quota even if another
+attempt fails, while transient failures keep it. An unreadable or oversized body stops
+further attempts. Dollar credits show the included allowance only, excluding purchased credits,
+so an exhausted allowance stops routing to Ollama Cloud only when no purchased credit remains.
+
 `MiniMax-M3.1-Flash-Preview` (1M context) is listed on both MiniMax presets. MiniMax serves it
 only to Token Plan subscription keys and MiniMax Code for now, so a pay-as-you-go API key gets an
 error for it. Thinking is always on: the effort picker offers `low` through `max` and defaults to
