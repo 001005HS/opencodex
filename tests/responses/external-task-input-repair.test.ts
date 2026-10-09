@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { handleResponses } from "../../src/server/responses";
 import { repairOrphanedInputItems, repairUnidentifiedToolOutputItems } from "../../src/adapters/openai-responses/tool-output-recovery";
 import { externalTaskInputResponsesContent } from "../../src/responses/task-input";
+import { parseRequest } from "../../src/responses/parser";
 import { compactionRequest, completedPayload, drainCompactionResponseState, installCompactionRoutingAclFixture, jsonResponse, keyProviderConfig } from "../helpers/compaction-routing-fixtures";
 import { acquireOwnedSpendHome } from "../helpers/owned-spend-home";
 
@@ -26,16 +27,17 @@ describe("external task input in raw-body repairs (#6764)", () => {
   test("unidentified-output repair emits the handover as a plain user turn", () => {
     expect(repairUnidentifiedToolOutputItems({ input: [seed()] })).toEqual({ input: [userTurn(DELEGATION)] });
     expect(repairUnidentifiedToolOutputItems({ input: [seed({ call_id: null })] })).toEqual({ input: [userTurn(DELEGATION)] });
-    // The parser treats a blank call_id as no pairing key, so the raw-body repair must too.
-    expect(repairUnidentifiedToolOutputItems({ input: [seed({ call_id: "   " })] })).toEqual({ input: [userTurn(DELEGATION)] });
   });
 
-  test("a blank call_id does not promote an incomplete envelope or a paired result", () => {
-    // No namespace: not task input, and the non-empty call_id keeps today's pass-through.
-    const incomplete = { type: "function_call_output", id: "fco_partial", name: "send_message_to_thread", call_id: "   ", output: DELEGATION };
-    expect(repairUnidentifiedToolOutputItems({ input: [incomplete] })).toEqual({ input: [incomplete] });
-    const paired = seed({ call_id: "call_1" });
-    expect(repairUnidentifiedToolOutputItems({ input: [paired] })).toEqual({ input: [paired] });
+  test("any nonempty string call_id stays a tool result on both paths", () => {
+    // The request schema accepts a whitespace call_id as a function_call_output and strips the
+    // envelope fields, so the parser reads a tool result; the raw-body repair must not disagree.
+    for (const callId of ["   ", "call_1"]) {
+      const item = seed({ call_id: callId });
+      expect(repairUnidentifiedToolOutputItems({ input: [item] })).toEqual({ input: [item] });
+    }
+    const parsed = parseRequest({ model: "m", input: [seed({ call_id: "   " })] });
+    expect(parsed.context.messages.map(message => message.role)).toEqual(["toolResult"]);
   });
 
   test("forward orphan repair agrees with the unidentified-output repair", () => {
