@@ -8,7 +8,7 @@ Two contributor fixes in the auth and quota area are open but cannot land as-is:
 - **Trigger:** coordinator thread 01a11e2e dispatched lane L5 (auth-quota) with HOTL cxc-loop authority.
 - **Goal:** two carry PRs against `dev`, each with exact-head hosted CI green and an independent gpt-6.1-sol review PASS (security review PASS for #6745).
 - **Non-goals:** merging, commenting on or closing #6739/#6745, pushing to contributor forks, approving fork workflows, release, the #6594 import-cycle refactor, any other lane's area (L1 desktop-cli, L2 service-journal, L3 compaction, L4 admission-jev, L6 lazycodex, L7 ci-infra). No full `bun run test` locally (user limit: minimal local tests).
-- **Verifier:** focused test files per unit (010/020 list them with what each observes), `bun run typecheck`, `bun run privacy:scan`, `bun run structure:check`, then exact-head hosted CI on the carry PR.
+- **Verifier:** focused test files per unit (010/020 list them with what each observes), `bun run typecheck`, `bun run privacy:scan`, `bun run structure:check`, then exact-head hosted CI on the carry PR, including the `docs site build` job for the docs edits (structure:check proves paths, not prose consistency; each unit also reads every structure owner mapped to its source area in `structure/INDEX.md`).
 - **Stop condition:** both PRs merge-ready, or a NEEDS_HUMAN decision is recorded.
 - **Memory artifact:** this directory; unpublished security analysis lives in the lane's `.tmp/`, never here.
 - **Expected terminal outcomes:** DONE (both merge-ready); NEEDS_HUMAN (upstream API evidence contradicts #6739, or security review raises a policy question); BLOCKED (hosted CI cannot run after one retry).
@@ -42,3 +42,7 @@ The PABCD session source is pinned to `.tmp/lanes/L5-auth-quota`, so both units 
 ## Reflection
 
 - Round 1 (same architect handle): MISALIGNED with seven gaps (four in 010 and the summary, three in the wp3 unit plan); all folded. Round 2: ALIGNED.
+
+## Audit (A)
+
+- Independent gpt-6.1-sol auditor 01a11e3d: NEAR-PASS with two wp3 test-design blockers, both folded into the wp3 unit plan. Q3 keeps today's hard-4xx terminal rule; the docs-site build job and per-unit structure-owner reads are added to the verifier.
