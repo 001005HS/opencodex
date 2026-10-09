@@ -1,6 +1,6 @@
 # Runtime
 
-The minute sweep checks persisted activation deadlines locally; only missing deadlines trigger metadata discovery. See the [quota activation contract](providers/openai-tiers.md#public-provider-contract). Codex control-plane ids are defined in the dependency-free `src/codex/control-plane-models.ts`; `src/router.ts` routes these exact ids unchanged to canonical OpenAI, retaining the existing error when no OpenAI provider is enabled. They do not widen the public native roster.
+The minute sweep checks persisted activation deadlines locally; only missing deadlines trigger metadata discovery. See the [quota activation contract](providers/openai-tiers.md#public-provider-contract). Codex control-plane ids are defined in the dependency-free `src/codex/control-plane-models.ts`; `src/router.ts` routes these exact ids unchanged to canonical OpenAI, retaining the existing error when no OpenAI provider is enabled. They do not widen the public native roster. Catalog requests and scheduled source refreshes follow the [nonblocking catalog observation contract](catalog.md#shared-catalog). Async runtime persistence rejects observed selection/epoch changes and returns detached frozen results; bounded exec rejects promptly and releases output readers on deadline or abort, independently awaits actual child exit, and escalates SIGTERM to SIGKILL after the shared 2-second grace (Windows termination is forceful).
 
 ## Bun runtime and test runner
 
