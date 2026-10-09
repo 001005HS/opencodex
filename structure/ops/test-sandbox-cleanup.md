@@ -15,7 +15,8 @@ error, including a foreign AbortError, still fails its case. Callers settle that
 draining producers/reaps and restoring or removing a home. The helper does not replace
 fixture-specific cleanup or claim OS ACL coverage for synthetic tests.
 
-`tests/helpers/fixture-teardown.ts` owns management-auth and OAuth live-update root removal.
+`tests/helpers/fixture-teardown.ts` owns management-auth, OAuth live-update, and Anthropic instance
+root removal (`tests/helpers/anthropic-instance-fixture.ts`).
 It settles producers, then each root's config flights, closes the request-history SQLite index,
 drains each root's ACL work, and only then removes drained roots. A producer or history failure
 blocks every removal; a root-specific drain failure preserves that root while other drained roots
