@@ -559,8 +559,15 @@ function translateAnthropicRequest(
   return { body, cacheKeySource, nativeReasoningReplay };
 }
 
-/** Remove proxy-owned native blobs before sending a Messages body to native Anthropic. */
-export function nativeAnthropicProjection(body: Rec): Rec {
+/**
+ * Remove proxy-owned native blobs before sending a Messages body to native Anthropic.
+ *
+ * Every decode is reserved against the request's translator budget first (eight bytes per code
+ * unit, as `decodeReasoningEnvelope` does) and every re-encoded signature is charged as a
+ * retained copy, so a body of near-limit envelopes cannot allocate past the per-turn bound.
+ * Throws TranslatorBudgetExceededError when it would; callers answer 413.
+ */
+export function nativeAnthropicProjection(body: Rec, budget: TranslatorBudget): Rec {
   if (!Array.isArray(body.messages)) return body;
   let changed = false;
   const messages = body.messages.flatMap(message => {
@@ -570,14 +577,18 @@ export function nativeAnthropicProjection(body: Rec): Rec {
       if (!isRec(block) || block.type !== "thinking" || typeof block.signature !== "string"
         || !block.signature.startsWith(OCX_REASONING_PREFIX)) return [block];
       let decoded: unknown;
+      const reservation = budget.reserveTransient(8 * block.signature.length, { kind: "reasoning" });
       try { decoded = JSON.parse(Buffer.from(block.signature.slice(OCX_REASONING_PREFIX.length), "base64").toString("utf8")); }
       catch { decoded = undefined; }
+      finally { reservation.release(); }
       if (!isRec(decoded)) { localChanged = true; return []; }
       if (!Object.hasOwn(decoded, "nat")) return [block];
       localChanged = true;
       const { nat: _nat, ...rest } = decoded;
       if (!rest.sig && !rest.red && !rest.krc && !(typeof rest.txt === "string" && rest.txt.length > 0)) return [];
-      return [{ ...block, signature: OCX_REASONING_PREFIX + Buffer.from(JSON.stringify(rest), "utf8").toString("base64") }];
+      const signature = OCX_REASONING_PREFIX + Buffer.from(JSON.stringify(rest), "utf8").toString("base64");
+      budget.chargeRetained(2 * signature.length, { kind: "reasoning" });
+      return [{ ...block, signature }];
     });
     if (!localChanged) return [message];
     changed = true;

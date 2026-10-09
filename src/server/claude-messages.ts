@@ -966,7 +966,15 @@ async function handleClaudeMessagesWithBudget(
     if (!effortRow && !fastRow && isRec(anthropicBody) && wantsNativePassthrough(req, config, requestPolicy, anthropicBody.model, cc)) {
       markProtocolEntry(logCtx, { inbound: "messages", lane: "native", features: messagesFeatures });
       recordProtocolShadowPlan(logCtx, config, { inbound: "messages", model: requestedModel });
-      return await anthropicNativePassthrough(req, config, logCtx, logIds, nativeAnthropicProjection(anthropicBody), "/v1/messages");
+      let projectedBody: Rec;
+      try {
+        projectedBody = nativeAnthropicProjection(anthropicBody, translatorBudget);
+      } catch (err) {
+        if (!isTranslatorBudgetExceededError(err)) throw err;
+        if (logIds) addFinalRequestLog(logIds.requestId, logIds.start, logCtx, 413, { closeReason: "non_stream" });
+        return anthropicErrorResponse(413, "request translation buffer exceeded the safe limit", "request_too_large", "translation_buffer_limit");
+      }
+      return await anthropicNativePassthrough(req, config, logCtx, logIds, projectedBody, "/v1/messages");
     }
     if (isRec(anthropicBody) && typeof anthropicBody.model === "string"
       && messagesSecondaryInstanceUnavailable(config, anthropicBody.model, cc)) {
@@ -1029,7 +1037,7 @@ async function handleClaudeMessagesWithBudget(
       // original error for any route that ultimately translates to Responses.
       if (!(err instanceof AnthropicRequestError) || err.message !== "malformed ocxr1 reasoning signature"
         || !isRec(anthropicBody)) throw err;
-      const projected = nativeAnthropicProjection(anthropicBody);
+      const projected = nativeAnthropicProjection(anthropicBody, translatorBudget);
       if (projected === anthropicBody) throw err;
       translation = messagesToResponsesTranslation(projected, cc, translatorBudget);
       nativeProjectionOnlyError = err;
@@ -1230,7 +1238,7 @@ async function handleClaudeMessagesWithBudget(
     let nativeBody: Rec;
     try {
       // Built from the source envelope when there is one, after the managed-client steps above.
-      nativeBody = nativeAnthropicProjection(envelope ? envelope.freshBody() : anthropicBody as Rec);
+      nativeBody = nativeAnthropicProjection(envelope ? envelope.freshBody() : anthropicBody as Rec, translatorBudget);
     } catch (err) {
       if (!isTranslatorBudgetExceededError(err)) throw err;
       if (logIds) addFinalRequestLog(logIds.requestId, logIds.start, logCtx, 413, { closeReason: "non_stream" });

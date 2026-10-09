@@ -15,6 +15,7 @@ import type { OcxConfig, OcxProviderConfig } from "../../src/types";
 import { acquireOwnedSpendHome } from "../helpers/owned-spend-home";
 import { removeTreeWithRetry } from "../helpers/remove-tree";
 import { createTestTranslatorBudget } from "../helpers/translator-budget";
+import { TranslatorBudgetExceededError } from "../../src/lib/translator-budget";
 
 const BLOB = "fixture-native-ciphertext";
 const MODEL = "m";
@@ -183,11 +184,22 @@ describe("Claude native reasoning provenance", () => {
       { type: "thinking", thinking: "", signature: escaped },
       { type: "thinking", thinking: "", signature: OCX_REASONING_PREFIX + "garbage" },
     ] }] };
-    const projected = nativeAnthropicProjection(raw);
+    const projected = nativeAnthropicProjection(raw, createTestTranslatorBudget());
     expect(JSON.stringify(projected)).not.toContain(BLOB);
     expect((projected.messages as typeof raw.messages).at(0)?.content).toHaveLength(1);
     expect((projected.messages as typeof raw.messages)[0]!.content[0]!.signature).toBe(encodeReasoningEnvelope({ txt: "Visible plan." }));
     expect(raw.messages[0]!.content[0]!.signature).toBe(blobOnly);
+  });
+
+  test("native projection reserves decode and re-encode copies against the translator budget", () => {
+    const nat = { enc: BLOB, model: MODEL, tag: "a".repeat(64) };
+    const big = encodeReasoningEnvelope({ txt: "x".repeat(200_000), nat });
+    const raw = { messages: [{ role: "assistant", content: [{ type: "thinking", thinking: "x", signature: big }] }] };
+    // Eight bytes per code unit of a ~270 KB signature cannot fit a 1 MiB turn budget.
+    expect(() => nativeAnthropicProjection(raw, createTestTranslatorBudget({ maxTurnBytes: 1024 * 1024 }))).toThrow(TranslatorBudgetExceededError);
+    const roomy = createTestTranslatorBudget({ maxTurnBytes: 32 * 1024 * 1024 });
+    expect(JSON.stringify(nativeAnthropicProjection(raw, roomy))).not.toContain(BLOB);
+    expect(roomy.snapshot().currentBytes).toBeGreaterThan(0);
   });
 
   test("a direct-forward route cannot mint a native reasoning tag", async () => {
