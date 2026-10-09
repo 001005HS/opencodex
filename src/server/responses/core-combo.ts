@@ -1123,12 +1123,17 @@ export async function executeComboResponses(
     const poolLocalRefusal = isAnthropicPoolLocalRefusal(
       config, pick.target.provider, failure.response.status, failedAccount, failureNow,
     );
+    const poolInstance = configuredAnthropicInstance(config, pick.target.provider);
+    const rechecksPoolQuota = poolLocalRefusal && poolInstance !== undefined
+      && anthropicRoutingFor(poolInstance).anthropicAccountPoolConfig(config).quotaRecheckMs !== undefined;
     const nextPick = advanceComboAfterFailure(config, pick, {
       retryAfter: poolLocalRefusal ? undefined : failure.retryAfter,
       resetAt: failure.resetAt,
       cooldownMs: combo.cooldownMs,
       now: failureNow,
-      cooldownScope: failureCooldownScope,
+      // The pool already refuses locally until its account deadline. A second target
+      // cooldown would slide that deadline forward on each intervening request.
+      cooldownScope: rechecksPoolQuota ? "none" : failureCooldownScope,
       eligible: targetEligible,
       status: failure.response.status,
       code: failure.upstreamCode,

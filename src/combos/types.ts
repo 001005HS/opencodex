@@ -36,6 +36,8 @@ export interface ComboValidationIssue {
 export interface NormalizedComboTarget {
   provider: string;
   model: string;
+  reasoningEffort?: OcxComboDefaultEffort;
+  serviceTier?: "default" | "priority";
   weight: number;
   /** Emergency-only target, deferred under `cooldownWaitPolicy` (#5691). */
   lastResort: boolean;
@@ -397,6 +399,13 @@ export function comboConfigIssues(
         message: `targets[${i}].weight must be an integer from 1 to 10000`,
       });
     }
+    if (target.reasoningEffort !== undefined
+      && (typeof target.reasoningEffort !== "string" || !isCodexReasoningEffort(target.reasoningEffort))) {
+      issues.push({ path: ["targets", i, "reasoningEffort"], message: "reasoningEffort must be low, medium, high, xhigh, max or ultra" });
+    }
+    if (target.serviceTier !== undefined && target.serviceTier !== "default" && target.serviceTier !== "priority") {
+      issues.push({ path: ["targets", i, "serviceTier"], message: "serviceTier must be default or priority" });
+    }
     if (target.reasoningEfforts !== undefined) {
       if (!Array.isArray(target.reasoningEfforts) || target.reasoningEfforts.length === 0) {
         issues.push({
@@ -504,6 +513,8 @@ export function normalizeComboConfig(raw: OcxComboConfig): NormalizedComboConfig
       provider: target.provider.trim(),
       model: target.model.trim(),
       weight: target.weight ?? 1,
+      ...(target.reasoningEffort !== undefined ? { reasoningEffort: target.reasoningEffort } : {}),
+      ...(target.serviceTier !== undefined ? { serviceTier: target.serviceTier } : {}),
       ...(target.reasoningEfforts !== undefined
         ? { reasoningEfforts: [...target.reasoningEfforts] }
         : {}),

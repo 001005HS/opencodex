@@ -1275,6 +1275,10 @@ export type OcxComboCooldownWaitPolicy = "before-last-resort";
 export interface OcxComboTarget {
   provider: string;
   model: string;
+  /** Per-target effort override; other targets retain the caller's effort. */
+  reasoningEffort?: OcxComboDefaultEffort;
+  /** Per-target speed tier, independent of the caller's tier. */
+  serviceTier?: "default" | "priority";
   /** Relative target weight for round-robin batches and random selection. Default 1; valid range 1..10000. */
   weight?: number;
   /**

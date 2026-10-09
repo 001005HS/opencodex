@@ -9,7 +9,7 @@ type ComboInput = {
   reasoningEffortMode?: "strict" | "adaptive";
   nativeAlias?: boolean;
 };
-const TARGET_KEYS = new Set(["provider", "model", "weight", "reasoningEfforts", "modelProfile", "lastResort", "metered"]);
+const TARGET_KEYS = new Set(["provider", "model", "weight", "reasoningEfforts", "modelProfile", "lastResort", "metered", "reasoningEffort", "serviceTier"]);
 
 export function parseComboTargets(value: unknown): Array<Record<string, unknown>> {
   if (!Array.isArray(value) || value.length === 0) throw new CliUsageError("Targets input must be a nonempty array");
@@ -26,6 +26,13 @@ export function parseComboTargets(value: unknown): Array<Record<string, unknown>
     if (Object.hasOwn(target, "weight") && (typeof target.weight !== "number"
       || !Number.isInteger(target.weight) || target.weight < 1 || target.weight > 10_000)) {
       throw new CliUsageError("Target weight must be an integer from 1 to 10000");
+    }
+    if (target.reasoningEffort !== undefined
+      && (typeof target.reasoningEffort !== "string" || !isCodexReasoningEffort(target.reasoningEffort))) {
+      throw new CliUsageError("Target reasoningEffort must be low, medium, high, xhigh, max or ultra");
+    }
+    if (target.serviceTier !== undefined && target.serviceTier !== "default" && target.serviceTier !== "priority") {
+      throw new CliUsageError("Target serviceTier must be default or priority");
     }
     if (Object.hasOwn(target, "reasoningEfforts") && (!Array.isArray(target.reasoningEfforts)
       || target.reasoningEfforts.length === 0

@@ -815,6 +815,8 @@ Combos are stored in the top-level `combos` object, keyed by combo id:
 | --- | --- | --- | --- |
 | `targets` | Yes | — | Non-empty ordered array of configured `{ provider, model, weight?, lastResort? }` targets. Duplicate provider/model pairs are rejected. |
 | `targets[].weight` | No | `1` | Integer from 1 to 10,000. Used by round-robin and random; ignored by failover, least-used, reset-window, and JEV. |
+| `targets[].reasoningEffort` | No | unset | Explicit per-target `low`, `medium`, `high`, `xhigh`, `max`, or `ultra` override. Other targets preserve the caller's effort. The operator owns target support; ordinary downstream validation still applies. |
+| `targets[].serviceTier` | No | unset | Per-target `default` or `priority`. `priority` requests Fast through the destination's existing capability/wire policy; it does not enable an unsupported Fast lane. |
 | `targets[].lastResort` | No | `false` | Marks an emergency-only target. Inert unless `cooldownWaitPolicy` is set. Never makes a target permanently ineligible: when no normal target can be reached it is dispatched as usual. |
 | `targets[].metered` | No | `false` | Marks a pay-per-use target, such as an Anthropic API-key row placed after subscription targets. The environment token and loopback callers may reach it; an issued `apiKeys` entry may not unless it sets `allowMeteredComboTargets: true`, so its request stops at the last unmetered target and returns that target's error. |
 | `strategy` | No | `"failover"` | `"failover"`, `"round-robin"`, `"random"`, `"least-used"`, `"reset-window"`, or `"jev"`. JEV decides only the initial eligible target and effort; ordinary Combo fallback owns later attempts. |

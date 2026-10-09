@@ -17,6 +17,8 @@ import { removeTreeWithRetry } from "../../helpers/remove-tree";
 const MODEL = "claude-opus-5-5";
 const ISSUED_KEY_ID = "issued-key";
 let cursorLimited = false;
+let cursorOverflow = false;
+let astraBodies: Record<string, unknown>[] = [];
 let cursorModels: string[] = [];
 let cursorEfforts: unknown[] = [];
 
@@ -33,6 +35,10 @@ mock.module("../../../src/server/adapter-resolve", () => ({
       async runTurn(parsed: { modelId: string; options?: { reasoning?: unknown } }, _incoming: unknown, emit: (event: AdapterEvent) => void) {
         cursorModels.push(parsed.modelId);
         cursorEfforts.push(parsed.options?.reasoning);
+        if (cursorOverflow) {
+          emit({ type: "error", status: 400, message: "maximum context length exceeded", code: "context_length_exceeded" });
+          return;
+        }
         if (cursorLimited) {
           emit({ type: "error", status: 429, message: "You've hit your usage limit", code: "rate_limit_exceeded" });
           return;
@@ -97,7 +103,7 @@ function transport(lane: Lane): typeof fetch {
   }) as typeof fetch;
 }
 
-function config(options: { combo?: boolean; quotaRecheckMs?: number; allowMetered?: boolean } = {}): OcxConfig {
+function config(options: { combo?: boolean; quotaRecheckMs?: number; allowMetered?: boolean; astra?: boolean } = {}): OcxConfig {
   const subscription = { adapter: "anthropic", baseUrl: "https://subscription.test", authMode: "oauth", models: [MODEL], fetch: transport("subscription") };
   const apiKey = { adapter: "anthropic", baseUrl: "https://api-key.test", authMode: "key", apiKey: "${CHAIN_TEST_ANTHROPIC_KEY}", models: [MODEL], fetch: transport("api-key") };
   return {
@@ -106,7 +112,13 @@ function config(options: { combo?: boolean; quotaRecheckMs?: number; allowMetere
     providers: {
       anthropic: subscription as OcxProviderConfig,
       cursor: { adapter: "cursor", baseUrl: "https://api2.cursor.sh", authMode: "oauth", models: [MODEL] },
-      "anthropic-metered": apiKey as OcxProviderConfig,
+      ...(options.astra ? {} : { "anthropic-metered": apiKey as OcxProviderConfig }),
+      ...(options.astra ? { astra: {
+        adapter: "openai-chat", baseUrl: "https://astra.test/v1", authMode: "key", apiKey: "fake-astra",
+        fastWire: { kind: "service-tier", canonicalToWire: { priority: "priority" }, foreignCallerTiers: "verbatim" },
+        supportsServiceTier: true,
+        models: ["gpt-6-astra"], fetch: astraTransport,
+      } } : {}),
     },
     ...(options.quotaRecheckMs ? { anthropicAccountPool: { quotaRecheckMs: options.quotaRecheckMs } } : {}),
     apiKeys: [{
@@ -122,7 +134,8 @@ function config(options: { combo?: boolean; quotaRecheckMs?: number; allowMetere
           targets: [
             { provider: "anthropic", model: MODEL },
             { provider: "cursor", model: MODEL },
-            { provider: "anthropic-metered", model: MODEL, metered: true },
+            ...(options.astra ? [] : [{ provider: "anthropic-metered", model: MODEL, metered: true }]),
+            ...(options.astra ? [{ provider: "astra", model: "gpt-6-astra", reasoningEffort: "high", serviceTier: "priority" }] : []),
           ],
         },
       },
@@ -134,7 +147,12 @@ const LOOPBACK: DataPlaneAdmission = { kind: "loopback", source: "loopback" };
 const ISSUED: DataPlaneAdmission = { kind: "configured", keyId: ISSUED_KEY_ID, source: "bearer" };
 
 async function chat(cfg: OcxConfig, admission: DataPlaneAdmission = LOOPBACK) {
-  const response = await handleChatCompletions(new Request("http://localhost/v1/chat/completions", {
+  const server = Bun.serve({ hostname: "127.0.0.1", port: 0,
+    fetch: req => handleChatCompletions(req, cfg, { model: "", provider: "" },
+      { requestId: "chain-test", start: Date.now(), admission } as never),
+  });
+  try {
+  const response = await fetch(new URL("/v1/chat/completions", server.url), {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -143,11 +161,23 @@ async function chat(cfg: OcxConfig, admission: DataPlaneAdmission = LOOPBACK) {
       reasoning_effort: "medium",
       messages: [{ role: "system", content: "S".repeat(5000) }, { role: "user", content: "hi" }],
     }),
-  }), cfg, { model: "", provider: "" }, { requestId: "chain-test", start: Date.now(), admission } as never);
+  });
   return { status: response.status, text: await response.text() };
+  } finally {
+    await server.stop(true);
+  }
 }
 
 const lanes = () => sent.map(entry => entry.lane);
+
+const astraTransport: typeof fetch = Object.assign(async (_input: RequestInfo | URL, init?: RequestInit) => {
+  astraBodies.push(JSON.parse(String(init?.body ?? "{}")));
+  return new Response([
+    `data: ${JSON.stringify({ id: "astra", object: "chat.completion.chunk", model: "gpt-6-astra", choices: [{ index: 0, delta: { role: "assistant", content: "astra answered" }, finish_reason: null }] })}\n\n`,
+    `data: ${JSON.stringify({ id: "astra", object: "chat.completion.chunk", model: "gpt-6-astra", choices: [{ index: 0, delta: {}, finish_reason: "stop" }] })}\n\n`,
+    "data: [DONE]\n\n",
+  ].join(""), { headers: { "content-type": "text/event-stream" } });
+}, { preconnect: fetch.preconnect });
 
 beforeEach(async () => {
   home = mkdtempSync(join(tmpdir(), "ocx-subscription-chain-"));
@@ -164,6 +194,7 @@ beforeEach(async () => {
   await saveCredential("cursor", { access: "cursor-access", refresh: "cursor-refresh", expires: Date.now() + 3_600_000, accountId: "cursor-account" });
   sent = []; cursorModels = []; cursorEfforts = [];
   subscriptionSpent = false; cursorLimited = false; apiKeyLimited = false;
+  cursorOverflow = false; astraBodies = [];
   clearComboSelectionState(); clearComboTargetCooldowns(); clearAnthropicAccountPoolState();
   forgetAnthropicFailoverQuorum(); clearGenericFailoverHealth(); clearAccountQuotaCache();
 });
@@ -280,4 +311,85 @@ test("without quotaRecheckMs the stated 88-hour reset still holds the account ou
     .filter(snapshot => snapshot !== null);
   expect(snapshots.length).toBeGreaterThan(0);
   for (const snapshot of snapshots) expect(snapshot!.cooldownUntil! - Date.now()).toBeGreaterThan(80 * 3_600_000);
+});
+
+test("an intervening request during pool cooldown cannot postpone the five-minute subscription recheck", async () => {
+  subscriptionSpent = true;
+  const cfg = config({ quotaRecheckMs: 300_000 });
+  const start = Date.now();
+  const realNow = Date.now;
+  try {
+    Date.now = () => start;
+    expect((await chat(cfg)).text).toContain("cursor answered");
+    Date.now = () => start + 240_000;
+    expect((await chat(cfg)).text).toContain("cursor answered");
+    subscriptionSpent = false;
+    sent = []; cursorModels = [];
+    Date.now = () => start + 300_001;
+    expect((await chat(cfg)).text).toContain("anthropic answered");
+    expect(lanes()).toEqual(["subscription"]);
+    expect(cursorModels).toEqual([]);
+  } finally {
+    Date.now = realNow;
+  }
+});
+
+for (const fallback of ["cursor", "astra"] as const) {
+  test(`subscription-only three-stage chain returns from ${fallback} after the original recheck deadline`, async () => {
+    const cfg = config({ quotaRecheckMs: 300_000, astra: true });
+    subscriptionSpent = true;
+    cursorLimited = fallback !== "cursor";
+    const start = Date.now();
+    const realNow = Date.now;
+    Date.now = () => start;
+    try {
+      const first = await chat(cfg);
+      expect(first.status).toBe(200);
+      expect(first.text).toContain(`${fallback} answered`);
+      if (fallback === "astra") {
+        expect(lanes()).toEqual(["subscription", "subscription"]);
+        expect(cursorModels).toEqual([MODEL]);
+        expect(astraBodies).toHaveLength(1);
+        expect(astraBodies[0]?.reasoning_effort).toBe("high");
+        expect(astraBodies[0]?.service_tier).toBe("priority");
+      }
+      Date.now = () => start + 240_000;
+      expect((await chat(cfg)).status).toBe(200);
+      subscriptionSpent = false;
+      sent = []; cursorModels = []; astraBodies = [];
+      Date.now = () => start + 300_001;
+      const recovered = await chat(cfg);
+      expect(recovered.status).toBe(200);
+      expect(recovered.text).toContain("anthropic answered");
+      expect(lanes()).toEqual(["subscription"]);
+      expect(cursorModels).toEqual([]);
+      expect(astraBodies).toEqual([]);
+    } finally {
+      Date.now = realNow;
+    }
+  });
+}
+
+test("Cursor context rejection hops to Astra without poisoning the next request", async () => {
+  subscriptionSpent = true;
+  cursorOverflow = true;
+  const cfg = config({ quotaRecheckMs: 300_000, astra: true });
+  expect((await chat(cfg)).text).toContain("astra answered");
+  expect(lanes()).not.toContain("api-key");
+  cursorOverflow = false;
+  sent = []; cursorModels = [];
+  expect((await chat(cfg)).text).toContain("cursor answered");
+  expect(cursorModels).toEqual([MODEL]);
+  expect(lanes()).not.toContain("api-key");
+});
+
+test("buffered combo preflight preserves Cursor's structured rate-limit status", async () => {
+  cursorLimited = true;
+  const cfg = config({ astra: true });
+  const combo = cfg.combos?.["claude-chain"];
+  if (!combo) throw new Error("Missing fixture combo");
+  combo.targets = [{ provider: "cursor", model: MODEL }];
+  const response = await chat(cfg);
+  expect(response.status).toBe(429);
+  expect(JSON.parse(response.text).error.code).toBe("rate_limit_exceeded");
 });
