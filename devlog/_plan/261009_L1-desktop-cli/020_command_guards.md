@@ -920,3 +920,39 @@ Each guarded operation (one `service install|repair|start|restart`, one update r
 refresh) goes through the same latch. Test (update-desktop-owner): desktop → unknown(desktopSeen:false) sequence stays
 blocked; desktop → none clears.
 
+
+
+## r4 amendments (A audit round 1)
+
+- **F1 Node-safe latch:** `createSupervisionLatch()` lives in `src/service/desktop-supervision.mjs` (declared in its
+  `.d.mts`), not in a TS module. `src/service/desktop-command-guard.ts` imports it for the Bun side; `bin/ocx.mjs`
+  imports it directly. Test: an actual Node launcher run (tests/cli/ocx-launcher-runtime.test.ts harness, `node bin/ocx.mjs update`
+  with injected supervision evidence via the existing test seam or a fake `ps` on PATH) proves the import loads under Node.
+- **F2 fresh pre-stop gate:** immediately before the stop spawn in `src/update/index.ts` (the
+  `if (runtimePlan.mayStopRuntime && …)` block at :634) and before the equivalent stop in `bin/ocx.mjs`, run
+  `latch.observe(inspectDesktopSupervision({ targetPid }))`; when blocked: print the Desktop notice, perform no stop, no
+  package replacement and no service refresh, exit 1. Test: evidence sequence none (initial) → desktop (pre-stop) ⇒ zero
+  stop/package/service mutations.
+- **F7 bypass ledger (PLAN-BYPASS-NAMED-01):**
+
+| Guard | Tier / surface | Known bypass / limit | Residual risk | Wording | Negative assertion |
+|---|---|---|---|---|---|
+| service install/repair/start/restart | E3, CLI pre-mutation | older CLI on PATH; Windows (`unsupported`); inconclusive evidence without desktopSeen | second supervisor from an old CLI | "early warning", not enforcement | none/unsupported → command proceeds |
+| update (Node launcher + Bun updater, initial + pre-stop + recovery) | E3, CLI | same; Desktop starting after the last check inside the stop window | short race | early warning | none → update proceeds |
+| dashboard restart veto | E3, server route | older runtime | — | early warning | none → restart allowed |
+| stop notice | E1 notice only | — | Desktop may restart the proxy | notice | --json emits no notice |
+
+
+## r5 (A audit round 2)
+
+Node verification path, replacing the r4 "Node launcher run" test:
+1. Import compatibility: run the real launcher under Node with `update --help` (exits before any package-manager probe,
+   bin/ocx.mjs help short-circuit) — proves the module graph including `desktop-supervision.mjs` loads under Node.
+2. A direct Node test (spawn `node -e` importing `src/service/desktop-supervision.mjs`) exercising
+   `createSupervisionLatch` sequences and `inspectDesktopSupervision` with injected `run`/`proc`/`readPid` deps.
+3. Updater refusal: the Node launcher's update decision is extracted into a pure planner already used there
+   (`planUpdateRuntimeHandling` with the new `supervision` input) and asserted at unit level in
+   tests/update/update-desktop-owner.test.ts, plus a source-order assertion in tests/cli/ocx-launcher-source.test.ts that
+   the supervision check precedes the stop spawn and package-manager mutation calls in bin/ocx.mjs. A full copied-package
+   update run is out of scope (it needs real package-manager preflight); hosted CI's npm-global smokes cover the launcher
+   end to end.

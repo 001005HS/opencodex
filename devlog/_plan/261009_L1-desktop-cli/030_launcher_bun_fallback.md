@@ -1118,3 +1118,12 @@ Open product/design question: none within accepted wp3 scope. Recorded implement
    and does not reuse `computeVersionSkew().warning`.
 5. Timeout test claims only "returns null within the deadline"; the lingering-child claim is dropped.
 
+
+
+## r4 amendments (A audit round 1)
+
+- **F3:** the source assertion "launcher does not reference desktop-supervision.mjs" is scoped to the `resolveBun` and
+  `fail` function bodies (extract the text between their declarations), so PR B's updater import does not trip it.
+  Verify on the combined tree before the last push of the later PR.
+- **F6:** add `tests/ci-workflows/bun-runtime.test.ts` to the focused verifier command.
+

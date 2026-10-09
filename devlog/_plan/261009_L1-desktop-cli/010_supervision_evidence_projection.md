@@ -210,3 +210,38 @@ IN: files above. OUT: command guards (020), launcher (030), GUI wording, Windows
    (pid only; the attestation secret is never read into the result). Any two present values that differ → `unknown`
    (`reason: "pid-mismatch"`). Tests: pid file vs runtime-port mismatch → unknown; target vs pid file mismatch → unknown.
 
+
+
+## r4 amendments (A audit round 1, FAIL → folded)
+
+- **F4 predicate:** `desktopEffective = platform ∈ {darwin, linux} && !diagnosticStale && desktop !== undefined && (desktop.owned || desktop.supervisor !== undefined) && desktop.loginEnabled && desktop.running && desktop.viable`.
+  The existing negative case (tests/service/service-desktop-startup-health.test.ts:26, unowned without supervisor) keeps
+  no protection; add the positive supervised case beside it.
+- **F5 canonical shapes (one naming everywhere):**
+  - ESM evidence: `{kind:"desktop", runtimePid, supervisorPid, app, proxy}` | `{kind:"none"}` |
+    `{kind:"unknown", reason, desktopSeen}` | `{kind:"unsupported"}` — all four in `desktop-supervision.d.mts`.
+  - `DesktopStartupDiagnostic.supervisor?: { supervisorPid: number; runtimePid: number; app: string }` — copied
+    field-for-field from the evidence (supersedes the `pid` name above).
+  - `ResolveJson.supervisor?: { kind: "desktop"|"none"|"unknown"|"unsupported"; supervisorPid?: number; runtimePid?: number; app?: string }`.
+  - `StatusJson.startupSource: "live" | "local" | "local-supervision-override"` — top-level beside `versionSkew`
+    (status.ts:217), set where `selectStatusStartupHealth` runs; JSON-only (no human line). Test asserts each value.
+  - GUI `gui/src/pages/startup-shared.ts` `StartupHealthData.desktop` gains `supervisor?` (same shape) and the type gains
+    `recommendedAction?: string | null`; `StartupRiskDetail` mirrors `supervisor?`.
+  - Serializer anchor corrected: `__startup-health` prints at `src/cli/dispatch.ts:730`.
+- **F6 verification list for wp2 (replaces the earlier verifier):**
+  `bun test tests/service/service-desktop-startup.test.ts tests/service/service-desktop-startup-linux.test.ts tests/service/service-desktop-startup-health.test.ts tests/service/autostart-health.test.ts tests/cli/cli-status-startup-health.test.ts tests/cli/cli-status-json.test.ts tests/cli/cli-resolve.test.ts tests/gui/startup-health-ui.test.ts <doctor test file that asserts startup hints — locate with rg 'without persistent startup protection' tests>`,
+  `bun run typecheck`, `bun run lint:gui`, `bun run build:gui` (GUI type-check + catalog exhaustiveness),
+  `bun run structure:check`, `bun run privacy:scan`. GUI component assertion: activation buttons disabled and service
+  commands hidden when `desktop.supervisor` is present (startup-sections consumer; extend the existing GUI test that
+  renders startup sections, or assert through `startupRiskDetailKey` + an exported predicate `desktopManagesStartup(health)`
+  used by startup-sections.tsx so the predicate is unit-tested).
+- **Docs cap:** `structure/runtime.md` is at its 600-line cap — the supervision sentence replaces existing text there; the
+  bulk lands in desktop-shell.md (545) and service-and-sidecars.md (538).
+
+
+## r5 (A audit round 2)
+
+- Doctor verifier: extend `tests/codex-integration/doctor.test.ts` (imports `runDoctor`, line 26) with a fixture whose
+  startup verdict has `desktop.supervisor`, login unverified, `recommendedCommand: null`, `recommendedAction` set; assert
+  the hint contains the action and contains neither `ocx service install` nor `ocx restore`. Add this file to the wp2 verifier.
+- Type name: `CliStatusJson.startupSource` (src/cli/status.ts:107).

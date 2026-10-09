@@ -39,3 +39,13 @@ Reflection (same architects) on the written plan revision: recorded below after 
 - r2 re-sent to both for confirmation; result recorded in 003 if anything remains.
 - r2 re-check: Pascal **ALIGNED**; Kant **MISALIGNED** (consumers doctor/status summary, runtime-port correlation, guard
   continuity) → folded as r3 in 010/020. r3 re-check: Kant **ALIGNED**. Plan revision r3 goes to independent A audit.
+
+## Independent audit
+
+- Round 1 reviewer `01a11e4b-1a4a-7211-9a96-dcf9f1b5a29e` (gpt-6.1-sol): **FAIL** (blockers: Node-incompatible latch,
+  missing pre-stop gate; mediums: launcher source assertion, predicate, field chain, verifier coverage; low: bypass
+  ledger). Synthesis: all seven accepted, none rebutted; folded as r4 in 010/020/030. Decision change (latch module
+  location, new pre-stop inspection point) is an execution-flow amendment within Kant D5 — no new design decision.
+- Round 2 (same reviewer): **GO-WITH-FIXES (blockers=2)** — doctor verifier placeholder, unexecutable Node activation test;
+  low: CliStatusJson name. All three folded as r5 (010/020). Main judgment: near-pass, both blockers folded with
+  concrete amendments; no residual High.
