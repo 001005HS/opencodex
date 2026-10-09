@@ -166,17 +166,19 @@ export function repairUnidentifiedToolOutputItems(body: unknown): unknown {
   let changed = false;
   const input = body.input.map(item => {
     if (!isPlainObject(item)
-      || (item.type !== "function_call_output" && item.type !== "custom_tool_call_output")
-      || (typeof item.call_id === "string" && item.call_id.length > 0)) {
+      || (item.type !== "function_call_output" && item.type !== "custom_tool_call_output")) {
       return item;
     }
     // #6764: an external task envelope is user input, not an orphaned result. Recognize it
     // before the generic repair so the summarizer and the destination see a plain user turn.
+    // It runs before the call_id check because the parser treats a blank call_id as no pairing
+    // key (task-input.ts hasPairingKey); a real call_id is refused by the recognizer itself.
     const taskInput = externalTaskInputResponsesContent(item);
     if (taskInput) {
       changed = true;
       return { type: "message", role: "user", content: taskInput };
     }
+    if (typeof item.call_id === "string" && item.call_id.length > 0) return item;
     if (!isRepairableToolOutput(item.output)) return item;
     changed = true;
     return {

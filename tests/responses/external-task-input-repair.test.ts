@@ -26,6 +26,16 @@ describe("external task input in raw-body repairs (#6764)", () => {
   test("unidentified-output repair emits the handover as a plain user turn", () => {
     expect(repairUnidentifiedToolOutputItems({ input: [seed()] })).toEqual({ input: [userTurn(DELEGATION)] });
     expect(repairUnidentifiedToolOutputItems({ input: [seed({ call_id: null })] })).toEqual({ input: [userTurn(DELEGATION)] });
+    // The parser treats a blank call_id as no pairing key, so the raw-body repair must too.
+    expect(repairUnidentifiedToolOutputItems({ input: [seed({ call_id: "   " })] })).toEqual({ input: [userTurn(DELEGATION)] });
+  });
+
+  test("a blank call_id does not promote an incomplete envelope or a paired result", () => {
+    // No namespace: not task input, and the non-empty call_id keeps today's pass-through.
+    const incomplete = { type: "function_call_output", id: "fco_partial", name: "send_message_to_thread", call_id: "   ", output: DELEGATION };
+    expect(repairUnidentifiedToolOutputItems({ input: [incomplete] })).toEqual({ input: [incomplete] });
+    const paired = seed({ call_id: "call_1" });
+    expect(repairUnidentifiedToolOutputItems({ input: [paired] })).toEqual({ input: [paired] });
   });
 
   test("forward orphan repair agrees with the unidentified-output repair", () => {

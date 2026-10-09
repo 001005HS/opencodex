@@ -65,3 +65,11 @@ reads the authorized handover as a stray tool result.
   (reads the target: the repair functions are exercised through `createResponsesPassthroughAdapter`).
 - `bun test tests/test-layout.test.ts tests/test-layout-tooling.test.ts` (new file registration).
 - `bun run typecheck`, `bun run structure:check`, `bun run privacy:scan`; hosted CI on the exact head.
+
+## P revalidation (wp2, 2026-10-09)
+
+`origin/dev` is still c15037b324, the base this doc was written against; none of the touched files
+moved. Architect decisions D6769-1..3 were accepted in the roadmap and reflected ALIGNED; the
+roadmap audit passed in round 5. Co-author trailer: `Co-authored-by: Robin Bially
+<7304732+robin-bially@users.noreply.github.com>` (author of the three PR commits). The PR
+description says `Refs #6764`, not `Closes`, because task selection after replay is out of scope.
