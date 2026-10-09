@@ -764,7 +764,7 @@ export async function executeComboResponses(
       initialJevDecision ? initialJevDecision.effort : comboDefaultEffort(config, comboId),
       initialJevDecision?.effort === null ? [] : targetReasoningEfforts,
       combo.reasoningEffortMode,
-      initialJevDecision !== undefined && initialJevDecision.effort !== null ? "force" : combo.defaultEffortMode,
+      initialJevDecision ? (initialJevDecision.effort === null ? "fallback" : "force") : combo.defaultEffortMode,
     );
     if (initialJevDecision) {
       delete childBody.service_tier;
@@ -860,7 +860,7 @@ export async function executeComboResponses(
           && targetEligible(target)
           && !isComboTargetInCooldown(comboId, target),
         );
-      const nativeChild = protocolLanes?.nativeChild(pick.target, targetRoute, targetSendBudget);
+      const nativeChild = protocolLanes?.nativeChild(pick.target, targetRoute, targetSendBudget, initialJevDecision);
       response = nativeChild ? await dispatchNativeComboChild({
         source: options.protocolSource!,
         plan: nativeChild,
@@ -909,8 +909,8 @@ export async function executeComboResponses(
         onNativePassthroughCancel: callbackGate.onCancel,
         onResponseComplete: callbackGate.onResponseComplete,
       });
-      // Native Chat rebuilds its own body and does not apply the initial JEV effort.
-      restoreOriginalRequestedEffort(childLog, nativeChild ? undefined : initialJevDecision?.effort);
+      // Both lanes applied the initial choice before provider pins/caps; retain those transitions.
+      restoreOriginalRequestedEffort(childLog, initialJevDecision?.effort);
     } catch (error) {
       callbackGate.discard();
       if (options.abortSignal?.aborted) {
