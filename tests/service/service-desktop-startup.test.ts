@@ -141,6 +141,28 @@ test("a login registration for another app cannot credit the observed supervisor
   expect(diagnoseMacDesktopStartup(f.deps)).toMatchObject({ loginEnabled: false, viable: false, supervisor: { app: realpathSync(f.app) } });
 });
 
+const loginSupervisionChanges: [string, (f: ReturnType<typeof fixture>) => void][] = [
+  ["runtime PID", f => { f.state.pid = 101; }],
+  ["supervisor PID", f => { f.state.child = `300 ${f.proxy}`; }],
+  ["supervisor app", f => {
+    const other = fixture(); f.state.child = `200 ${other.proxy}`; f.state.parent = `1 ${other.app}`;
+  }],
+  ["foreign parent", f => { f.state.parent = `1 ${f.proxy}`; }],
+  ["unreadable process", f => { f.state.fail = "/bin/ps"; }],
+];
+for (const [name, change] of loginSupervisionChanges) {
+  test(`unowned macOS supervision is discarded when ${name} changes during login verification`, () => {
+    const f = fixture(); f.state.owner = { kind: "none", revision: 0 };
+    const original = f.deps.run; let loginRead = false;
+    f.deps.run = (command, args) => {
+      if (command === "/usr/bin/plutil") { loginRead = true; change(f); }
+      return original(command, args);
+    };
+    expect(diagnoseMacDesktopStartup(f.deps)).toBeUndefined();
+    expect(loginRead).toBe(true);
+  });
+}
+
 test("unowned foreign parent, absent runtime and changing snapshots never receive supervision credit", () => {
   const f = fixture(); f.state.owner = { kind: "none", revision: 0 }; f.state.parent = `1 ${f.proxy}`;
   expect(inspectDesktopSupervision(f.deps)).toEqual({ kind: "none" });

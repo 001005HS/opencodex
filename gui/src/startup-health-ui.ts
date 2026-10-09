@@ -3,6 +3,7 @@ import type { StartupHealthData } from "./pages/startup-shared";
 
 export interface StartupRiskDetail {
   desktop?: Pick<NonNullable<StartupHealthData["desktop"]>, "owned" | "supervisor">;
+  diagnosticStale?: boolean;
   routingKind: "native" | "opencodex-local" | "custom-local" | "custom-remote" | "unknown";
   shimCoverage: "full" | "cli-only" | "none";
 }
@@ -12,6 +13,7 @@ export function desktopManagesStartup(health: Pick<StartupRiskDetail, "desktop">
 }
 
 export function startupRiskDetailKey(health: StartupRiskDetail): TKey {
+  if (health.diagnosticStale && health.desktop) return "startup.desktopReopenRecovery";
   if (health.routingKind === "custom-local") return "startup.riskDetailCustomLocal";
   if (health.desktop?.owned) return "startup.desktopRecovery";
   if (health.desktop?.supervisor) return "startup.desktopSupervisedRecovery";

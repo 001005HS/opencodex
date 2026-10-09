@@ -1381,7 +1381,7 @@ export async function runDoctor(args: string[] = []): Promise<void> {
   });
   const liveStartup = live ? await fetchLiveStartupHealth(live) : null;
   const { startup } = selectStatusStartupHealth(liveStartup, () => collectStartupHealth(doctorConfig),
-    live?.pid != null ? () => inspectDesktopSupervision({ targetPid: live.pid! }) : undefined);
+    live?.pid != null ? () => inspectDesktopSupervision({ targetPid: live.pid! }) : undefined, live?.pid);
   console.log("\nCodex restart safety");
   console.log(`  ${startup.rebootSafe ? "ok " : "!! "} ${startupHealthSummary(startup)}`);
   console.log(`       ${formatStartupRoutingDetail(startup)}`);

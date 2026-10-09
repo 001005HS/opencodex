@@ -251,7 +251,7 @@ test("old live verdict is overridden only by positive supervision, and summaries
   const local = { ...supervisedPayload(), status: "at-risk", rebootSafe: false,
     recommendedCommand: null, recommendedAction: "Turn on Start at Login." } as StartupHealth;
   let fallbackCalls = 0;
-  const selected = selectStatusStartupHealth(live, () => { fallbackCalls++; return local; }, () => SUPERVISION);
+  const selected = selectStatusStartupHealth(live, () => { fallbackCalls++; return local; }, () => SUPERVISION, LIVE.pid);
   expect(selected.startup).toBe(local);
   expect(selected.startupSource).toBe("local-supervision-override");
   expect(fallbackCalls).toBe(1);
@@ -265,7 +265,7 @@ test("old live verdict is overridden only by positive supervision, and summaries
     { installed: true, summary: "managed" }, true);
   expect(serviceProtected).toStartWith("OpenCodex Desktop supervises the running proxy; ");
   expect(serviceProtected).not.toContain("run '");
-  expect(statusServiceSummary(selected.startup, { installed: false, summary: "absent" }, false)).toContain("local startup reports");
+  expect(statusServiceSummary(selected.startup, { installed: false, summary: "absent" }, false)).toBe("absent");
   expect(runtimeSupervisorLine(selected.startup)).toBe(`Runtime supervisor: OpenCodex Desktop (pid 3131, ${SUPERVISION.app}); durable owner: none`);
   expect(runtimeSupervisorLine({ ...local, desktop: { ...local.desktop!, owned: true } })).toContain("durable owner: desktop");
   expect(runtimeSupervisorLine(live)).toBeNull();
@@ -278,4 +278,42 @@ test("old live verdict is overridden only by positive supervision, and summaries
   const modern = supervisedPayload() as StartupHealth;
   expect(selectStatusStartupHealth(modern, () => { throw new Error("must not fall back"); },
     () => { throw new Error("must not inspect modern runtime"); })).toEqual({ startup: modern, startupSource: "live" });
+});
+
+
+test.each(["runtime changed", "supervisor changed", "missing desktop", "missing supervisor", "owned"] as const)(
+  "supervision override keeps the live service verdict when local evidence is %s", scenario => {
+    const live = startupPayload() as StartupHealth;
+    const local = supervisedPayload() as StartupHealth;
+    const supervisor = local.desktop!.supervisor!;
+    const cases = {
+      "runtime changed": { ...local.desktop!, supervisor: { ...supervisor, runtimePid: LIVE.pid + 1 } },
+      "supervisor changed": { ...local.desktop!, supervisor: { ...supervisor, supervisorPid: 3132 } },
+      "missing desktop": undefined,
+      "missing supervisor": { ...local.desktop!, supervisor: undefined },
+      "owned": { ...local.desktop!, owned: true },
+    };
+    const desktop = cases[scenario];
+    const fallback = { ...local, desktop, recommendedCommand: desktop ? null : "ocx service install" };
+    const selected = selectStatusStartupHealth(live, () => fallback, () => SUPERVISION, LIVE.pid);
+    expect(selected).toEqual({ startup: live, startupSource: "live" });
+    expect(selected.startup.protection).toBe("service");
+    expect(selected.startup.recommendedCommand).toBeNull();
+  },
+);
+
+test("matching supervision overrides the old live verdict", () => {
+  const live = startupPayload() as StartupHealth;
+  const local = supervisedPayload() as StartupHealth;
+  expect(selectStatusStartupHealth(live, () => local, () => SUPERVISION, LIVE.pid))
+    .toEqual({ startup: local, startupSource: "local-supervision-override" });
+});
+
+test("supervision evidence must match the identity-checked live PID before evaluating fallback", () => {
+  const live = startupPayload() as StartupHealth;
+  let fallbackCalls = 0;
+  const selected = selectStatusStartupHealth(live, () => { fallbackCalls++; return supervisedPayload() as StartupHealth; },
+    () => SUPERVISION, LIVE.pid + 1);
+  expect(selected).toEqual({ startup: live, startupSource: "live" });
+  expect(fallbackCalls).toBe(0);
 });

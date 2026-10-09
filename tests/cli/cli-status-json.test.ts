@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 import { collectHubStatus, hubStatusLines, isConnectionRefused, isUncleanExitEvidence, proxyHealthFailureReason, resolveStatusPid, selectListenTarget } from "../../src/cli/status";
 import * as proxyLiveness from "../../src/server/proxy-liveness";
 import * as startupHealth from "../../src/codex/autostart-health";
+import * as service from "../../src/service";
 import * as supervision from "../../src/service/desktop-supervision.mjs";
 import * as statusFacade from "../../src/cli/status";
 import * as statusProbes from "../../src/cli/status-probes";
@@ -1126,8 +1127,13 @@ describe("status selected supervision verdict", () => {
       const result = (await statusFacade.collectStatus()).json;
       expect(result.startupSource).toBe(source);
       expect(result.startup).toBe(local);
-      expect(result.service.summary).toContain("OpenCodex Desktop supervises the running proxy");
-      expect(result.service.summary).not.toContain("run '");
+      if (source === "local") {
+        expect(result.service.summary).not.toContain("OpenCodex Desktop supervises the running proxy");
+        expect(result.service.summary).not.toContain("running under the live managed service");
+      } else {
+        expect(result.service.summary).toContain("OpenCodex Desktop supervises the running proxy");
+        expect(result.service.summary).not.toContain("run '");
+      }
       expect(probes).toBe(source === "local-supervision-override" ? 1 : 0);
     } finally {
       for (const cleanup of restore.reverse()) cleanup();
@@ -1139,3 +1145,42 @@ describe("status selected supervision verdict", () => {
     }
   }, STORE_BUDGET_MS);
 });
+
+
+test("collectStatus keeps a viable registered service marked NOT serving without a live proxy", async () => {
+  const home = mkdtempSync(join(tmpdir(), "ocx-status-service-absent-"));
+  const previousHome = process.env.OPENCODEX_HOME;
+  const previousCodexHome = process.env.CODEX_HOME;
+  const restore: Array<() => void> = [];
+  try {
+    mkdirSync(join(home, "codex"));
+    process.env.OPENCODEX_HOME = home;
+    process.env.CODEX_HOME = join(home, "codex");
+    writeFileSync(join(home, "config.json"), JSON.stringify({ ...getDefaultConfig(), port: 9 }));
+    const local = startupHealth.deriveStartupHealth({ routingKind: "opencodex-local", platform: "darwin",
+      autostartEnabled: true, serviceInstalled: true, serviceViable: true, serviceEnabled: true,
+      serviceRunning: true, serviceStale: false, serviceConflict: false, serviceSupported: true,
+      shimInstalled: false, shimHealthy: false });
+    const find = spyOn(proxyLiveness, "findLiveProxy").mockResolvedValue(null);
+    restore.push(() => find.mockRestore());
+    const collect = spyOn(startupHealth, "collectStartupHealth").mockReturnValue(local);
+    restore.push(() => collect.mockRestore());
+    const diagnostic = spyOn(service, "diagnoseService").mockReturnValue({ supported: true,
+      installed: true, enabled: true, running: true, viable: true, startable: true, stale: false,
+      conflict: false, backend: "launchd", summary: "registered viable fixture" });
+    restore.push(() => diagnostic.mockRestore());
+    const result = (await statusFacade.collectStatus()).json;
+    expect(result.proxy.running).toBe(false);
+    expect(result.startupSource).toBe("local");
+    expect(result.startup.protection).toBe("service");
+    expect(result.service.summary).toContain("registered viable fixture — registered but NOT serving");
+    expect(result.service.summary).not.toContain("running under the live managed service");
+  } finally {
+    for (const cleanup of restore.reverse()) cleanup();
+    if (previousHome === undefined) delete process.env.OPENCODEX_HOME;
+    else process.env.OPENCODEX_HOME = previousHome;
+    if (previousCodexHome === undefined) delete process.env.CODEX_HOME;
+    else process.env.CODEX_HOME = previousCodexHome;
+    removeTreeWithRetry(home);
+  }
+}, STORE_BUDGET_MS);

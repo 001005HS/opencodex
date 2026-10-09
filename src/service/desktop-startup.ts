@@ -78,6 +78,10 @@ function diagnoseSupervisedStartup(deps: DesktopStartupDeps, loginFor: (app: str
   try { loginEnabled = loginFor(evidence.app); }
   catch { /* Login failure revokes restart viability, not the observed live supervisor. */ }
   if ((deps.ownership ?? resolveServiceOwnership)().kind !== "none") return undefined;
+  // Login probes can outlive the runtime or its parent; only the same live chain gets credit.
+  const final = inspectDesktopSupervision({ ...deps, targetPid: evidence.runtimePid });
+  if (final.kind !== "desktop" || final.runtimePid !== evidence.runtimePid
+    || final.supervisorPid !== evidence.supervisorPid || final.app !== evidence.app) return undefined;
   const { supervisorPid, runtimePid, app } = evidence;
   return deriveDesktopStartup({ owned: false, loginEnabled, running: true, supervisor: { supervisorPid, runtimePid, app } });
 }

@@ -54,9 +54,6 @@ export function StartupHeroSection({
             : data.status === "at-risk"
               ? t(startupRiskDetailKey(data))
               : t("startup.safeDetail")}</p>
-          {data.status === "at-risk" && data.recommendedAction && (
-            <p className="muted text-label">{data.recommendedAction}</p>
-          )}
           {/*
             The three stat cards that used to restate this answer (routing, protection,
             preference) are one line now; the page subtitle rides underneath as a visible

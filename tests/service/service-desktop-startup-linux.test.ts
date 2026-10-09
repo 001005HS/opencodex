@@ -264,6 +264,31 @@ linuxTest("unowned Linux login failures preserve live supervision without granti
   }
 });
 
+const loginSupervisionChanges: [string, (f: F) => void][] = [
+  ["runtime PID", f => {
+    f.state.pid = 101; f.state.exe[101] = f.proxy; f.state.parent[101] = 200;
+  }],
+  ["supervisor PID", f => {
+    f.state.parent[100] = 300; f.state.exe[300] = f.app; f.state.parent[300] = 1;
+  }],
+  ["supervisor app", f => {
+    const other = fixture(); f.state.exe[100] = other.proxy; f.state.exe[200] = other.app;
+  }],
+  ["foreign parent", f => { f.state.exe[200] = f.proxy; }],
+  ["unreadable process", f => { delete f.state.exe[100]; }],
+];
+for (const [name, change] of loginSupervisionChanges) {
+  linuxTest(`unowned Linux supervision is discarded when ${name} changes during login verification`, () => {
+    const f = fixture(); f.state.owner = { kind: "none", revision: 0 }; let loginRead = false;
+    // The XDG lookup runs inside login verification, after both initial process snapshots.
+    Object.defineProperty(f.deps.env, "XDG_CONFIG_HOME", { get: () => {
+      loginRead = true; change(f); return undefined;
+    } });
+    expect(diagnoseLinuxDesktopStartup(f.deps)).toBeUndefined();
+    expect(loginRead).toBe(true);
+  });
+}
+
 linuxTest("unowned Linux foreign parents and absent runtimes receive no supervisor credit", () => {
   const f = fixture(); f.state.owner = { kind: "none", revision: 0 }; f.state.exe[200] = f.proxy;
   expect(inspectDesktopSupervision(f.deps)).toEqual({ kind: "none" });

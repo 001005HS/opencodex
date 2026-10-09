@@ -309,13 +309,22 @@ export function selectStatusStartupHealth(
   liveStartup: StartupHealth | null,
   fallback: () => StartupHealth,
   supervision?: () => ReturnType<typeof inspectDesktopSupervision>,
+  livePid?: number | null,
 ): { startup: StartupHealth; startupSource: CliStatusJson["startupSource"] } {
   if (!liveStartup) return { startup: fallback(), startupSource: "local" };
   if (liveStartup.desktop === undefined && supervision) {
-    let desktop = false;
-    try { desktop = supervision().kind === "desktop"; }
+    let evidence: ReturnType<typeof inspectDesktopSupervision> | undefined;
+    try { evidence = supervision(); }
     catch { /* Failed optional evidence cannot replace an attested live verdict. */ }
-    if (desktop) return { startup: fallback(), startupSource: "local-supervision-override" };
+    if (evidence?.kind === "desktop" && evidence.runtimePid === livePid) {
+      const local = fallback();
+      const supervisor = local.desktop?.supervisor;
+      // The local probe runs later; it must still describe the same unowned process pair.
+      if (local.desktop?.owned === false && supervisor
+        && supervisor.runtimePid === evidence.runtimePid && supervisor.supervisorPid === evidence.supervisorPid) {
+        return { startup: local, startupSource: "local-supervision-override" };
+      }
+    }
   }
   return { startup: liveStartup, startupSource: "live" };
 }
@@ -336,7 +345,7 @@ export function statusServiceSummary(
   // the runtime predates supervision reporting, so the label follows the verdict, not liveness.
   startupSource?: CliStatusJson["startupSource"],
 ): string {
-  if (liveStartup) {
+  if (live && liveStartup) {
     const supervisor = liveStartup.desktop?.supervisor ? "OpenCodex Desktop supervises the running proxy; " : "";
     if (liveStartup.protection === "service" && liveStartup.serviceViable) {
       return `${supervisor}running under the live managed service (logs: ${serviceLogPath()})`;
@@ -801,7 +810,7 @@ export async function collectStatus(options: { mainAccountPolicy?: boolean } = {
     service,
     shim: codexShim,
     routingKind: getCodexRoutingKind(),
-  }), live?.pid != null ? () => inspectDesktopSupervision({ targetPid: live.pid! }) : undefined);
+  }), live?.pid != null ? () => inspectDesktopSupervision({ targetPid: live.pid! }) : undefined, live?.pid);
   const serviceSummary = statusServiceSummary(startup, service, Boolean(live), startupSource);
   const codexPlugins = diagnoseCodexBundledPlugins();
   const lastClamp = loadLastEffortClamp();

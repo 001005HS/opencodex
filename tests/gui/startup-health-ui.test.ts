@@ -1,4 +1,9 @@
 import { describe, expect, test } from "bun:test";
+import { createElement } from "../../gui/node_modules/react";
+import { renderToStaticMarkup } from "../../gui/node_modules/react-dom/server";
+import { DICTS, I18nContext, type TFn } from "../../gui/src/i18n/shared";
+import { StartupHeroSection } from "../../gui/src/pages/startup-sections";
+import type { StartupHealthData } from "../../gui/src/pages/startup-shared";
 import {
   PROJECT_CONFIG_DIAGNOSTICS_POLL_MS,
   beginPollEpochs,
@@ -42,6 +47,45 @@ describe("startup health UI decisions", () => {
       .toBe("startup.riskDetailWindowsShim");
     expect(startupRiskDetailKey({ ...base, routingKind: "custom-local", desktop: { owned: false, supervisor } }))
       .toBe("startup.riskDetailCustomLocal");
+  });
+
+  test("stale desktop risk guidance uses a localized reopen key before supervision or custom routing", () => {
+    const base = { routingKind: "custom-local", shimCoverage: "none", diagnosticStale: true } as const;
+    const supervisor = { supervisorPid: 123, runtimePid: 456, app: "/Applications/OpenCodex.app" };
+    expect(startupRiskDetailKey({ ...base, desktop: { owned: false, supervisor } }))
+      .toBe("startup.desktopReopenRecovery");
+    expect(startupRiskDetailKey({ ...base, desktop: { owned: true } }))
+      .toBe("startup.desktopReopenRecovery");
+    expect(startupRiskDetailKey(base)).toBe("startup.riskDetailCustomLocal");
+  });
+
+  test("startup hero localizes desktop guidance and never displays the server action", () => {
+    const data: StartupHealthData = {
+      status: "at-risk", routingKind: "opencodex-local", routingInjected: true,
+      localRoutingDependency: true, autostartEnabled: true, rebootSafe: false, protection: "none",
+      serviceInstalled: false, serviceViable: false, serviceEnabled: false, serviceRunning: false,
+      serviceStale: false, serviceConflict: false, serviceSupported: true,
+      shimInstalled: false, shimHealthy: false, shimCoverage: "none", platform: "darwin",
+      recommendedCommand: null, recommendedAction: "Server English guidance must not reach the GUI",
+      diagnosticStale: false,
+      desktop: { owned: false, loginEnabled: false, running: true, viable: false,
+        supervisor: { supervisorPid: 123, runtimePid: 456, app: "/Applications/OpenCodex.app" } },
+      commands: { installService: "ocx service install", repairService: "ocx service repair",
+        installShim: "ocx codex-shim install", restoreNative: "ocx restore" },
+    };
+    for (const locale of Object.keys(DICTS) as (keyof typeof DICTS)[]) {
+      const t: TFn = key => DICTS[locale][key];
+      for (const diagnosticStale of [false, true]) {
+        const markup = renderToStaticMarkup(createElement(I18nContext.Provider,
+          { value: { locale, setLocale: () => {}, t } },
+          createElement(StartupHeroSection, { failed: false, data: { ...data, diagnosticStale } })));
+        const guidance = diagnosticStale ? "startup.desktopReopenRecovery" : "startup.desktopSupervisedRecovery";
+        const localized = t(guidance);
+        expect(typeof localized).toBe("string");
+        expect(markup).toContain(renderToStaticMarkup(createElement("p", null, localized)));
+        expect(markup).not.toContain(data.recommendedAction!);
+      }
+    }
   });
 
   test("rejects stale or mutation-racing settings polls", () => {
