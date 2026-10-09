@@ -200,6 +200,10 @@ describe("Claude native reasoning provenance", () => {
     const roomy = createTestTranslatorBudget({ maxTurnBytes: 32 * 1024 * 1024 });
     expect(JSON.stringify(nativeAnthropicProjection(raw, roomy))).not.toContain(BLOB);
     expect(roomy.snapshot().currentBytes).toBeGreaterThan(0);
+    // Room for the decode copies but not for decode, the retained signature and the encode copies:
+    // the encode reservation must reject before stringify/base64 run.
+    const sigBytes = 8 * big.length;
+    expect(() => nativeAnthropicProjection(raw, createTestTranslatorBudget({ maxTurnBytes: sigBytes + 1024 }))).toThrow(TranslatorBudgetExceededError);
   });
 
   test("a direct-forward route cannot mint a native reasoning tag", async () => {

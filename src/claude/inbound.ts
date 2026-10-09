@@ -562,9 +562,9 @@ function translateAnthropicRequest(
 /**
  * Remove proxy-owned native blobs before sending a Messages body to native Anthropic.
  *
- * Every decode is reserved against the request's translator budget first (eight bytes per code
- * unit, as `decodeReasoningEnvelope` does) and every re-encoded signature is charged as a
- * retained copy, so a body of near-limit envelopes cannot allocate past the per-turn bound.
+ * Every decode, and every re-encode on top of it, is reserved against the request's translator
+ * budget first (eight bytes per code unit, as `decodeReasoningEnvelope` does), and every new
+ * signature is charged as a retained copy, so a body of near-limit envelopes cannot allocate past the per-turn bound.
  * Throws TranslatorBudgetExceededError when it would; callers answer 413.
  */
 export function nativeAnthropicProjection(body: Rec, budget: TranslatorBudget): Rec {
@@ -576,19 +576,32 @@ export function nativeAnthropicProjection(body: Rec, budget: TranslatorBudget): 
     const content = message.content.flatMap(block => {
       if (!isRec(block) || block.type !== "thinking" || typeof block.signature !== "string"
         || !block.signature.startsWith(OCX_REASONING_PREFIX)) return [block];
-      let decoded: unknown;
-      const reservation = budget.reserveTransient(8 * block.signature.length, { kind: "reasoning" });
-      try { decoded = JSON.parse(Buffer.from(block.signature.slice(OCX_REASONING_PREFIX.length), "base64").toString("utf8")); }
-      catch { decoded = undefined; }
-      finally { reservation.release(); }
-      if (!isRec(decoded)) { localChanged = true; return []; }
-      if (!Object.hasOwn(decoded, "nat")) return [block];
-      localChanged = true;
-      const { nat: _nat, ...rest } = decoded;
-      if (!rest.sig && !rest.red && !rest.krc && !(typeof rest.txt === "string" && rest.txt.length > 0)) return [];
-      const signature = OCX_REASONING_PREFIX + Buffer.from(JSON.stringify(rest), "utf8").toString("base64");
-      budget.chargeRetained(2 * signature.length, { kind: "reasoning" });
-      return [{ ...block, signature }];
+      // The decoded object stays alive while it is re-encoded, so its reservation is held until
+      // the new signature exists; the encode copies get their own reservation on top of it.
+      const decodeReservation = budget.reserveTransient(8 * block.signature.length, { kind: "reasoning" });
+      try {
+        let decoded: unknown;
+        try { decoded = JSON.parse(Buffer.from(block.signature.slice(OCX_REASONING_PREFIX.length), "base64").toString("utf8")); }
+        catch { decoded = undefined; }
+        if (!isRec(decoded)) { localChanged = true; return []; }
+        if (!Object.hasOwn(decoded, "nat")) return [block];
+        localChanged = true;
+        const { nat: _nat, ...rest } = decoded;
+        if (!rest.sig && !rest.red && !rest.krc && !(typeof rest.txt === "string" && rest.txt.length > 0)) return [];
+        // The re-encoded envelope is never larger than the decoded one (a field was removed), so a
+        // decode-sized reservation bounds the stringify, buffer and base64 copies before they exist.
+        const encodeReservation = budget.reserveTransient(8 * block.signature.length, { kind: "reasoning" });
+        let signature: string;
+        try {
+          signature = OCX_REASONING_PREFIX + Buffer.from(JSON.stringify(rest), "utf8").toString("base64");
+        } finally {
+          encodeReservation.release();
+        }
+        budget.chargeRetained(2 * signature.length, { kind: "reasoning" });
+        return [{ ...block, signature }];
+      } finally {
+        decodeReservation.release();
+      }
     });
     if (!localChanged) return [message];
     changed = true;
