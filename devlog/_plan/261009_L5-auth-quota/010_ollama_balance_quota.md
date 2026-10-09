@@ -41,3 +41,7 @@ Original: #6739 by xingqi-gif, head `74a9ad0662`, merge-base `aeebf11e5a` (10 be
 ## Commit and PR
 
 One squash commit `fix(quota): read the Ollama Cloud quota from /api/balance` with `Co-authored-by: xingqi-gif <67894334+xingqi-gif@users.noreply.github.com>`; PR body "Carries #6739" with the template's Summary/Verification/Checklist.
+
+## wp2 P revalidation (2026-10-09)
+
+Previous D (wp1): roadmap locked, direction unchanged; origin/dev still c15037b324. Same architect re-read this doc: ALIGNED for Q1–Q5. Ordering for B: keep `terminalFailure` outside the endpoint loop; a narrow try/catch only around `await quotaFetch(...)` (transport rejection → next endpoint, terminal evidence kept); on non-success record the hard-4xx verdict, best-effort cancel the unread body, continue; on `QUOTA_JSON_READ_FAILURE` return `terminalFailure ? TERMINAL_QUOTA_FAILURE : null` (keeps the oversized-balance stop); a parsed report supersedes earlier terminal evidence; loop exhaustion returns the retained verdict. Parser cases assert one definite outcome (clamp or drop), chosen by reading the existing parser helpers.
