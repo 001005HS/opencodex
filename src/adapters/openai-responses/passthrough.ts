@@ -48,7 +48,7 @@ import { stripMuseSparkUnsupportedWebSearchFields, stripOpenAiOnlyWebSearchField
 import { observeOutbound } from "../../usage/cache-diagnostic";
 import { normalizeForwardedClientHeaderName } from "../../lib/provider-client-headers";
 import { normalizeMuseToolChoice } from "./muse-tool-choice";
-import { renderCompactionSearchHistory } from "./compaction-search-history";
+import { renderCompactionSearchHistoryItems } from "./compaction-search-history";
 
 /**
  * Identifies DeepSeek's strict Responses replay contract: tool-bearing continuations need
@@ -139,13 +139,12 @@ function buildRoutedCompactionBody(body: unknown, responsesLite: boolean): unkno
   // `text` goes with the tool fields: the summary must be prose, not schema-constrained JSON.
   const { tools: _tools, tool_choice: _toolChoice, parallel_tool_calls: _parallel, text: _text, ...rest } = body;
   const input = Array.isArray(body.input) ? body.input : [];
-  const kept = input.filter(item => !isPlainObject(item)
+  // Bridge restoration has already recovered any available real call/result pairs. Remaining
+  // hosted cells require tools, so they become bounded assistant reference notes.
+  const kept = renderCompactionSearchHistoryItems(input.filter(item => !isPlainObject(item)
     // `additional_tools` is how Codex Desktop's responses-lite shape carries tools;
     // leaving it in would break the no-tools invariant even with `tools` removed.
-    || (item.type !== "compaction_trigger" && item.type !== "additional_tools"))
-    // Bridge restoration has already recovered any available real call/result pairs.
-    // Remaining hosted cells require tools; preserve their metadata as reference text.
-    .map(renderCompactionSearchHistory);
+    || (item.type !== "compaction_trigger" && item.type !== "additional_tools")));
   return {
     ...rest,
     // Lite validates this flag even when the summarizer has no callable tools.
