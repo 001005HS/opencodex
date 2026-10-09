@@ -25,6 +25,17 @@ function stringFields(value: Record<string, unknown>, fields: string[]): Record<
   return Object.fromEntries(fields.flatMap(key => typeof value[key] === "string" ? [[key, capped(value[key])]] : []));
 }
 
+/** The first MAX_SEARCH_NOTE_LIST_ENTRIES qualifying entries, without copying the rest of a long list. */
+function firstEntries<T>(values: readonly unknown[], pick: (value: unknown) => T | undefined): T[] {
+  const out: T[] = [];
+  for (const value of values) {
+    if (out.length >= MAX_SEARCH_NOTE_LIST_ENTRIES) break;
+    const picked = pick(value);
+    if (picked !== undefined) out.push(picked);
+  }
+  return out;
+}
+
 /**
  * The search was the assistant's own past action, so the note is an assistant reference message.
  * A user-role note would give web-sourced titles and URLs the user's authority.
@@ -49,16 +60,12 @@ export function renderCompactionSearchHistory(item: unknown): unknown {
   if (isPlainObject(item.action)) {
     const action: Record<string, unknown> = stringFields(item.action, ["type", "query", "url", "pattern"]);
     if (Array.isArray(item.action.queries)) {
-      action.queries = item.action.queries
-        .filter((query): query is string => typeof query === "string")
-        .slice(0, MAX_SEARCH_NOTE_LIST_ENTRIES)
-        .map(capped);
+      action.queries = firstEntries(item.action.queries, query => typeof query === "string" ? capped(query) : undefined);
     }
     if (Array.isArray(item.action.sources)) {
-      action.sources = item.action.sources
-        .filter(source => isPlainObject(source) && typeof source.url === "string")
-        .slice(0, MAX_SEARCH_NOTE_LIST_ENTRIES)
-        .map(source => stringFields(source as Record<string, unknown>, ["type", "url", "title"]));
+      action.sources = firstEntries(item.action.sources, source => isPlainObject(source) && typeof source.url === "string"
+        ? stringFields(source, ["type", "url", "title"])
+        : undefined);
     }
     metadata.action = action;
   }
