@@ -3,6 +3,9 @@ import { persistCommittedDesktopGateway } from "../../claude/desktop-gateway-sta
 import { captureDesktopAppliedMarker, commitDesktopAppliedMarker } from "../../claude/desktop-applied-marker";
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { dirname } from "node:path";
+import { prepareCodexHome } from "../../codex/prepared-home";
+import { codexHomeIsAbsent } from "../../codex/codex-home-owner";
 import type { CatalogModel } from "../../codex/catalog";
 import { catalogModelSlug, filterCatalogVisibleModels, invalidateCodexModelsCache, nativeContextLimits, nativeModelRows, uniqueCatalogModelsForPublicList } from "../../codex/catalog";
 import { mergeModelPinnedEfforts, modelPinnedEffortsConfigError } from "../../config/provider-validation";
@@ -429,6 +432,9 @@ export async function handleAgentSettingsRoutes(ctx: ManagementContext): Promise
      */
     const needsCodexConfigWrites = requestedFlag !== undefined || wantsThreads
       || wantsAgentsEnabled || wantsMaxDepth || wantsSubagentInstructions || wantsModeHintText;
+    if (needsCodexConfigWrites && codexHomeIsAbsent(dirname(activeCodexConfigPath()))) {
+      return jsonResponse({ error: `config.toml not readable at ${activeCodexConfigPath()}` }, 502);
+    }
     const { acquireConfigWriteLock, releaseConfigWriteLock, configWriteLockFailureMessage } = await import("../../codex/config-write-lock");
     const configWriteLock = needsCodexConfigWrites ? await acquireConfigWriteLock(activeCodexConfigPath()) : null;
     if (configWriteLock !== null && !configWriteLock.ok) {
@@ -558,45 +564,55 @@ export async function handleAgentSettingsRoutes(ctx: ManagementContext): Promise
     const before = isDefaultModeRequestUserInputEnabled();
     let toggle = deps.toggleDefaultModeRequestUserInput;
     if (!toggle) {
-      const { runCodexFeaturesCommand } = await import("../../cli/v2");
-      toggle = (enabled, env, validate) => runCodexFeaturesCommand(enabled ? "enable" : "disable", DEFAULT_MODE_REQUEST_USER_INPUT_FEATURE_KEY, env, validate);
+      try {
+        const { codexFeaturesInvocation, runCodexFeaturesCommand } = await import("../../cli/v2");
+        const action = body.enabled ? "enable" : "disable";
+        const invocation = codexFeaturesInvocation(action, DEFAULT_MODE_REQUEST_USER_INPUT_FEATURE_KEY, process.platform, { requireAvailable: true });
+        toggle = (_enabled, env, validate) => runCodexFeaturesCommand(action, DEFAULT_MODE_REQUEST_USER_INPUT_FEATURE_KEY, env, validate, invocation);
+      } catch (error) {
+        return jsonResponse({ error: `default_mode_request_user_input toggle failed: ${error instanceof Error ? error.message : String(error)}` }, 502);
+      }
     }
     // The `codex features` subprocess rewrites config.toml itself — run it
     // under the shared write lock so it cannot interleave with an opencodex
     // scalar edit or injection mid-write on either side.
     const { acquireConfigWriteLock, releaseConfigWriteLock, configWriteLockFailureMessage, runConfigWriteChild, ConfigWriteDestinationChanged } = await import("../../codex/config-write-lock");
     const configPath = activeCodexConfigPath();
-    const configLock = await acquireConfigWriteLock(configPath);
-    if (!configLock.ok) {
-      return jsonResponse({ error: configWriteLockFailureMessage(configLock), retryable: configLock.error === "locked" }, 502);
+    // Preserve native home creation only after executable resolution succeeds.
+    prepareCodexHome(dirname(configPath));
+    {
+      const configLock = await acquireConfigWriteLock(configPath);
+      if (!configLock.ok) {
+        return jsonResponse({ error: configWriteLockFailureMessage(configLock), retryable: configLock.error === "locked" }, 502);
+      }
+      let toggleError: string | null = null;
+      let destinationChanged = false;
+      try {
+        runConfigWriteChild(configPath, configLock.handle, (env, validate) => toggle!(body.enabled as boolean, env, validate));
+      } catch (error) {
+        destinationChanged = error instanceof ConfigWriteDestinationChanged;
+        const err = error as { stderr?: unknown; message?: string };
+        const raw = err.stderr;
+        const stderrText = typeof raw === "string"
+          ? raw.trim()
+          : raw instanceof Uint8Array ? new TextDecoder().decode(raw).trim() : "";
+        toggleError = stderrText || (err.message ?? String(error));
+      } finally {
+        releaseConfigWriteLock(configLock.handle);
+      }
+      if (destinationChanged) return jsonResponse({ error: toggleError, retryable: false }, 502);
+      const enabled = isDefaultModeRequestUserInputEnabled();
+      if (toggleError !== null || enabled !== body.enabled) {
+        const reason = toggleError
+          ?? `postcondition failed - the installed Codex build may not know the ${DEFAULT_MODE_REQUEST_USER_INPUT_FEATURE_KEY} flag yet`;
+        return jsonResponse({ error: `default_mode_request_user_input toggle failed: ${reason}` }, 502);
+      }
+      const warnings: string[] = [];
+      if (enabled !== before) {
+        warnings.push("Applies to new sessions; restart the Codex app or wait out its picker cache to see the change.");
+      }
+      return jsonResponse({ ok: true, enabled, changed: enabled !== before, warnings });
     }
-    let toggleError: string | null = null;
-    let destinationChanged = false;
-    try {
-      runConfigWriteChild(configPath, configLock.handle, (env, validate) => toggle!(body.enabled as boolean, env, validate));
-    } catch (error) {
-      destinationChanged = error instanceof ConfigWriteDestinationChanged;
-      const err = error as { stderr?: unknown; message?: string };
-      const raw = err.stderr;
-      const stderrText = typeof raw === "string"
-        ? raw.trim()
-        : raw instanceof Uint8Array ? new TextDecoder().decode(raw).trim() : "";
-      toggleError = stderrText || (err.message ?? String(error));
-    } finally {
-      releaseConfigWriteLock(configLock.handle);
-    }
-    if (destinationChanged) return jsonResponse({ error: toggleError, retryable: false }, 502);
-    const enabled = isDefaultModeRequestUserInputEnabled();
-    if (toggleError !== null || enabled !== body.enabled) {
-      const reason = toggleError
-        ?? `postcondition failed - the installed Codex build may not know the ${DEFAULT_MODE_REQUEST_USER_INPUT_FEATURE_KEY} flag yet`;
-      return jsonResponse({ error: `default_mode_request_user_input toggle failed: ${reason}` }, 502);
-    }
-    const warnings: string[] = [];
-    if (enabled !== before) {
-      warnings.push("Applies to new sessions; restart the Codex app or wait out its picker cache to see the change.");
-    }
-    return jsonResponse({ ok: true, enabled, changed: enabled !== before, warnings });
   }
 
   // Subagent prompt injection model: single native or routed model whose info is
