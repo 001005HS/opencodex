@@ -36,7 +36,7 @@ mock.module("../../../src/server/adapter-resolve", () => ({
         cursorModels.push(parsed.modelId);
         cursorEfforts.push(parsed.options?.reasoning);
         if (cursorOverflow) {
-          emit({ type: "error", status: 400, message: "maximum context length exceeded", code: "context_length_exceeded" });
+          emit({ type: "error", status: 400, message: "Cursor context limit exceeded: Cursor Connect error resource limit exceeded: Error", code: "context_length_exceeded" });
           return;
         }
         if (cursorLimited) {

@@ -918,7 +918,7 @@ export async function executeComboResponses(
         onResponseComplete: callbackGate.onResponseComplete,
       });
       // Both lanes applied the initial choice before provider pins/caps; retain those transitions.
-      restoreOriginalRequestedEffort(childLog, initialJevDecision?.effort);
+      restoreOriginalRequestedEffort(childLog, initialJevDecision?.effort ?? pick.target.reasoningEffort);
     } catch (error) {
       callbackGate.discard();
       if (options.abortSignal?.aborted) {
