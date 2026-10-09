@@ -9,7 +9,8 @@ dependency is not installed") or are years old. This unit teaches the CLI to rec
 supervision as its own fact, stops recommending or performing competing actions while it holds, lets the
 package launcher fall back to a valid Bun, and records the Desktop PATH-install decision.
 
-Evidence for the reproduction: `001_evidence.md`. Architect consultation: `002_consultation.md`.
+Evidence for the reproduction: `001_evidence.md`. Architect consultation and audit: `002_consultation.md`.
+Locked contract (read first): `003_contract_index.md`.
 
 ## Loop spec
 
