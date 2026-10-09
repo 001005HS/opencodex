@@ -17,6 +17,7 @@ import {
   setProviderQuotaBeforePublishForTests,
 } from "../../src/providers/quota";
 import type { OcxConfig } from "../../src/types";
+import { clearComboTargetCooldowns, pickComboTarget } from "../../src/combos";
 
 const originalFetch = globalThis.fetch;
 const previousOpencodexHome = process.env.OPENCODEX_HOME;
@@ -218,7 +219,10 @@ describe("ollama cloud quota probe", () => {
   });
 
   test("Ollama Cloud maps combined windows when both legacy and migrated limits exist", async () => {
-    globalThis.fetch = (async () => {
+    const seen: string[] = [];
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      seen.push(String(input));
+      if (String(input).endsWith("/api/balance")) return new Response("not found", { status: 404 });
       return new Response(JSON.stringify({
         limits: {
           session: { usage: 0.1 },
@@ -234,11 +238,43 @@ describe("ollama cloud quota probe", () => {
     );
 
     expect(result.reports).toHaveLength(1);
+    expect(result.reports[0]?.source).toBe("ollama-cloud:usage");
+    expect(seen).toEqual(["https://ollama.com/api/balance", "https://ollama.com/api/usage"]);
     expect(result.reports[0]?.quota).toMatchObject({
       fiveHourPercent: 10,
       weeklyPercent: 20,
       monthlyPercent: 30,
     });
+  });
+
+  function ollamaCombo(): OcxConfig {
+    const config = keyQuotaConfig("ollama-cloud", "https://ollama.com/v1");
+    return {
+      ...config,
+      providers: {
+        ...config.providers,
+        fallback: { adapter: "openai-chat", baseUrl: "https://fallback.example/v1", apiKey: "fallback-key" },
+      },
+      combos: { "quota-scope": { strategy: "failover", targets: [
+        { provider: "ollama-cloud", model: "primary-model" }, { provider: "fallback", model: "fallback-model" },
+      ] } },
+    };
+  }
+
+  test.each([
+    ["positive purchased credit keeps routing", { balance_usd: 99 }, "ollama-cloud"],
+    ["unknown purchased credit keeps routing", undefined, "ollama-cloud"],
+    ["empty purchased credit vetoes routing", { balance_usd: 0 }, "fallback"],
+  ] as const)("exhausted included allowance: %s", async (_label, purchased, expected) => {
+    clearComboTargetCooldowns();
+    globalThis.fetch = (async () => Response.json({
+      included: { allowance_usd: 10, balance_usd: 0 },
+      ...(purchased ? { purchased } : {}),
+    })) as typeof fetch;
+    const config = ollamaCombo();
+    const result = await fetchProviderQuotaReports(config, true);
+    expect(result.reports[0]?.quota.creditsUsd).toMatchObject({ percent: 100, remaining: 0 });
+    expect(pickComboTarget(config, "quota-scope")?.target.provider).toBe(expected);
   });
 
   test("Ollama Cloud treats 404 as a no-report and keeps the last-good row", async () => {

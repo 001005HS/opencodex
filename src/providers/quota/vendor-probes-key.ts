@@ -559,6 +559,19 @@ export function parseOllamaCloudQuota(body: Record<string, unknown> | null): Pro
   return windows > 0 ? quota : null;
 }
 
+/**
+ * Routing projection for an `/api/balance` report. `creditsUsd` covers the included
+ * allowance only, so it may veto routing only when purchased credit is known to be empty;
+ * otherwise an exhausted allowance would block an account that still has paid balance.
+ */
+function ollamaBalanceInferenceQuota(quota: ProviderQuota, body: Record<string, unknown> | null): ProviderQuota {
+  if (!quota.creditsUsd) return quota;
+  const purchased = toFiniteNumber(asRecord(body?.purchased)?.balance_usd);
+  if (purchased !== undefined && purchased <= 0) return quota;
+  const { creditsUsd: _includedOnly, ...inference } = quota;
+  return inference;
+}
+
 async function fetchOllamaCloudQuota(provider: string, config: OcxProviderConfig): Promise<ProviderQuotaProbeResult> {
   const effectiveBaseUrl = config.baseUrl ?? getProviderRegistryEntry(provider)?.baseUrl ?? "";
   if (!isCanonicalOllamaCloudBaseUrl(effectiveBaseUrl)) return null;
@@ -597,8 +610,12 @@ async function fetchOllamaCloudQuota(provider: string, config: OcxProviderConfig
     }
     const raw = await readQuotaJson(response);
     if (raw === QUOTA_JSON_READ_FAILURE) return terminalFailure ? TERMINAL_QUOTA_FAILURE : null;
-    const quota = attempt.parse(asRecord(raw));
-    if (quota) return keyReport(provider, attempt.source, quota, config, apiKey, quota);
+    const body = asRecord(raw);
+    const quota = attempt.parse(body);
+    if (quota) {
+      const inference = attempt.url === OLLAMA_CLOUD_BALANCE_URL ? ollamaBalanceInferenceQuota(quota, body) : quota;
+      return keyReport(provider, attempt.source, quota, config, apiKey, inference);
+    }
   }
   return terminalFailure ? TERMINAL_QUOTA_FAILURE : null;
 }
