@@ -71,7 +71,7 @@ function macLoginRegistration(deps: DesktopStartupDeps) {
   return { app, proxy, loginEnabled };
 }
 
-function diagnoseSupervisedStartup(deps: DesktopStartupDeps, loginFor: (app: string) => boolean): DesktopStartupDiagnostic | undefined {
+function diagnoseSupervisedStartup(deps: DesktopStartupDeps, ownerRevision: number, loginFor: (app: string) => boolean): DesktopStartupDiagnostic | undefined {
   const evidence = inspectDesktopSupervision(deps);
   if (evidence.kind !== "desktop") return undefined;
   let loginEnabled = false;
@@ -82,6 +82,9 @@ function diagnoseSupervisedStartup(deps: DesktopStartupDeps, loginFor: (app: str
   const final = inspectDesktopSupervision({ ...deps, targetPid: evidence.runtimePid });
   if (final.kind !== "desktop" || final.runtimePid !== evidence.runtimePid
     || final.supervisorPid !== evidence.supervisorPid || final.app !== evidence.app) return undefined;
+  // A new claim or revision during the last process probe invalidates the unowned projection.
+  const finalOwner = (deps.ownership ?? resolveServiceOwnership)();
+  if (finalOwner.kind !== "none" || finalOwner.revision !== ownerRevision) return undefined;
   const { supervisorPid, runtimePid, app } = evidence;
   return deriveDesktopStartup({ owned: false, loginEnabled, running: true, supervisor: { supervisorPid, runtimePid, app } });
 }
@@ -91,7 +94,7 @@ export function diagnoseMacDesktopStartup(deps: DesktopStartupDeps = {}): Deskto
   if ((deps.platform ?? process.platform) !== "darwin") return undefined;
   const ownership = deps.ownership ?? resolveServiceOwnership;
   const owner = ownership();
-  if (owner.kind === "none") return diagnoseSupervisedStartup(deps, app => {
+  if (owner.kind === "none") return diagnoseSupervisedStartup(deps, owner.revision, app => {
     const login = macLoginRegistration(deps);
     return login !== null && login.app === app && login.loginEnabled;
   });
@@ -148,7 +151,7 @@ export function diagnoseLinuxDesktopStartup(deps: DesktopStartupDeps = {}): Desk
   if ((deps.platform ?? process.platform) !== "linux") return undefined;
   const ownership = deps.ownership ?? resolveServiceOwnership;
   const owner = ownership();
-  if (owner.kind === "none") return diagnoseSupervisedStartup(deps, app => {
+  if (owner.kind === "none") return diagnoseSupervisedStartup(deps, owner.revision, app => {
     const home = deps.home ?? homedir();
     const configured = (deps.env ?? process.env).XDG_CONFIG_HOME;
     const config = configured && isAbsolute(configured) ? configured : join(home, ".config");

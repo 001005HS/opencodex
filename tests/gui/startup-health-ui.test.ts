@@ -49,14 +49,32 @@ describe("startup health UI decisions", () => {
       .toBe("startup.riskDetailCustomLocal");
   });
 
-  test("stale desktop risk guidance uses a localized reopen key before supervision or custom routing", () => {
-    const base = { routingKind: "custom-local", shimCoverage: "none", diagnosticStale: true } as const;
+  test("custom-local guidance takes precedence over stale owned or supervised desktop guidance", () => {
+    const base = { routingKind: "custom-local", shimCoverage: "none" } as const;
     const supervisor = { supervisorPid: 123, runtimePid: 456, app: "/Applications/OpenCodex.app" };
-    expect(startupRiskDetailKey({ ...base, desktop: { owned: false, supervisor } }))
-      .toBe("startup.desktopReopenRecovery");
-    expect(startupRiskDetailKey({ ...base, desktop: { owned: true } }))
-      .toBe("startup.desktopReopenRecovery");
+    for (const diagnosticStale of [false, true]) {
+      expect(startupRiskDetailKey({ ...base, diagnosticStale, desktop: { owned: false, supervisor } }))
+        .toBe("startup.riskDetailCustomLocal");
+      expect(startupRiskDetailKey({ ...base, diagnosticStale, desktop: { owned: true } }))
+        .toBe("startup.riskDetailCustomLocal");
+    }
     expect(startupRiskDetailKey(base)).toBe("startup.riskDetailCustomLocal");
+  });
+
+  test("desktop guidance only applies to opencodex-local routing", () => {
+    const supervisor = { supervisorPid: 123, runtimePid: 456, app: "/Applications/OpenCodex.app" };
+    for (const desktop of [{ owned: true }, { owned: false, supervisor }]) {
+      expect(startupRiskDetailKey({ routingKind: "opencodex-local", shimCoverage: "none", diagnosticStale: true, desktop }))
+        .toBe("startup.desktopReopenRecovery");
+      for (const routingKind of ["native", "custom-remote", "unknown"] as const) {
+        for (const diagnosticStale of [false, true]) {
+          expect(startupRiskDetailKey({ routingKind, shimCoverage: "none", diagnosticStale, desktop }))
+            .toBe("startup.riskDetail");
+          expect(startupRiskDetailKey({ routingKind, shimCoverage: "cli-only", diagnosticStale, desktop }))
+            .toBe("startup.riskDetailWindowsShim");
+        }
+      }
+    }
   });
 
   test("startup hero localizes desktop guidance and never displays the server action", () => {

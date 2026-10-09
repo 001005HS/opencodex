@@ -13,10 +13,12 @@ export function desktopManagesStartup(health: Pick<StartupRiskDetail, "desktop">
 }
 
 export function startupRiskDetailKey(health: StartupRiskDetail): TKey {
-  if (health.diagnosticStale && health.desktop) return "startup.desktopReopenRecovery";
   if (health.routingKind === "custom-local") return "startup.riskDetailCustomLocal";
-  if (health.desktop?.owned) return "startup.desktopRecovery";
-  if (health.desktop?.supervisor) return "startup.desktopSupervisedRecovery";
+  if (health.routingKind === "opencodex-local") {
+    if (health.diagnosticStale && health.desktop) return "startup.desktopReopenRecovery";
+    if (health.desktop?.owned) return "startup.desktopRecovery";
+    if (health.desktop?.supervisor) return "startup.desktopSupervisedRecovery";
+  }
   if (health.shimCoverage === "cli-only") return "startup.riskDetailWindowsShim";
   return "startup.riskDetail";
 }

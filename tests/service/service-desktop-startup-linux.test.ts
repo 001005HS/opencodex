@@ -289,6 +289,27 @@ for (const [name, change] of loginSupervisionChanges) {
   });
 }
 
+const finalProbeOwnershipChanges: ServiceOwnershipResolution[] = [
+  { kind: "owned", revision: 1, ownership: { owner: "cli", installId: "installation-a", consentGeneration: 1 } },
+  { kind: "owned", revision: 1, ownership: { owner: "desktop", installId: "installation-a", consentGeneration: 1 } },
+  { kind: "unknown", reason: "unreadable" },
+  { kind: "none", revision: 1 },
+];
+for (const owner of finalProbeOwnershipChanges) {
+  const name = owner.kind === "owned" ? owner.ownership.owner : owner.kind;
+  linuxTest(`unowned Linux supervision is discarded when ownership becomes ${name} during the final probe`, () => {
+    const f = fixture(); f.state.owner = { kind: "none", revision: 0 };
+    const original = f.deps.proc.exe; let exeReads = 0;
+    f.deps.proc.exe = pid => {
+      if (++exeReads === 5) f.state.owner = owner;
+      return original(pid);
+    };
+    const desktop = diagnoseLinuxDesktopStartup(f.deps);
+    expect(exeReads).toBeGreaterThanOrEqual(5);
+    expect(desktop).toBeUndefined();
+  });
+}
+
 linuxTest("unowned Linux foreign parents and absent runtimes receive no supervisor credit", () => {
   const f = fixture(); f.state.owner = { kind: "none", revision: 0 }; f.state.exe[200] = f.proxy;
   expect(inspectDesktopSupervision(f.deps)).toEqual({ kind: "none" });

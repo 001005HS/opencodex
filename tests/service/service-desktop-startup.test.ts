@@ -163,6 +163,27 @@ for (const [name, change] of loginSupervisionChanges) {
   });
 }
 
+const finalProbeOwnershipChanges: ServiceOwnershipResolution[] = [
+  { kind: "owned", revision: 1, ownership: { owner: "cli", installId: "installation-a", consentGeneration: 1 } },
+  { kind: "owned", revision: 1, ownership: { owner: "desktop", installId: "installation-a", consentGeneration: 1 } },
+  { kind: "unknown", reason: "unreadable" },
+  { kind: "none", revision: 1 },
+];
+for (const owner of finalProbeOwnershipChanges) {
+  const name = owner.kind === "owned" ? owner.ownership.owner : owner.kind;
+  test(`unowned macOS supervision is discarded when ownership becomes ${name} during the final probe`, () => {
+    const f = fixture(); f.state.owner = { kind: "none", revision: 0 };
+    const original = f.deps.run; let psReads = 0;
+    f.deps.run = (command, args) => {
+      if (command === "/bin/ps" && ++psReads === 5) f.state.owner = owner;
+      return original(command, args);
+    };
+    const desktop = diagnoseMacDesktopStartup(f.deps);
+    expect(psReads).toBeGreaterThanOrEqual(5);
+    expect(desktop).toBeUndefined();
+  });
+}
+
 test("unowned foreign parent, absent runtime and changing snapshots never receive supervision credit", () => {
   const f = fixture(); f.state.owner = { kind: "none", revision: 0 }; f.state.parent = `1 ${f.proxy}`;
   expect(inspectDesktopSupervision(f.deps)).toEqual({ kind: "none" });
