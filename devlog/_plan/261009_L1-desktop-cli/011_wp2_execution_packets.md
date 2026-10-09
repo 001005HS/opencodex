@@ -28,3 +28,9 @@ Resource bounds: lane worktree only; no network beyond gh for this repo; no live
 
 Architect reflection (Kant, same handle): **ALIGNED** — scopes disjoint and complete; dispatch.ts:732 and
 config-routes.ts:413 pass the startup object through unchanged; all tests extend registered files.
+
+Audit (reviewer 01a11e4b): GO-WITH-FIXES (blockers=1), folded:
+- Add `cd docs-site && bun install --frozen-lockfile && bun run build` (deps prepared once; local cache) to main's verifier.
+- Add `bun scripts/file-size-ratchet.ts` (no `--update`).
+- Live checks split: status → `startupSource`, `startup.desktop.supervisor`, `startup.recommendedCommand === null`;
+  resolve → `supervisor.kind === "desktop"`, `supervisor.runtimePid === liveness.pid`, `supervisor.supervisorPid` = Desktop app pid.
