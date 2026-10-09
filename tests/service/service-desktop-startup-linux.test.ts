@@ -1,9 +1,10 @@
 import { afterEach, expect, test } from "bun:test";
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { deriveStartupHealth, startupHealthSummary } from "../../src/codex/autostart-health";
 import { desktopStartupOwnership, diagnoseDesktopStartup, diagnoseLinuxDesktopStartup } from "../../src/service/desktop-startup";
+import { inspectDesktopSupervision } from "../../src/service/desktop-supervision.mjs";
 import type { ServiceOwnershipResolution } from "../../src/service/state";
 
 // Fixtures use POSIX paths, execute bits and symlinks, and the diagnostic only runs on Linux.
@@ -12,7 +13,7 @@ const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 
 function fixture() {
-  const home = mkdtempSync(join(tmpdir(), "ocx-desktop-startup-linux-"));
+  const home = realpathSync(mkdtempSync(join(tmpdir(), "ocx-desktop-startup-linux-")));
   roots.push(home);
   const app = join(home, "usr", "bin", "opencodex-desktop");
   const proxy = join(home, "usr", "bin", "ocx");
@@ -40,6 +41,7 @@ function fixture() {
       return state.changedOwner && state.ownerReads > 1 ? { kind: "none", revision: 2 } : state.owner;
     },
     readPid: () => { state.pidReads++; return state.changedPid && state.pidReads > 1 ? 101 : state.pid; },
+    readRuntimePortPid: () => null,
     proc: {
       exe: (pid: number) => { const exe = state.exe[pid]; if (!exe) throw new Error("no such process"); return exe; },
       parent: (pid: number) => { const parent = state.parent[pid]; if (parent === undefined) throw new Error("no such process"); return parent; },
@@ -217,16 +219,87 @@ linuxTest("Linux desktop ownership never recommends the service it superseded", 
   expect(startupHealthSummary(health)).not.toContain("ocx service");
 });
 
-linuxTest("other platforms and absent, CLI or unknown ownership cannot grant Linux desktop protection", () => {
+linuxTest("other platforms and CLI or unknown ownership cannot grant Linux desktop protection", () => {
   const f = fixture();
   expect(diagnoseLinuxDesktopStartup({ ...f.deps, platform: "win32" })).toBeUndefined();
   expect(f.state.ownerReads).toBe(0);
   for (const owner of [
-    { kind: "none", revision: 0 }, { kind: "unknown", reason: "unreadable" },
+    { kind: "unknown", reason: "unreadable" },
     { kind: "owned", revision: 1, ownership: { owner: "cli", installId: "installation-a", consentGeneration: 1 } },
   ] as ServiceOwnershipResolution[]) {
     f.state.owner = owner;
     expect(diagnoseLinuxDesktopStartup(f.deps)).toBeUndefined();
     expect(f.state.pidReads).toBe(0);
   }
+});
+
+linuxTest("unowned Linux Desktop supervision credits the same app's login entry without install identity", () => {
+  const f = fixture(); f.state.owner = { kind: "none", revision: 0 }; rmSync(f.idPath);
+  expect(inspectDesktopSupervision(f.deps)).toEqual({
+    kind: "desktop", runtimePid: 100, supervisorPid: 200, app: f.app, proxy: f.proxy,
+  });
+  expect(diagnoseLinuxDesktopStartup(f.deps)).toEqual({
+    owned: false, loginEnabled: true, running: true, viable: true,
+    supervisor: { supervisorPid: 200, runtimePid: 100, app: f.app },
+  });
+  expect(desktopStartupOwnership(f.deps)).toBeUndefined();
+});
+
+linuxTest("unowned Linux login failures preserve live supervision without granting restart protection", () => {
+  const mutations: ((f: F) => void)[] = [
+    f => rmSync(f.entryPath),
+    f => f.entry(`${f.app} --autostart`, "\nHidden=true"),
+    f => f.entry(`${f.app} --autostart`, "\nX-GNOME-Autostart-enabled=false"),
+    f => f.entry(`${f.app} --autostart`, "\nOnlyShowIn=GNOME;"),
+    f => f.entry(`"${f.app}" --autostart`),
+    f => { const other = fixture(); f.entry(`${other.app} --autostart`); },
+    f => { f.deps.env = { XDG_CONFIG_HOME: join(f.home, "xdg") }; },
+  ];
+  for (const mutate of mutations) {
+    const f = fixture(); f.state.owner = { kind: "none", revision: 0 }; mutate(f);
+    expect(diagnoseLinuxDesktopStartup(f.deps)).toEqual({
+      owned: false, loginEnabled: false, running: true, viable: false,
+      supervisor: { supervisorPid: 200, runtimePid: 100, app: f.app },
+    });
+  }
+});
+
+linuxTest("unowned Linux foreign parents and absent runtimes receive no supervisor credit", () => {
+  const f = fixture(); f.state.owner = { kind: "none", revision: 0 }; f.state.exe[200] = f.proxy;
+  expect(inspectDesktopSupervision(f.deps)).toEqual({ kind: "none" });
+  expect(diagnoseLinuxDesktopStartup(f.deps)).toBeUndefined();
+  f.state.pid = null;
+  expect(inspectDesktopSupervision(f.deps)).toEqual({ kind: "none" });
+  expect(diagnoseLinuxDesktopStartup(f.deps)).toBeUndefined();
+});
+
+linuxTest("Linux supervision rejects changed PID sources and changed procfs snapshots", () => {
+  const f = fixture(); f.state.owner = { kind: "none", revision: 0 };
+  expect(inspectDesktopSupervision({ ...f.deps, targetPid: 101 })).toEqual({ kind: "unknown", reason: "pid-mismatch", desktopSeen: false });
+  expect(diagnoseLinuxDesktopStartup({ ...f.deps, readRuntimePortPid: () => 101 })).toBeUndefined();
+  const original = f.deps.proc.parent; let reads = 0;
+  f.deps.proc.parent = pid => {
+    if (++reads === 3) { f.state.parent[100] = 300; f.state.exe[300] = f.app; f.state.parent[300] = 1; }
+    return original(pid);
+  };
+  expect(inspectDesktopSupervision(f.deps)).toEqual({ kind: "unknown", reason: "snapshot-changed", desktopSeen: true });
+});
+
+linuxTest("a second procfs failure retains desktopSeen after observing Desktop", () => {
+  const f = fixture(); const original = f.deps.proc.exe; let reads = 0;
+  f.deps.proc.exe = pid => {
+    if (++reads === 3) throw new Error("process disappeared");
+    return original(pid);
+  };
+  expect(inspectDesktopSupervision(f.deps)).toEqual({ kind: "unknown", reason: "probe-failed", desktopSeen: true });
+});
+
+linuxTest("an unowned Linux supervisor loses projection when an ownership claim appears during login inspection", () => {
+  const f = fixture(); f.state.owner = { kind: "none", revision: 0 };
+  const original = f.deps.ownership;
+  f.deps.ownership = () => {
+    if (f.state.ownerReads > 0) return { kind: "unknown", reason: "changed" };
+    return original();
+  };
+  expect(diagnoseLinuxDesktopStartup(f.deps)).toBeUndefined();
 });
