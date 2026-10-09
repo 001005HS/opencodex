@@ -2,6 +2,7 @@
   "version": 1,
   "root": "tests",
   "explicit": {
+    "azure-vendor-metadata.test.ts": "providers",
     "anthropic-instance-isolation.test.ts": "adapters/anthropic", "anthropic-instance-pool-parity.test.ts": "adapters/anthropic",
     "anthropic-instance-quota.test.ts": "adapters/anthropic", "anthropic-instance-recovery.test.ts": "adapters/anthropic",
     "anthropic2-fast-parity.test.ts": "adapters/anthropic", "anthropic2-native-routing.test.ts": "claude-integration",

@@ -162,7 +162,7 @@ there. Feature code is grouped by responsibility:
 | Evidence and contracts | `src/compatibility/`, `src/lab/` |
 | Support | `src/lib/`, `src/storage/` (Worker policy fixtures synchronize after loading the initial policy; `src/storage/policy.ts` bounds the test barrier at 10 seconds), `src/usage/`, `src/update/` ([package refresh](ops/service-and-sidecars.md#package-cache-refresh); `desktop-badge.ts` holds bounded process-local display state, never install authority), `src/generated/` |
 
-`src/generated/` is committed build output, not hand-edited; `scripts/generate-model-metadata.ts` derives `kimi-responses` → Moonshot metadata from the registry's `jawcodeBundle` while keeping its provider row distinct.
+`src/generated/` is committed build output, not hand-edited; `scripts/generate-model-metadata.ts` derives `kimi-responses` → Moonshot metadata from the registry's `jawcodeBundle` while keeping its provider row distinct. The generated vendor priority supplies bundled fallback for the Azure modality/limit lookup described in [the shared catalog contract](catalog.md#shared-catalog); discovery can refresh public Azure metadata independently of a release, without generation-time network fetches or static-policy changes. Snapshot refreshes preserve the separate public OpenAI API and native Codex bundles.
 
 `src/server/` is split by responsibility: `index.ts` owns the listener and the startup transaction
 while `index/serve-options.ts` owns route ordering; `responses.ts` and `responses/core.ts` compose
