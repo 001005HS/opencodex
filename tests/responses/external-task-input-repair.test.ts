@@ -35,6 +35,10 @@ describe("external task input in raw-body repairs (#6764)", () => {
     for (const callId of ["   ", "call_1"]) {
       const item = seed({ call_id: callId });
       expect(repairUnidentifiedToolOutputItems({ input: [item] })).toEqual({ input: [item] });
+      for (const stateless of [true, false]) {
+        const repaired = repairOrphanedInputItems({ input: [item] }, false, false, stateless) as { input: unknown[] };
+        expect(repaired.input).not.toContainEqual(userTurn(DELEGATION));
+      }
     }
     const parsed = parseRequest({ model: "m", input: [seed({ call_id: "   " })] });
     expect(parsed.context.messages.map(message => message.role)).toEqual(["toolResult"]);
@@ -110,5 +114,26 @@ describe("routed compaction summarizes the handover as task input (#6764)", () =
     const sent = JSON.parse(bodies[0]!) as { input: unknown[] };
     expect(sent.input).toContainEqual(userTurn(DELEGATION));
     expect(bodies[0]).not.toContain("[tool output for unknown call]");
+  });
+
+  test("a whitespace call_id is not promoted on the raw path, matching the parser", async () => {
+    const bodies: string[] = [];
+    globalThis.fetch = (async (_url: unknown, init?: RequestInit) => {
+      bodies.push(String(init?.body ?? ""));
+      return jsonResponse(completedPayload("summary"));
+    }) as typeof fetch;
+
+    const res = await handleResponses(compactionRequest({
+      model: "gw/some-model",
+      stream: false,
+      input: [userTurn("Task A"), seed({ call_id: "   " }), { type: "compaction_trigger" }],
+    }), keyProviderConfig(), { model: "", provider: "" });
+
+    await res.text();
+    expect(bodies.length).toBeGreaterThan(0);
+    for (const body of bodies) {
+      const sent = JSON.parse(body) as { input: unknown[] };
+      expect(sent.input).not.toContainEqual(userTurn(DELEGATION));
+    }
   });
 });

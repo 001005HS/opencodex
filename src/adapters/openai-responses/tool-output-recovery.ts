@@ -391,7 +391,10 @@ export function repairOrphanedInputItems(
     const isCustomOutput = item.type === "custom_tool_call_output";
     if (isFnOutput || isCustomOutput) {
       flushPendingSyntheticOutputs();
-      const taskInput = isFnOutput ? externalTaskInputResponsesContent(item) : undefined;
+      // Same rule as repairUnidentifiedToolOutputItems: a nonempty string call_id is a tool result
+      // on the parsed path (the schema strips the envelope fields), so it is never task input here.
+      const hasStringCallId = typeof item.call_id === "string" && item.call_id.length > 0;
+      const taskInput = isFnOutput && !hasStringCallId ? externalTaskInputResponsesContent(item) : undefined;
       if (taskInput) {
         changed = true;
         repaired.push({ type: "message", role: "user", content: taskInput });
