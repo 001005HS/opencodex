@@ -91,10 +91,10 @@ only canonical Fable, Opus, or Sonnet labels after removing terminal controls; u
 Anthropic usage flights replace older joinable transports when recovery requires a fresh read. `src/providers/quota/anthropic-cooldown-recovery.ts` fences successful, empty, and rejected results by credential and cooldown generation before cache publication. Live account quota entries retain that currentness predicate; routing and account-list readers reject a superseded entry before its TTL expires. Header-only family observations carry a private credential-generation fence and their own thirty-minute clock. Active non-enumerating probes retain absent families; authoritative limits enumeration retires them. Persisted observations carry no live probe predicate of their own.
 Per-account quota flights also retain their starting cooldown generation through token resolution. A stale token failure returns unavailable to its caller without replacing the cache row or its timestamp; a joined flight rechecks ownership before returning.
 
-MiniMax and MiniMax CN Coding Plan quota in `src/providers/quota/vendor-probes-key.ts` uses the
-region-matched `/v1/api/openplatform/coding_plan/remains` endpoint. It publishes the `general`
-model's consumed 5-hour percentage and, when active, weekly percentage with their reset times;
-video quota rows are unrelated and omitted.
+MiniMax and MiniMax CN Coding Plan quota in `src/providers/quota/vendor-probes-key.ts` uses the region-matched `/v1/api/openplatform/coding_plan/remains` endpoint.
+It publishes the `general` model's consumed 5-hour percentage and, when active, weekly percentage with their reset times; video quota rows are unrelated and omitted.
+
+Ollama Cloud quota in `src/providers/quota/vendor-probes-key.ts` reads `/api/balance` first, with `/api/usage` fallback for older deployments through the same provider egress. Hard 4xx failures (except 404/408/429) clear the last-good row even after transport or body read failure, unless the other endpoint returns a parsed report. A failed bounded body read stops further attempts; transient failures alone keep the last-good row. `creditsUsd` is the included allowance only; purchased credits are ignored.
 
 Devin account quota in `src/providers/quota/devin.ts` reads Cognition's unary
 `SeatManagementService/GetUserStatus` with the default cloud-direct Metadata, against the
