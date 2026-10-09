@@ -26,7 +26,7 @@ Source heads: #6723 `9149843fc6df5170b0fbb8f14b4871b30cf1040d`, #6783
 | structure/runtime.md | MODIFY | only #6723's Support-table hunk (`src/storage/` policy fixtures synchronize after loading the initial policy; 10 s barrier). The line-3 catalog/persistence sentence belongs to wp4 |
 | structure/ops/service-and-sidecars.md | MODIFY | #6723's "Windows config-directory handle release" hunk, with both `async_contracts.rs` sentences rewritten to cite `tests/windows/windows-secret-acl-removal-flight.test.ts` |
 | tests/helpers/fixture-teardown.ts | NEW | `drainAndRemoveFixtureRoots(plan, deps)`: runs producers → per-root config flights → history close → per-root ACL drain → removal of each drained root, restores environment in `finally`, rethrows the first failure. `deps` defaults to the real flushers and `removeTreeWithRetry`, and is injectable for tests |
-| tests/lib/fixture-teardown-helper.test.ts | NEW | deterministic order/failure tests below; register → `lib` in both layout tables (precedent: `remove-tree-helper.test.ts`) |
+| tests/ci-workflows/fixture-teardown-helper.test.ts | NEW | deterministic order/failure tests below; register → `ci-workflows` in both layout tables (where the layout seed resolves it) |
 | structure/ops/test-sandbox-cleanup.md | MODIFY | fixture removal order: producers → config flights → history close → ACL drain → removal; delete a root only after its drains succeed |
 
 Hunks out of scope here: #6723's kiro/compaction test hunks and cold-spawn warm-up changes
@@ -193,7 +193,7 @@ Fixtures create real directories under a `mkdtemp` root; the fake runner signals
    ETIMEDOUT/EICACLS code; registration changes no result.
 9. Settlement: after resolve or reject, both registries are empty.
 
-`tests/lib/fixture-teardown-helper.test.ts` (deterministic, all platforms) with fake deps:
+`tests/ci-workflows/fixture-teardown-helper.test.ts` (deterministic, all platforms) with fake deps:
 
 1. Held flight: `drainAcl` for root A is a held promise; `remove` is not called for A until it
    resolves; after resolve, A is removed.

@@ -1474,7 +1474,7 @@
     "remote-workspace-tool-bridge.test.ts": "clients",
     "remote-workspace.test.ts": "clients",
     "remove-tree-helper.test.ts": "lib",
-    "fixture-teardown-helper.test.ts": "lib",
+    "fixture-teardown-helper.test.ts": "ci-workflows",
     "replay-refusal-parity.test.ts": "server",
     "repo-hygiene.test.ts": "ci-workflows",
     "request-decompress.test.ts": "usage",

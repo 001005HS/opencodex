@@ -25,7 +25,7 @@ Both architects confirmed the recipe paths, the 1999→1931 extraction and `core
 | wp1 applied the whole `structure/runtime.md` diff, including a wp4 catalog paragraph | 010: only the Support-table hunk |
 | wp5 map vs "restore references" instruction | 050: Bun references stay; Rust sentences only in declared files |
 | `cargo nextest` unavailable | 050: workflow's `cargo test --locked ... --test async_contracts` |
-| Fixture-order contract had no deterministic verifier; management-auth env restore not in finally | 010: `tests/helpers/fixture-teardown.ts` + `tests/lib/fixture-teardown-helper.test.ts` (6 cases), finally restoration |
+| Fixture-order contract had no deterministic verifier; management-auth env restore not in finally | 010: `tests/helpers/fixture-teardown.ts` + `tests/ci-workflows/fixture-teardown-helper.test.ts` (6 cases), finally restoration |
 | Haiku carry skipped its owner doc and user docs | 060: `structure/providers-and-adapters.md` and `guides/providers.md` rows |
 
 ## A-phase audit round 2: FAIL, 3 blockers, all folded

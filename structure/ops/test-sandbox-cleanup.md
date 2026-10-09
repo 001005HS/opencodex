@@ -21,4 +21,4 @@ drains each root's ACL work, and only then removes drained roots. A producer or 
 blocks every removal; a root-specific drain failure preserves that root while other drained roots
 can be removed. Removal failures do not stop later roots. Environment restoration runs in finally,
 and the first failure is rethrown. Undrained roots remain for run-level sandbox cleanup.
-`tests/lib/fixture-teardown-helper.test.ts` verifies ordering and failure gating with injected owners.
+`tests/ci-workflows/fixture-teardown-helper.test.ts` verifies ordering and failure gating with injected owners.
