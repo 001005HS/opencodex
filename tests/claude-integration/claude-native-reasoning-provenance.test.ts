@@ -61,7 +61,7 @@ async function send(cfg: OcxConfig, payload: ReturnType<typeof turn>, observe: (
       method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload),
     }), cfg, { model: "", provider: "" });
     const body = await response.json() as { content?: Array<{ type: string; signature?: string }> };
-    if (response.status !== 200) throw new Error(`unexpected response ${response.status}: ${JSON.stringify(body)}`);
+    expect(response.status).toBe(200);
     return { body, wires };
   } finally { globalThis.fetch = previousFetch; }
 }
@@ -266,8 +266,8 @@ describe("Claude native reasoning provenance", () => {
         const response = await handleClaudeMessages(new Request("http://localhost/v1/messages", {
           method: "POST", headers: { "content-type": "application/json", "x-api-key": "sk-ant-fixture" }, body: JSON.stringify(raw),
         }), cfg, { model: "", provider: "" });
-        const result = await response.text();
-        if (response.status !== 200) throw new Error(`unexpected native response ${response.status}: ${result}`);
+        await response.text();
+        expect(response.status).toBe(200);
         expect(seen).toHaveLength(1);
         const wire = seen[0]!;
         const assistant = (wire.messages as Array<{ role: string; content: Array<{ signature?: string }> }>).find(message => message.role === "assistant");

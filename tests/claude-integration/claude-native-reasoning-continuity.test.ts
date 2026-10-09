@@ -9,6 +9,7 @@ import { createTestTranslatorBudget } from "../helpers/translator-budget";
 const MODEL = "ocx-claude-meta-muse--muse-spark-1.3-contributor";
 const OTHER_MODEL = "ocx-claude-native--gpt-6.1-sol";
 const BLOB = "Q-PaDg-provider-minted-reasoning-blob==";
+const TAG = "a".repeat(64);
 
 function sse(name: string, data: Record<string, unknown>): string {
   return `event: ${name}\ndata: ${JSON.stringify(data)}\n\n`;
@@ -44,7 +45,7 @@ async function streamedThinking(frames: string[]): Promise<{ thinking: string; s
   const events = await collectEvents(responsesSseToAnthropicSse(streamFrom([
     ...frames,
     sse("response.completed", { response: { status: "completed", usage: {} } }),
-  ].join("")), MODEL, { translatorBudget: createTestTranslatorBudget() }));
+  ].join("")), MODEL, { translatorBudget: createTestTranslatorBudget(), nativeReasoningTagFor: () => TAG }));
   const blocks: { thinking: string; signature: string }[] = [];
   for (const event of events) {
     if (event.name === "content_block_start" && event.data.content_block?.type === "thinking") blocks.push({ thinking: "", signature: "" });
@@ -75,7 +76,7 @@ describe("Claude route carries a provider's own encrypted reasoning", () => {
     ]);
     expect(blocks).toHaveLength(1);
     expect(blocks[0]!.thinking).toBe("");
-    expect(decodeReasoningEnvelope(blocks[0]!.signature)?.nat).toEqual({ enc: BLOB, model: MODEL, id: "rs_native" });
+    expect(decodeReasoningEnvelope(blocks[0]!.signature)?.nat).toEqual({ enc: BLOB, model: MODEL, id: "rs_native", tag: TAG });
   });
 
   test("streamed summary text and the blob share one thinking block", async () => {
@@ -88,7 +89,7 @@ describe("Claude route carries a provider's own encrypted reasoning", () => {
     expect(blocks[0]!.thinking).toBe("Plan: read, then edit.");
     const envelope = decodeReasoningEnvelope(blocks[0]!.signature);
     expect(envelope?.txt).toBe("Plan: read, then edit.");
-    expect(envelope?.nat).toEqual({ enc: BLOB, model: MODEL, id: "rs_native" });
+    expect(envelope?.nat).toEqual({ enc: BLOB, model: MODEL, id: "rs_native", tag: TAG });
   });
 
   test("reasoning without a native blob keeps the summary-only signature", async () => {
@@ -108,17 +109,17 @@ describe("Claude route carries a provider's own encrypted reasoning", () => {
         { type: "reasoning", id: "rs_b", summary: [{ type: "summary_text", text: "Next: edit." }], encrypted_content: `${BLOB}b` },
         { type: "message", content: [{ type: "output_text", text: "Done." }] },
       ],
-    }, MODEL, createTestTranslatorBudget());
+    }, MODEL, createTestTranslatorBudget(), () => TAG);
     const thinking = (message.content as Record<string, any>[]).filter(block => block.type === "thinking");
     expect(thinking.map(block => block.thinking)).toEqual(["", "Next: edit."]);
     expect(thinking.map(block => decodeReasoningEnvelope(block.signature)?.nat)).toEqual([
-      { enc: BLOB, model: MODEL, id: "rs_a" },
-      { enc: `${BLOB}b`, model: MODEL, id: "rs_b" },
+      { enc: BLOB, model: MODEL, id: "rs_a", tag: TAG },
+      { enc: `${BLOB}b`, model: MODEL, id: "rs_b", tag: TAG },
     ]);
   });
 
   test("replay to the same model restores the blob and item id, and the sanitizer forwards it", () => {
-    const signature = encodeReasoningEnvelope({ txt: "Plan.", nat: { enc: BLOB, model: MODEL, id: "rs_native" } });
+    const signature = encodeReasoningEnvelope({ txt: "Plan.", nat: { enc: BLOB, model: MODEL, id: "rs_native", tag: TAG } });
     const body = anthropicToResponsesBody(replay(MODEL, "Plan.", signature, { type: "adaptive" }));
     expect(() => responsesRequestSchema.parse(body)).not.toThrow();
     const reasoning = (body.input as Record<string, unknown>[]).filter(item => item.type === "reasoning");
@@ -132,7 +133,7 @@ describe("Claude route carries a provider's own encrypted reasoning", () => {
   });
 
   test("replay to a different model drops the blob and keeps the visible text", () => {
-    const signature = encodeReasoningEnvelope({ txt: "Plan.", nat: { enc: BLOB, model: MODEL, id: "rs_native" } });
+    const signature = encodeReasoningEnvelope({ txt: "Plan.", nat: { enc: BLOB, model: MODEL, id: "rs_native", tag: TAG } });
     const body = anthropicToResponsesBody(replay(OTHER_MODEL, "Plan.", signature));
     const reasoning = (body.input as Record<string, unknown>[]).filter(item => item.type === "reasoning");
     expect(reasoning).toHaveLength(1);
@@ -142,7 +143,7 @@ describe("Claude route carries a provider's own encrypted reasoning", () => {
   });
 
   test("an empty thinking block for a different model leaves no reasoning item", () => {
-    const signature = encodeReasoningEnvelope({ txt: "", nat: { enc: BLOB, model: MODEL } });
+    const signature = encodeReasoningEnvelope({ txt: "", nat: { enc: BLOB, model: MODEL, tag: TAG } });
     const body = anthropicToResponsesBody(replay(OTHER_MODEL, "", signature));
     expect((body.input as Record<string, unknown>[]).some(item => item.type === "reasoning")).toBe(false);
   });
@@ -154,7 +155,7 @@ describe("Claude route carries a provider's own encrypted reasoning", () => {
         { type: "reasoning", id: "rs_turn", summary: [], encrypted_content: BLOB },
         { type: "message", content: [{ type: "output_text", text: "OK" }] },
       ],
-    }, MODEL, createTestTranslatorBudget());
+    }, MODEL, createTestTranslatorBudget(), () => TAG);
     const body = anthropicToResponsesBody({
       model: MODEL, max_tokens: 1024, thinking: { type: "adaptive" },
       messages: [
