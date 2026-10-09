@@ -104,6 +104,7 @@ describe("Claude native reasoning provenance", () => {
     const nat = decodeReasoningEnvelope(signed)!.nat!;
     const switched = await send(config(), turn(signed, "other"));
     expect(JSON.stringify(switched.wires[0])).not.toContain(BLOB);
+    expect(JSON.stringify(switched.wires[0])).toContain("Visible plan.");
     for (const value of [
       { ...nat, enc: "other-ciphertext" },
       { ...nat, enc: BLOB + "altered" },
@@ -195,6 +196,12 @@ describe("Claude native reasoning provenance", () => {
     expect(decodeReasoningEnvelope(signature(result.body))?.nat).toBeUndefined();
   });
 
+  test("a request without reasoning does not ask upstream for encrypted content", async () => {
+    const payload = { model: MODEL, max_tokens: 64, stream: false, messages: [{ role: "user", content: "Hello." }] };
+    const sent = await send(config(), payload as ReturnType<typeof turn>);
+    expect(sent.wires[0]).not.toHaveProperty("include");
+  });
+
   test("a switched openai-chat destination receives no blob through its context signature carrier", async () => {
     const signed = signature((await send(config(), turn())).body);
     const chat = { ...provider("https://chat.example/v1"), adapter: "openai-chat" } as OcxProviderConfig;
@@ -225,6 +232,7 @@ describe("Claude native reasoning provenance", () => {
       );
     });
     expect(second.wires).toHaveLength(2);
+    expect(JSON.stringify(second.wires[0])).toContain(BLOB);
     expect(JSON.stringify(second.wires[1])).not.toContain(BLOB);
     const tag = decodeReasoningEnvelope(signature(second.body))?.nat?.tag;
     expect(tag).toBe(nativeReasoningTag(nativeReasoningOwnerForRoute({ provider: b }), servedBlob));
@@ -236,6 +244,7 @@ describe("Claude native reasoning provenance", () => {
     const nat = decodeReasoningEnvelope(signed)!.nat!;
     const blobOnly = encodeReasoningEnvelope({ nat });
     const escaped = OCX_REASONING_PREFIX + Buffer.from('{"\\u006e\\u0061\\u0074":{"enc":"' + BLOB + '"}}').toString("base64");
+    const malformed = OCX_REASONING_PREFIX + Buffer.from(JSON.stringify({ nat: { enc: BLOB, model: MODEL } })).toString("base64");
     for (const branch of ["caller", "managed"] as const) {
       const seen: Record<string, unknown>[] = [];
       const transport = (async (_input: RequestInfo | URL, init?: RequestInit) => {
@@ -256,6 +265,7 @@ describe("Claude native reasoning provenance", () => {
             { type: "thinking", thinking: "", signature: blobOnly },
             { type: "thinking", thinking: "Visible plan.", signature: signed },
             { type: "thinking", thinking: "", signature: escaped },
+            { type: "thinking", thinking: "", signature: malformed },
             { type: "thinking", thinking: "", signature: OCX_REASONING_PREFIX + "garbage" },
           ] },
           { role: "user", content: "Continue." },
