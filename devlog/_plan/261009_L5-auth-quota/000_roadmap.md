@@ -1,5 +1,7 @@
 # L5 auth-quota carry — roadmap
 
+Status: roadmap locked at wp1 D (2026-10-09); wp2 and wp3 revalidate their unit doc at P.
+
 Two contributor fixes in the auth and quota area are open but cannot land as-is: #6739 (Ollama Cloud quota reads a retired /api/usage payload, so the row silently disappears from the quota dashboard) and #6745 (ChatGPT OAuth refresh has no deadline, drops caller cancellation, and classifies refresh failures incompletely; see #6745). This lane carries both onto current `dev` as maintainer carry PRs, folds in the gaps found in review, and stops each PR at merge-ready. Users of Ollama Cloud get their quota row back; ChatGPT OAuth users stop hanging on a stalled refresh and stop being re-asked to log in after a transient failure.
 
 ## Loop spec
