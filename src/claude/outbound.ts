@@ -360,6 +360,7 @@ export function responsesSseToAnthropicSse(
      * upstream sent no confirmed usage before the first frame. See `messageSnapshot` (#4857).
      */
     inputTokenFloor?: number;
+    nativeReasoningTagFor?: (blob: string) => string | undefined;
   },
 ): ReadableStream<Uint8Array> {
   const translatorBudget = opts.translatorBudget;
@@ -448,6 +449,13 @@ export function responsesSseToAnthropicSse(
           open.webSearchArgsEmitted = true;
         }
         if (open.kind === "thinking") {
+          const native = open.reasoningNative;
+          const tag = native && opts.nativeReasoningTagFor?.(native.enc);
+          if (!open.thinkingBuf && !open.reasoningSig && !tag) {
+            releaseThinkingBuffer(open);
+            open = null;
+            return;
+          }
           // Delay the index and all thinking frames until closure so a matching
           // done envelope can put its redacted blocks first. The existing buffer
           // remains charged through signature emission, including queued frames.
@@ -462,10 +470,9 @@ export function responsesSseToAnthropicSse(
               delta: { type: "thinking_delta", thinking: open.thinkingBuf },
             });
           }
-          const native = open.reasoningNative;
           const signature = open.reasoningSig ?? encodeReasoningEnvelope({
             txt: open.thinkingBuf ?? "",
-            ...(native ? { nat: { ...native, model } } : {}),
+            ...(tag ? { nat: { ...native, model, tag } } : {}),
           }, translatorBudget);
           emit("content_block_delta", {
             type: "content_block_delta", index: open.index,
@@ -955,7 +962,7 @@ export function responsesSseToAnthropicSse(
 }
 
 /** Non-streaming: /v1/responses JSON -> Anthropic message JSON. */
-export function responsesJsonToAnthropicMessage(json: unknown, model: string, translatorBudget?: TranslatorBudget): Rec {
+export function responsesJsonToAnthropicMessage(json: unknown, model: string, translatorBudget?: TranslatorBudget, nativeReasoningTagFor?: (blob: string) => string | undefined): Rec {
   const body = isRec(json) ? json : {};
   const output = Array.isArray(body.output) ? body.output : [];
   const content: Rec[] = [];
@@ -994,9 +1001,10 @@ export function responsesJsonToAnthropicMessage(json: unknown, model: string, tr
         // env.txt may be locally hidden text. Do not expose it here. A provider's own blob is
         // carried in the envelope so the next request can hand it back (see inbound.ts).
         const native = nativeEncryptedReasoning(encrypted);
-        if (parts.length > 0 || env?.sig || native) {
+        const tag = native && nativeReasoningTagFor?.(native);
+        if (parts.length > 0 || env?.sig || tag) {
           const text = parts.join("\n\n");
-          const nat = native ? { enc: native, model, ...(typeof raw.id === "string" && raw.id.length > 0 ? { id: raw.id } : {}) } : undefined;
+          const nat = tag ? { enc: native, model, tag, ...(typeof raw.id === "string" && raw.id.length > 0 ? { id: raw.id } : {}) } : undefined;
           content.push({ type: "thinking", thinking: text, signature: env?.sig ?? encodeReasoningEnvelope({ txt: text, ...(nat ? { nat } : {}) }, translatorBudget) });
         }
         break;

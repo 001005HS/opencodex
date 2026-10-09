@@ -281,7 +281,7 @@ function userMessageToItems(content: unknown, input: Rec[], elide: SkillElisionC
   pushUserMessage(input, pending);
 }
 
-function assistantMessageToItems(content: unknown, input: Rec[], budget: TranslatorBudget, requestedModel: string): void {
+function assistantMessageToItems(content: unknown, input: Rec[], budget: TranslatorBudget, requestedModel: string, nativeReasoningReplay: Map<string, string>): void {
   if (typeof content === "string") {
     if (content.length > 0) input.push({ type: "message", role: "assistant", content: [{ type: "output_text", text: content }] });
     return;
@@ -318,6 +318,10 @@ function assistantMessageToItems(content: unknown, input: Rec[], budget: Transla
             // The provider's own blob goes back only to the model that minted it; any other
             // model gets the visible text alone, as before this envelope field existed.
             const nat = owned.nat.model === requestedModel ? owned.nat : undefined;
+            if (nat) {
+              const previous = nativeReasoningReplay.get(nat.enc);
+              nativeReasoningReplay.set(nat.enc, previous === undefined || previous === nat.tag ? nat.tag : "");
+            }
             if (nat) budget.chargeRetained(2 * nat.enc.length, { kind: "reasoning" });
             if (thinking.length === 0 && !nat) break;
             input.push({
@@ -369,6 +373,7 @@ export type ClaudeCacheKeySource = "metadata" | "system" | null;
 export interface ClaudeInboundTranslation {
   body: Rec;
   cacheKeySource: ClaudeCacheKeySource;
+  nativeReasoningReplay: ReadonlyMap<string, string>;
 }
 
 /**
@@ -414,6 +419,7 @@ function translateAnthropicRequest(
   }
 
   const input: Rec[] = [];
+  const nativeReasoningReplay = new Map<string, string>();
   const systemParts: string[] = [];
   const topLevelSystem = systemToInstructions(raw.system);
   if (topLevelSystem !== undefined) systemParts.push(topLevelSystem);
@@ -425,7 +431,7 @@ function translateAnthropicRequest(
   for (const msg of raw.messages) {
     if (!isRec(msg)) throw new AnthropicRequestError("each message must be an object");
     if (msg.role === "user") userMessageToItems(msg.content, input, elide);
-    else if (msg.role === "assistant") assistantMessageToItems(msg.content, input, budget, raw.model);
+    else if (msg.role === "assistant") assistantMessageToItems(msg.content, input, budget, raw.model, nativeReasoningReplay);
     else if (msg.role === "system") {
       const text = systemMessageText(msg.content);
       // Keep it where the client put it. `developer` is first-class in the Responses
@@ -550,5 +556,32 @@ function translateAnthropicRequest(
     body.include = ["reasoning.encrypted_content"];
   }
 
-  return { body, cacheKeySource };
+  return { body, cacheKeySource, nativeReasoningReplay };
+}
+
+/** Remove proxy-owned native blobs before sending a Messages body to native Anthropic. */
+export function nativeAnthropicProjection(body: Rec): Rec {
+  if (!Array.isArray(body.messages)) return body;
+  let changed = false;
+  const messages = body.messages.flatMap(message => {
+    if (!isRec(message) || message.role !== "assistant" || !Array.isArray(message.content)) return [message];
+    let localChanged = false;
+    const content = message.content.flatMap(block => {
+      if (!isRec(block) || block.type !== "thinking" || typeof block.signature !== "string"
+        || !block.signature.startsWith(OCX_REASONING_PREFIX)) return [block];
+      let decoded: unknown;
+      try { decoded = JSON.parse(Buffer.from(block.signature.slice(OCX_REASONING_PREFIX.length), "base64").toString("utf8")); }
+      catch { decoded = undefined; }
+      if (!isRec(decoded)) { localChanged = true; return []; }
+      if (!Object.hasOwn(decoded, "nat")) return [block];
+      localChanged = true;
+      const { nat: _nat, ...rest } = decoded;
+      if (!rest.sig && !rest.red && !rest.krc && !(typeof rest.txt === "string" && rest.txt.length > 0)) return [];
+      return [{ ...block, signature: OCX_REASONING_PREFIX + Buffer.from(JSON.stringify(rest), "utf8").toString("base64") }];
+    });
+    if (!localChanged) return [message];
+    changed = true;
+    return content.length ? [{ ...message, content }] : [];
+  });
+  return changed ? { ...body, messages } : body;
 }

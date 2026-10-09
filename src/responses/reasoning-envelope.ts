@@ -51,15 +51,17 @@ export interface NativeReasoning {
   enc: string;
   /** Client-facing model the item was produced for. */
   model: string;
+  /** Route-bound HMAC for this exact ciphertext. */
+  tag: string;
   /** The provider's reasoning item id, when it sent one. */
   id?: string;
 }
 
 function decodeNativeReasoning(value: unknown): NativeReasoning | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
-  const { enc, model, id } = value as { enc?: unknown; model?: unknown; id?: unknown };
-  if (typeof enc !== "string" || enc.length === 0 || typeof model !== "string" || model.length === 0) return undefined;
-  return typeof id === "string" && id.length > 0 ? { enc, model, id } : { enc, model };
+  const { enc, model, id, tag } = value as { enc?: unknown; model?: unknown; id?: unknown; tag?: unknown };
+  if (typeof enc !== "string" || enc.length === 0 || typeof model !== "string" || model.length === 0 || typeof tag !== "string" || tag.length === 0) return undefined;
+  return typeof id === "string" && id.length > 0 ? { enc, model, tag, id } : { enc, model, tag };
 }
 
 export function encodeReasoningEnvelope(envelope: ReasoningEnvelope, budget?: TranslatorBudget): string {
