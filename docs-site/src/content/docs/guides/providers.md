@@ -651,7 +651,8 @@ Ollama Cloud provider cards read quota from `/api/balance` first, with `/api/usa
 fallback for older deployments. A parsed fallback report supersedes an earlier failure;
 otherwise hard 4xx responses (except 404/408/429) clear the last good quota even if another
 attempt fails, while transient failures keep it. An unreadable or oversized body stops
-further attempts. Dollar credits show the included allowance only, excluding purchased credits.
+further attempts. Dollar credits show the included allowance only, excluding purchased credits,
+so an exhausted allowance stops routing to Ollama Cloud only when no purchased credit remains.
 
 `MiniMax-M3.1-Flash-Preview` (1M context) is listed on both MiniMax presets. MiniMax serves it
 only to Token Plan subscription keys and MiniMax Code for now, so a pay-as-you-go API key gets an

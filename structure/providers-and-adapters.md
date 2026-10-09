@@ -94,7 +94,7 @@ Per-account quota flights also retain their starting cooldown generation through
 MiniMax and MiniMax CN Coding Plan quota in `src/providers/quota/vendor-probes-key.ts` uses the region-matched `/v1/api/openplatform/coding_plan/remains` endpoint.
 It publishes the `general` model's consumed 5-hour percentage and, when active, weekly percentage with their reset times; video quota rows are unrelated and omitted.
 
-Ollama Cloud quota in `src/providers/quota/vendor-probes-key.ts` reads `/api/balance` first, with `/api/usage` fallback for older deployments through the same provider egress. Hard 4xx failures (except 404/408/429) clear the last-good row even after transport or body read failure, unless the other endpoint returns a parsed report. A failed bounded body read stops further attempts; transient failures alone keep the last-good row. `creditsUsd` is the included allowance only; purchased credits are ignored.
+Ollama Cloud quota in `src/providers/quota/vendor-probes-key.ts` reads `/api/balance` first, with `/api/usage` fallback for older deployments through the same provider egress. Hard 4xx failures (except 404/408/429) clear the last-good row even after transport or body read failure, unless the other endpoint returns a parsed report. A failed bounded body read stops further attempts; transient failures alone keep the last-good row. `creditsUsd` is the included allowance only; purchased credits are ignored, so the routing projection drops it unless `purchased.balance_usd` is known to be zero.
 
 Devin account quota in `src/providers/quota/devin.ts` reads Cognition's unary
 `SeatManagementService/GetUserStatus` with the default cloud-direct Metadata, against the
