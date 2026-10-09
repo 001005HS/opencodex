@@ -4,6 +4,7 @@ import { CODEX_PRIORITY_FAILBACK_REFRESH_MS } from "../account-priority";
 import { codexQuotaHasFreshUsage } from "../quota-observation-freshness";
 import { getCodexAccountCredential, getValidCodexToken, readCodexAccountRecord } from "../account-store";
 import { getAccountQuota, getMainPolicyQuota, isCompleteCodexQuotaRecoverySnapshot } from "../quota";
+import type { StoredAccountQuota } from "../quota-types";
 import { isCodexAccountPaused } from "../account-pause";
 import { hasSpendableCodexCredits } from "../quota-types";
 import { reconcileMainCodexAccountRuntimeState } from "../account-lifecycle";
@@ -14,7 +15,7 @@ import { getValidMainAccountToken, MAIN_CODEX_ACCOUNT_ID, getMainAccountPlan } f
 import { captureConfigGeneration, registerStateSweepAfterTick } from "../../lib/state-store-sweeper";
 import { observeMainQuotaCredential, getMainQuotaCredentialGeneration, captureMainAccountIdentityGeneration, isMainAccountIdentityGenerationLive } from "../main-account-cache";
 import { getMainAccountHardLockStatus } from "../main-account-hard-lock";
-import type { OcxConfig } from "../../types";
+import type { CodexAccount, OcxConfig } from "../../types";
 import { isCanonicalOpenAiForwardProvider, OPENAI_CODEX_PROVIDER_ID } from "../../providers/openai-tiers";
 import { providerCodexAccountMode } from "../../providers/registry";
 import { isSelectableCodexPoolAccount } from "../account-id";
@@ -75,7 +76,104 @@ export async function runCodexCooldownRecoveryProbes(config: OcxConfig, now = Da
   return cooldownRecoveryInFlight;
 }
 
-const MAIN_CREDIT_RENEWAL_AGE_MS = 3 * 60_000;
+/** Renew from this age so a read (and token preparation) lands before the five-minute limit. */
+const CREDIT_RENEWAL_AGE_MS = 3 * 60_000;
+
+/**
+ * Valid, formerly spendable credit evidence of an opted-in, full-window account that is old enough
+ * to renew. Main and pool accounts share this rule; admission keeps the actual five-minute clock.
+ */
+function creditRenewalDue(
+  config: OcxConfig,
+  accountId: string,
+  quota: StoredAccountQuota | null,
+  plan: unknown,
+  now: number,
+): boolean {
+  const observedAt = quota?.credits?.observedAt;
+  return codexAccountUsesCreditsAfterLimit(config, accountId)
+    && !isCodexAccountPaused(config, accountId)
+    && codexUsageLimitResetAt(quota, plan, now) !== undefined
+    && observedAt !== undefined && observedAt > 0
+    && now - observedAt >= CREDIT_RENEWAL_AGE_MS
+    && hasSpendableCodexCredits(quota, observedAt);
+}
+
+let poolCreditRenewalInFlight: Promise<void> | null = null;
+/**
+ * Last renewal per pool account that did not replace the credit observation (a failed read, or a
+ * successful read that omitted credits). Keyed by credential generation and by the observation it
+ * tried to replace, so a new credential or a new observation is renewed without waiting.
+ */
+const poolCreditRenewalAttempt = new Map<string, { generation: number | undefined; observedAt: number; delay: number; after: number }>();
+
+/**
+ * Pool counterpart of the main-account credit renewal below. Nothing else re-reads the balance
+ * of an opted-in pool account at a full window: response headers carry the old credit clock
+ * forward, the cooldown recovery sweep only claims reset-derived cooldowns, and a held account
+ * receives no traffic. Without this the account leaves selection five minutes after its last
+ * WHAM read even though it still holds credits.
+ *
+ * The read is the ordinary pool quota probe, so token preparation, generation-checked
+ * publication, the revoked-grant hold, single-flight and query pacing (including Retry-After)
+ * all apply. Failed or incomplete reads never renew the credit clock.
+ */
+export async function runPoolCreditRenewal(config: OcxConfig, now = Date.now()): Promise<void> {
+  const openai = config.providers[OPENAI_CODEX_PROVIDER_ID];
+  if (!openai
+    || openai.disabled === true
+    || !isCanonicalOpenAiForwardProvider(openai)
+    || providerCodexAccountMode(OPENAI_CODEX_PROVIDER_ID, openai) !== "pool") return;
+  if (poolCreditRenewalInFlight) return poolCreditRenewalInFlight;
+  const runtimeConfig = getRuntimeConfig(config);
+  const pool = (runtimeConfig.codexAccounts ?? []).filter(isSelectableCodexPoolAccount);
+  const configuredIds = new Set(pool.map(account => account.id));
+  for (const accountId of poolCreditRenewalAttempt.keys()) {
+    if (!configuredIds.has(accountId)) poolCreditRenewalAttempt.delete(accountId);
+  }
+  const due = pool.filter((account: CodexAccount) => {
+    const quota = getAccountQuota(account.id);
+    if (isAccountNeedsReauth(account.id)
+      || !creditRenewalDue(runtimeConfig, account.id, quota, account.plan, now)) {
+      poolCreditRenewalAttempt.delete(account.id);
+      return false;
+    }
+    const previous = poolCreditRenewalAttempt.get(account.id);
+    return !previous
+      || previous.generation !== readCodexAccountRecord(account.id)?.generation
+      || previous.observedAt !== quota!.credits!.observedAt
+      || previous.after <= now;
+  });
+  if (due.length === 0) return;
+  poolCreditRenewalInFlight = (async () => {
+    await mapWithConcurrency(due, POOL_QUOTA_REFRESH_CONCURRENCY, async account => {
+      const observedAt = getAccountQuota(account.id)!.credits!.observedAt;
+      let result: PoolQuotaResult;
+      try {
+        result = await fetchPoolAccountQuota(account.id, true, account.plan);
+      } catch (error) {
+        // Local quota-flight saturation dispatched nothing; the next tick retries.
+        if (error instanceof PoolQuotaProbeBusyError) return;
+        throw error;
+      }
+      if (getAccountQuota(account.id)?.credits?.observedAt !== observedAt) {
+        poolCreditRenewalAttempt.delete(account.id);
+        return;
+      }
+      const previous = poolCreditRenewalAttempt.get(account.id);
+      const delay = nextQuotaQueryDelay(previous?.observedAt === observedAt ? previous.delay : undefined);
+      poolCreditRenewalAttempt.set(account.id, {
+        generation: result.freshCredentialGeneration ?? result.credentialGeneration,
+        observedAt,
+        delay,
+        after: Date.now() + delay,
+      });
+    });
+  })().catch(() => {
+    // Best-effort background read; selection keeps refusing the expired evidence.
+  }).finally(() => { poolCreditRenewalInFlight = null; });
+  return poolCreditRenewalInFlight;
+}
 
 let mainHardLockRecoveryInFlight: Promise<void> | null = null;
 let mainHardLockRecoveryAttempt: { identity: number; credential: number; after: number; delay: number } | undefined;
@@ -87,15 +185,9 @@ export async function runMainAccountHardLockRecovery(config: OcxConfig): Promise
   const creditRecoveryNeeded = (): boolean => {
     const now = Date.now();
     const quota = getMainPolicyQuota();
-    const observedAt = quota?.credits?.observedAt;
     // getMainPolicyQuota binds evidence to the observed physical identity. Only renew
     // valid formerly spendable funds; admission retains the actual five-minute clock.
-    return codexAccountUsesCreditsAfterLimit(config, MAIN_CODEX_ACCOUNT_ID)
-      && !isCodexAccountPaused(config, MAIN_CODEX_ACCOUNT_ID)
-      && codexUsageLimitResetAt(quota, undefined, now) !== undefined
-      && observedAt !== undefined && observedAt > 0
-      && now - observedAt >= MAIN_CREDIT_RENEWAL_AGE_MS
-      && hasSpendableCodexCredits(quota, observedAt);
+    return creditRenewalDue(config, MAIN_CODEX_ACCOUNT_ID, quota, undefined, now);
   };
   const status = getMainAccountHardLockStatus(config);
   if (status.state !== "blocked" && !creditRecoveryNeeded()) { mainHardLockRecoveryAttempt = undefined; return; }
@@ -186,6 +278,7 @@ export function registerCodexCooldownRecoveryProbeWorker(config: OcxConfig): voi
     afterTick: () => {
       void runCodexCooldownRecoveryProbes(config);
       void runMainAccountHardLockRecovery(config);
+      void runPoolCreditRenewal(config);
     },
   });
 }
@@ -369,4 +462,6 @@ export function clearCodexQuotaPrimeSingleFlightForTests(): void {
 /** Test-only reset for the worker-level single-flight. */
 export function clearCodexCooldownRecoveryProbeState(): void {
   cooldownRecoveryInFlight = null;
+  poolCreditRenewalInFlight = null;
+  poolCreditRenewalAttempt.clear();
 }

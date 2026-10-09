@@ -1049,6 +1049,10 @@ When an account reaches 100% on a usage window and still holds credits, upstream
 
 For an opted-in main account with a full usage window, the background recovery cycle renews previously spendable credit observations from three minutes of age, even while the dashboard is closed. It prepares a valid token before the authenticated usage lookup so the balance can be observed again before its five-minute freshness limit. Missing, zero, restricted or retracted credits do not trigger this renewal. A failed or incomplete lookup does not refresh old balance evidence, and requests are still refused once that evidence expires. The separate main-account hard lock and upstream retry delays still apply. This metadata lookup does not send a model validation request or set or clear the account's needs-reauth state.
 
+Opted-in pool accounts get the same renewal. A pool account at a full usage window whose last credit observation is at least three minutes old is looked up again by the background recovery cycle, so it stays selectable while it still holds credits instead of dropping out five minutes after the last lookup. Paused accounts and accounts that need reauthentication are skipped, and a failed lookup is retried on the usual backoff.
+
+A pool account that was added or reauthenticated while its weekly window was full normally waits for validation until the window resets. When the account is allowed to use credits and the usage lookup shows spendable credits, reauthentication validates it right away, and a dashboard refresh clears a pending validation the same way.
+
 Background revalidation is separate and off by default. It requires Token Guardian, the `openai` provider's `proactive` refresh policy, and `tokenGuardian.codexWarmupEnabled`. It skips accounts awaiting deferred registration validation.
 
 ### Cancelling main-account device reauthentication

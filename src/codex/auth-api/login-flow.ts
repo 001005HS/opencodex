@@ -19,6 +19,7 @@ import { jsonResponse } from "./http";
 import { codexAuthLoginState, MAX_CODEX_LOGIN_STATE_ROWS, CODEX_LOGIN_TERMINAL_TTL_MS, CodexLoginStateBusyError, setCodexLoginState, pruneCodexLoginState, expireCodexAuthFlow } from "./login-state";
 import type { CodexLoginStateRow } from "./login-state";
 import { getRuntimeConfig, configuredPoolAccount, nonEmptyPlan, saveRuntimeConfig } from "./runtime-config";
+import { codexAccountUsesCreditsAfterLimit } from "../account-credit-use";
 
 const CODEX_CREDENTIAL_PERSISTENCE_ERROR = "Account was saved, but credential setup did not complete. Reauthenticate or remove the account.";
 const CODEX_CREDENTIAL_PERSISTENCE_CODE = "codex_credential_persistence_failed";
@@ -334,7 +335,10 @@ export async function handleCodexAuthLoginStart(req: Request, config: OcxConfig,
               // A successful authenticated WHAM read can prove quota is exhausted without
               // spending an inference request. Store the account, but defer inference validation
               // and keep it unavailable to routing. Unknown/failed usage reads retain the gate.
-              const warmup = isCodexQuotaExhausted(quota, plan)
+              // A reauthenticated account the operator opted into credits is not exhausted while
+              // this read shows spendable credits, the same rule selection applies to it.
+              const warmup = isCodexQuotaExhausted(quota, plan,
+                codexAccountUsesCreditsAfterLimit(getRuntimeConfig(config), accountId))
                 ? { ok: true as const, validatedAt: undefined }
                 : await verifyCodexAccountWarmup(accountId, cred.access, oauthAccountId);
               if (!warmup.ok) {

@@ -314,7 +314,11 @@ at 99 so accounts with more included headroom remain preferred; observed percent
 unchanged. Bulk pause and complete-snapshot recovery use the same credit decision. Credits-only
 payloads cannot clear cooldowns, actual request refusals still drive cooldown/failover, and the
 default-on main-account hard lock retains its separate local admission policy. Registration
-warmup remains conservative and does not spend paid credits to validate an exhausted account.
+warmup remains conservative and does not spend paid credits to validate an exhausted account
+unless its id is in `creditCodexAccountIds` and the same WHAM read shows fresh spendable credits:
+reauthentication validates such an account instead of deferring it, and an explicit dashboard
+validation clears its pending state, exactly as selection would admit it. Coverage:
+`tests/codex-integration/codex-credit-validation-pending.test.ts`.
 
 For an opted-in, unpaused main account with a currently full usage window, the existing
 `src/codex/auth-api/pool-mode-gate.ts` recovery sweep renews credit observations from three minutes
@@ -331,6 +335,15 @@ this mode. Native token preparation also preserves the traffic quarantine. Other
 the existing auth behavior. Failed or incomplete observations never renew the credit clock;
 refreshing usage does not redeem reset credits or validate pending accounts through inference.
 Coverage: `tests/codex-integration/main-account-credit-renewal.test.ts`.
+
+The same sweep renews opted-in, unpaused pool accounts at a full window by the same age and
+evidence rule. Response headers carry the old credit clock forward and the cooldown recovery
+probe only claims reset-derived cooldowns, so without it a held pool account left selection five
+minutes after its last WHAM read. The read is the ordinary pool quota probe (token preparation,
+generation-checked publication, the revoked-grant hold, single-flight and query pacing); accounts
+marked needs-reauth are skipped. A read that does not replace the credit observation backs off on
+the shared quota-query schedule per credential generation and observation. Coverage:
+`tests/codex-integration/pool-account-credit-renewal.test.ts`.
 
 Credit parsing, expiry, partial updates and reset-ticket separation are covered in
 `tests/codex-integration/codex-quota-parser-parity.test.ts`; selection and bulk-pause behavior

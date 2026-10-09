@@ -15,6 +15,8 @@ import { WHAM_REQUEST_TIMEOUT_MS } from "../quota-recovery-timing";
 import { claimQuotaRecovery, fencePropagatedQuotaRecovery, quotaRecoveryTerminalFor, releaseQuotaRecovery, settleQuotaRecovery, settleQuotaRecoveryTerminal } from "../quota-401-recovery";
 import { seedLoginRowsForTests } from "./login-state";
 import { nonEmptyPlan } from "./runtime-config";
+import { codexAccountUsesCreditsAfterLimit } from "../account-credit-use";
+import { loadConfig } from "../../config";
 import { CODEX_TERMINAL_AUTH_CODES } from "../quota-refresh-outcome";
 
 export const POOL_CACHE_TTL = 5 * 60_000;
@@ -567,12 +569,15 @@ export async function fetchPoolAccountQuota(
       return result;
     }
     // Only an explicit account-list refresh finishes deferred registration. Passive quota
-    // polls and startup priming remain read-only with respect to inference spending.
+    // polls and startup priming remain read-only with respect to inference spending. An account
+    // the operator opted into credits is recovered by fresh spendable credits exactly as
+    // selection treats it; otherwise it would stay pending until its weekly reset.
     const generation = result.freshCredentialGeneration;
     const record = state.validatePending ? readCodexAccountRecord(accountId) : null;
     if (record?.codexValidationPending && record.credential && record.deletedAt == null
       && generation !== undefined && record.generation === generation
-      && isCompleteCodexQuotaRecoverySnapshot(result.freshQuota ?? null, result.freshPlan ?? configuredPlan)) {
+      && isCompleteCodexQuotaRecoverySnapshot(result.freshQuota ?? null, result.freshPlan ?? configuredPlan,
+        codexAccountUsesCreditsAfterLimit(loadConfig(), accountId))) {
       try {
         // Quota I/O may outlive the source capture. Never validate a rotated or revoked link
         // using an older generation's observation. Explicit validation consent still applies.
