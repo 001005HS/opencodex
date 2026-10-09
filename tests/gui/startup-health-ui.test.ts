@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   PROJECT_CONFIG_DIAGNOSTICS_POLL_MS,
   beginPollEpochs,
+  desktopManagesStartup,
   mapStartupHealthProbe,
   probeNeedsFastRetry,
   seedStartupHealthFromSettings,
@@ -17,6 +18,30 @@ describe("startup health UI decisions", () => {
       .toBe("startup.riskDetailWindowsShim");
     expect(startupRiskDetailKey({ routingKind: "unknown", shimCoverage: "none" }))
       .toBe("startup.riskDetail");
+  });
+
+  test("desktop startup management requires ownership or verified supervision", () => {
+    const supervisor = { supervisorPid: 123, runtimePid: 456, app: "/Applications/OpenCodex.app" };
+    expect(desktopManagesStartup({})).toBe(false);
+    expect(desktopManagesStartup({ desktop: { owned: false } })).toBe(false);
+    expect(desktopManagesStartup({ desktop: { owned: false, supervisor: undefined } })).toBe(false);
+    expect(desktopManagesStartup({ desktop: { owned: true } })).toBe(true);
+    expect(desktopManagesStartup({ desktop: { owned: false, supervisor } })).toBe(true);
+    expect(desktopManagesStartup({ desktop: { owned: true, supervisor } })).toBe(true);
+  });
+
+  test("desktop risk details distinguish ownership from live supervision", () => {
+    const base = { routingKind: "opencodex-local", shimCoverage: "cli-only" } as const;
+    const supervisor = { supervisorPid: 123, runtimePid: 456, app: "/Applications/OpenCodex.app" };
+    expect(startupRiskDetailKey({ ...base, desktop: { owned: true } })).toBe("startup.desktopRecovery");
+    expect(startupRiskDetailKey({ ...base, desktop: { owned: false, supervisor } }))
+      .toBe("startup.desktopSupervisedRecovery");
+    expect(startupRiskDetailKey({ ...base, desktop: { owned: true, supervisor } }))
+      .toBe("startup.desktopRecovery");
+    expect(startupRiskDetailKey({ ...base, desktop: { owned: false } }))
+      .toBe("startup.riskDetailWindowsShim");
+    expect(startupRiskDetailKey({ ...base, routingKind: "custom-local", desktop: { owned: false, supervisor } }))
+      .toBe("startup.riskDetailCustomLocal");
   });
 
   test("rejects stale or mutation-racing settings polls", () => {
