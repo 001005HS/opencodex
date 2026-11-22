@@ -43,7 +43,7 @@ describe("an edit to the setup action alone", () => {
     expect(selected.map(([name]) => name)).toEqual(["setup-action"]);
     const [, job] = selected[0]!;
     expect(scriptOf(job)).toContain("bun --version");
-    expect(job.strategy?.matrix?.os).toEqual(["ubuntu-latest", "windows-latest", "macos-latest"]);
+    expect(job.strategy?.matrix?.os).toEqual(["ubuntu-latest", "windows-latest", "xenoci-macos-latest"]);
   });
 
   test("checks resolved and installed versions for both roles", () => {
