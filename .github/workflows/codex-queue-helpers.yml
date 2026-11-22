@@ -33,7 +33,7 @@ jobs:
         include:
           - os: ubuntu-latest
             shells: bash
-          - os: macos-latest
+          - os: xenoci-macos
             shells: /bin/bash
           - os: windows-latest
             shells: powershell.exe,pwsh.exe
