@@ -1,0 +1,16 @@
+tests/ci-workflows/ci-scope-gaps.test.ts
+  h_e90f0321dd544b 46
+tests/ci-workflows/ci-workflows.test.ts
+  h_e90f0321dd544b 299
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fc4f1171798edb4faecf796b37e6fd3fd5bc3542",
+  "prompts": {},
+  "humans": {
+    "h_e90f0321dd544b": {
+      "author": "001005HS <99410048+001005HS@users.noreply.github.com>"
+    }
+  }
+}
