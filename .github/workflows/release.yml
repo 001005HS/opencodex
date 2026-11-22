@@ -129,12 +129,12 @@ jobs:
             dependency_os: linux
             dependency_cpu: x64
             smoke: true
-          - os: macos-latest
+          - os: xenoci-macos-latest
             target: bun-darwin-arm64
             dependency_os: darwin
             dependency_cpu: arm64
             smoke: true
-          - os: macos-latest
+          - os: xenoci-macos-latest
             target: bun-darwin-x64
             dependency_os: darwin
             dependency_cpu: x64
@@ -240,7 +240,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-latest
+          - os: xenoci-macos-latest
             target: universal-apple-darwin
             dependency_os: darwin
             dependency_cpu: "*"
